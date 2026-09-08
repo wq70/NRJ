@@ -1,6 +1,7 @@
 <!-- WARNING: 本项目专属“粘人精”，严禁出现 Kiro、Krio、周棋洛等任何相关英文或拼音命名！ -->
 <script setup lang="ts">
 import { computed, onUnmounted, ref, watch } from 'vue'
+import { globalSettings } from '../../store'
 import { useGptImage, type GptImageFormat, type GptImageModeration, type GptImageQuality } from '../../composables/useGptImage'
 import { useGptImageHistory } from '../../composables/useGptImageHistory'
 import { useGptImageReference, type GptReferenceGroup } from '../../composables/useGptImageReference'
@@ -328,7 +329,18 @@ onUnmounted(() => {
         <label class="field">
           <span>API Key</span>
           <div class="field-with-action">
-            <input v-model="config.apiKey" :type="showApiKey ? 'text' : 'password'" placeholder="OpenAI 或兼容服务 API Key">
+            <input 
+              v-model="config.apiKey" 
+              :type="globalSettings.disableBrowserAutofill ? 'text' : (showApiKey ? 'text' : 'password')" 
+              :class="{ 'masked-secret-input': globalSettings.disableBrowserAutofill && !showApiKey }"
+              autocomplete="new-password"
+              autocorrect="off"
+              autocapitalize="off"
+              data-lpignore="true"
+              data-form-type="other"
+              spellcheck="false"
+              placeholder="OpenAI 或兼容服务 API Key"
+            >
             <button @click="showApiKey = !showApiKey">{{ showApiKey ? '隐藏' : '显示' }}</button>
           </div>
         </label>

@@ -1,6 +1,7 @@
 /* WARNING: 本项目专属“粘人精”，严禁出现 Kiro、Krio、周棋洛等任何相关英文或拼音命名！ */
 <script setup lang="ts">
 import { ref, watch, onMounted } from 'vue'
+import { globalSettings } from '../../store'
 import { useNovelAI } from '../../composables/useNovelAI'
 import { buildNovelAIVibeReferences, useNovelAIVibe } from '../../composables/useNovelAIVibe'
 import { useNovelAIHistory } from '../../composables/useNovelAIHistory'
@@ -407,7 +408,18 @@ const resetPrompts = () => {
         <div class="form-row">
           <label>API Key</label>
           <div class="input-with-btn">
-            <input :type="showApiKey ? 'text' : 'password'" v-model="config.apiKey" class="form-input" placeholder="输入 NovelAI API Key" />
+            <input 
+              :type="globalSettings.disableBrowserAutofill ? 'text' : (showApiKey ? 'text' : 'password')" 
+              :class="['form-input', { 'masked-secret-input': globalSettings.disableBrowserAutofill && !showApiKey }]"
+              autocomplete="new-password"
+              autocorrect="off"
+              autocapitalize="off"
+              data-lpignore="true"
+              data-form-type="other"
+              spellcheck="false"
+              v-model="config.apiKey" 
+              placeholder="输入 NovelAI API Key" 
+            />
             <button class="text-btn" @click="showApiKey = !showApiKey">{{ showApiKey ? '隐藏' : '显示' }}</button>
           </div>
         </div>

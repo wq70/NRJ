@@ -237,7 +237,7 @@ watch(
   position: fixed;
   inset: 0;
   width: 100vw;
-  height: 100vh;
+  height: var(--app-height, 100vh);
   pointer-events: none;
   z-index: 99999; /* 保证覆盖全屏幕与所有弹窗，截图直接带水印，不影响任何点击触控 */
   overflow: hidden;

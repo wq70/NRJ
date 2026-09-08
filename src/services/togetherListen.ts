@@ -513,6 +513,13 @@ const summarizeRecord = async (id: string) => {
   return result
 }
 
+const deleteRecords = (recordIds: string[]) => {
+  if (!recordIds.length) return
+  const idSet = new Set(recordIds)
+  records.value = records.value.filter(item => !idSet.has(item.id))
+  persist()
+}
+
 const cancelPendingSession = () => {
   if (!activeSession.value || !['matching', 'inviting'].includes(activeSession.value.status)) return
   activeSession.value = null; busy.value = false; error.value = ''; persist()
@@ -566,6 +573,7 @@ export function useTogetherListen() {
     requestPartnerReply,
     summarizeActiveSession,
     summarizeRecord,
+    deleteRecords,
     createUserFriendRequest: (message = '想和你成为好友') => createFriendRequest('user_to_partner', message),
     respondFriendRequest,
     endSession,

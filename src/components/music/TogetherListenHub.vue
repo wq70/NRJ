@@ -13,13 +13,19 @@ const emit = defineEmits<{ (e: 'close'): void }>()
 const {
   activeSession, records, settings, busy, error, startStrangerMatch, inviteCharacter,
   addUserMessage, requestPartnerReply, createUserFriendRequest, respondFriendRequest,
-  endSession, summarizeActiveSession, summarizeRecord, cancelPendingSession, updateSettings, clearError
+  endSession, summarizeActiveSession, summarizeRecord, deleteRecords, cancelPendingSession, updateSettings, clearError
 } = useTogetherListen()
 const player = useMusicPlayer()
 const library = useMusicLibrary()
 
 const page = ref<'home' | 'roles' | 'room' | 'settings' | 'records' | 'record-detail'>('home')
 const selectedRecord = ref<(typeof records.value)[number] | null>(null)
+const isManageMode = ref(false)
+const selectedRecordIds = ref<string[]>([])
+const showDeleteConfirm = ref(false)
+const pendingDeleteType = ref<'single' | 'batch'>('batch')
+let pressTimer: number | null = null
+
 const input = ref('')
 const chatScroll = ref<HTMLElement | null>(null)
 const roleSearch = ref('')
@@ -83,10 +89,18 @@ const canRequestFriend = computed(() => activeSession.value?.mode === 'stranger'
 watch(() => props.visible, visible => {
   if (!visible) return
   clearError()
+  isManageMode.value = false
+  selectedRecordIds.value = []
   if (props.initialPage === 'settings') page.value = 'settings'
   else if (activeSession.value) page.value = 'room'
   else if (props.suggestedChat) page.value = 'roles'
   else page.value = 'home'
+})
+watch(page, newPage => {
+  if (newPage !== 'records') {
+    isManageMode.value = false
+    selectedRecordIds.value = []
+  }
 })
 watch(() => activeSession.value?.messages.length, async () => {
   await nextTick()
@@ -113,7 +127,85 @@ const send = () => {
 const updateMemoryMode = (event: Event) => updateSettings({ memoryMode: (event.target as HTMLSelectElement).value as TogetherListenMemoryMode })
 const updateTextDisplay = (event: Event) => updateSettings({ textDisplay: (event.target as HTMLSelectElement).value as TogetherListenTextDisplay })
 const close = () => emit('close')
-const openRecord = (record: (typeof records.value)[number]) => { selectedRecord.value = record; page.value = 'record-detail' }
+const openRecord = (record: (typeof records.value)[number]) => {
+  if (isManageMode.value) {
+    toggleSelectRecord(record.id)
+    return
+  }
+  selectedRecord.value = record
+  page.value = 'record-detail'
+}
+
+const toggleManageMode = () => {
+  isManageMode.value = !isManageMode.value
+  if (!isManageMode.value) selectedRecordIds.value = []
+}
+
+const toggleSelectRecord = (id: string) => {
+  const index = selectedRecordIds.value.indexOf(id)
+  if (index > -1) {
+    selectedRecordIds.value.splice(index, 1)
+  } else {
+    selectedRecordIds.value.push(id)
+  }
+}
+
+const isRecordSelected = (id: string) => selectedRecordIds.value.includes(id)
+
+const isAllSelected = computed(() => {
+  return records.value.length > 0 && selectedRecordIds.value.length === records.value.length
+})
+
+const toggleSelectAll = () => {
+  if (isAllSelected.value) {
+    selectedRecordIds.value = []
+  } else {
+    selectedRecordIds.value = records.value.map(r => r.id)
+  }
+}
+
+const handleTouchStart = (recordId: string) => {
+  if (isManageMode.value) return
+  pressTimer = window.setTimeout(() => {
+    isManageMode.value = true
+    if (!selectedRecordIds.value.includes(recordId)) {
+      selectedRecordIds.value.push(recordId)
+    }
+  }, 500)
+}
+
+const handleTouchEnd = () => {
+  if (pressTimer) {
+    clearTimeout(pressTimer)
+    pressTimer = null
+  }
+}
+
+const promptBatchDelete = () => {
+  if (!selectedRecordIds.value.length) return
+  pendingDeleteType.value = 'batch'
+  showDeleteConfirm.value = true
+}
+
+const promptSingleDelete = () => {
+  if (!selectedRecord.value) return
+  pendingDeleteType.value = 'single'
+  showDeleteConfirm.value = true
+}
+
+const executeDelete = () => {
+  if (pendingDeleteType.value === 'batch') {
+    deleteRecords(selectedRecordIds.value)
+    selectedRecordIds.value = []
+    isManageMode.value = false
+  } else if (pendingDeleteType.value === 'single' && selectedRecord.value) {
+    deleteRecords([selectedRecord.value.id])
+    selectedRecord.value = null
+    page.value = 'records'
+  }
+  showDeleteConfirm.value = false
+}
+
 const finishSession = async () => { await endSession(); page.value = 'records' }
 const searchTracks = async () => {
   if (!trackQuery.value.trim()) { library.clearSearch(); return }
@@ -134,8 +226,12 @@ const chooseTrack = async (track: MusicTrack) => {
             <button v-if="page === 'record-detail'" type="button" @click="page = 'records'">‹</button>
             <button v-else-if="page !== 'home' && !activeSession && initialPage !== 'settings'" type="button" @click="page = 'home'">‹</button>
             <button v-else type="button" @click="close">×</button>
-            <div><strong>{{ page === 'settings' ? '一起听设置' : page === 'records' ? '一起听记录' : page === 'record-detail' ? '记录详情' : page === 'roles' ? '选择角色' : '一起听' }}</strong><small v-if="activeSession">{{ displayName }} · {{ elapsed }}</small></div>
+            <div>
+              <strong>{{ page === 'settings' ? '一起听设置' : page === 'records' ? (isManageMode ? `已选 ${selectedRecordIds.length} 项` : '一起听记录') : page === 'record-detail' ? '记录详情' : page === 'roles' ? '选择角色' : '一起听' }}</strong>
+              <small v-if="activeSession">{{ displayName }} · {{ elapsed }}</small>
+            </div>
             <button v-if="activeSession?.status === 'active' && page !== 'settings'" type="button" @click="page = 'settings'">设置</button>
+            <button v-else-if="page === 'records' && records.length" type="button" class="header-action-btn" @click="toggleManageMode">{{ isManageMode ? '完成' : '管理' }}</button>
             <button v-else-if="page === 'settings'" type="button" @click="initialPage === 'settings' ? close() : page = 'room'">完成</button>
             <span v-else></span>
           </header>
@@ -229,30 +325,150 @@ const chooseTrack = async (track: MusicTrack) => {
             <section><h3>对方行为</h3><label><span><strong>允许角色主动邀请</strong><small>角色可在普通单聊中发来一起听邀请，你仍可拒绝</small></span><input type="checkbox" :checked="settings.allowCharacterInvites" @change="updateSettings({ allowCharacterInvites: ($event.target as HTMLInputElement).checked })" /></label><label><span><strong>允许主动说话</strong><small>关闭后仍可安静一起听</small></span><input type="checkbox" :checked="settings.allowPartnerSpeak" @change="updateSettings({ allowPartnerSpeak: ($event.target as HTMLInputElement).checked })" /></label><label><span><strong>歌曲变化时自主判断</strong><small>只在换歌等重要事件调用，不逐句歌词调用</small></span><input type="checkbox" :checked="settings.eventDrivenEnabled" @change="updateSettings({ eventDrivenEnabled: ($event.target as HTMLInputElement).checked })" /></label><label><span><strong>允许切歌</strong><small>带冷却，避免连续机械切歌</small></span><input type="checkbox" :checked="settings.allowPartnerSwitchTrack" @change="updateSettings({ allowPartnerSwitchTrack: ($event.target as HTMLInputElement).checked })" /></label><label><span><strong>允许播放和暂停</strong></span><input type="checkbox" :checked="settings.allowPartnerPlaybackControl" @change="updateSettings({ allowPartnerPlaybackControl: ($event.target as HTMLInputElement).checked })" /></label><label><span><strong>允许好友申请</strong></span><input type="checkbox" :checked="settings.allowFriendRequests" @change="updateSettings({ allowFriendRequests: ($event.target as HTMLInputElement).checked })" /></label></section>
           </main>
 
-          <main v-else-if="page === 'records'" class="listen-records">
-            <button v-for="record in records" :key="record.id" type="button" @click="openRecord(record)">
-              <span class="listen-record-avatars"><i :style="userAvatarStyle(record)">{{ userForSession(record).avatarUrl ? '' : userInitial(record) }}</i><i :class="{ anonymous: !record.participant.revealed }" :style="partnerAvatarStyle(record)">{{ record.participant.revealed && record.participant.avatarUrl ? '' : partnerInitial(record) }}</i></span>
-              <span class="listen-record-copy"><strong>我和{{ partnerName(record) }}</strong><small>{{ new Date(record.startedAt).toLocaleString('zh-CN') }} · {{ record.trackHistory.length }} 首歌</small><p>{{ record.summary || '没有生成总结' }}</p></span>
-            </button>
+          <main v-else-if="page === 'records'" class="listen-records" :class="{ 'with-batch-bar': isManageMode }">
+            <div
+              v-for="record in records"
+              :key="record.id"
+              class="listen-record-item"
+              :class="{ 'is-selected': isRecordSelected(record.id), 'manage-mode': isManageMode }"
+              @click="openRecord(record)"
+              @touchstart="handleTouchStart(record.id)"
+              @touchend="handleTouchEnd"
+              @touchcancel="handleTouchEnd"
+              @contextmenu.prevent="handleTouchStart(record.id)"
+            >
+              <div v-if="isManageMode" class="record-checkbox-wrap" @click.stop="toggleSelectRecord(record.id)">
+                <span class="record-checkbox" :class="{ checked: isRecordSelected(record.id) }">
+                  <svg v-if="isRecordSelected(record.id)" viewBox="0 0 24 24" class="check-icon">
+                    <path d="M5 13l4 4L19 7" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" />
+                  </svg>
+                </span>
+              </div>
+              <div class="listen-record-content">
+                <span class="listen-record-avatars">
+                  <i :style="userAvatarStyle(record)">{{ userForSession(record).avatarUrl ? '' : userInitial(record) }}</i>
+                  <i :class="{ anonymous: !record.participant.revealed }" :style="partnerAvatarStyle(record)">{{ record.participant.revealed && record.participant.avatarUrl ? '' : partnerInitial(record) }}</i>
+                </span>
+                <span class="listen-record-copy">
+                  <strong>我和{{ partnerName(record) }}</strong>
+                  <small>{{ new Date(record.startedAt).toLocaleString('zh-CN') }} · {{ record.trackHistory.length }} 首歌</small>
+                  <p>{{ record.summary || '没有生成总结' }}</p>
+                </span>
+              </div>
+            </div>
             <div v-if="!records.length" class="record-empty">还没有一起听记录</div>
+
+            <!-- 吸底批量操作栏 -->
+            <transition name="fade-slide">
+              <footer v-if="isManageMode && records.length" class="record-batch-bar">
+                <button type="button" class="batch-select-all" @click="toggleSelectAll">
+                  <span class="record-checkbox" :class="{ checked: isAllSelected }">
+                    <svg v-if="isAllSelected" viewBox="0 0 24 24" class="check-icon">
+                      <path d="M5 13l4 4L19 7" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" />
+                    </svg>
+                  </span>
+                  <span>{{ isAllSelected ? '取消全选' : '全选' }} ({{ selectedRecordIds.length }}/{{ records.length }})</span>
+                </button>
+                <button
+                  type="button"
+                  class="batch-delete-btn"
+                  :disabled="!selectedRecordIds.length"
+                  @click="promptBatchDelete"
+                >
+                  删除{{ selectedRecordIds.length ? ` (${selectedRecordIds.length})` : '' }}
+                </button>
+              </footer>
+            </transition>
           </main>
           <main v-else class="listen-record-detail">
             <template v-if="selectedRecord">
-              <div class="record-detail-head"><div class="record-detail-pair"><div class="listen-avatar-pair"><span class="listen-paired-avatar" :style="userAvatarStyle(selectedRecord)">{{ userForSession(selectedRecord).avatarUrl ? '' : userInitial(selectedRecord) }}</span><span class="listen-paired-avatar partner" :class="{ anonymous: !selectedRecord.participant.revealed }" :style="partnerAvatarStyle(selectedRecord)">{{ selectedRecord.participant.revealed && selectedRecord.participant.avatarUrl ? '' : partnerInitial(selectedRecord) }}</span></div></div><strong>我和{{ partnerName(selectedRecord) }}的一起听</strong><small>{{ new Date(selectedRecord.startedAt).toLocaleString('zh-CN') }} · {{ selectedRecord.trackHistory.map(track => `《${track.title}》`).join('、') || '未记录歌曲' }}</small><p>{{ selectedRecord.summary || '本次没有生成总结。' }}</p><button v-if="!selectedRecord.summary" type="button" :disabled="busy" @click="summarizeRecord(selectedRecord.id)">{{ busy ? '总结中…' : '生成总结' }}</button></div>
+              <div class="record-detail-head">
+                <div class="record-detail-pair">
+                  <div class="listen-avatar-pair">
+                    <span class="listen-paired-avatar" :style="userAvatarStyle(selectedRecord)">{{ userForSession(selectedRecord).avatarUrl ? '' : userInitial(selectedRecord) }}</span>
+                    <span class="listen-paired-avatar partner" :class="{ anonymous: !selectedRecord.participant.revealed }" :style="partnerAvatarStyle(selectedRecord)">{{ selectedRecord.participant.revealed && selectedRecord.participant.avatarUrl ? '' : partnerInitial(selectedRecord) }}</span>
+                  </div>
+                </div>
+                <strong>我和{{ partnerName(selectedRecord) }}的一起听</strong>
+                <small>{{ new Date(selectedRecord.startedAt).toLocaleString('zh-CN') }} · {{ selectedRecord.trackHistory.map(track => `《${track.title}》`).join('、') || '未记录歌曲' }}</small>
+                <p>{{ selectedRecord.summary || '本次没有生成总结。' }}</p>
+                <div class="record-detail-actions">
+                  <button v-if="!selectedRecord.summary" type="button" class="action-btn" :disabled="busy" @click="summarizeRecord(selectedRecord.id)">{{ busy ? '总结中…' : '生成总结' }}</button>
+                  <button type="button" class="action-btn delete-btn" @click="promptSingleDelete">删除此记录</button>
+                </div>
+              </div>
               <div class="record-detail-messages"><div v-for="message in selectedRecord.messages" :key="message.id" class="listen-message" :class="[message.sender, message.kind]"><small v-if="message.sender !== 'system'">{{ message.sender === 'user' ? '我' : selectedRecord.participant.name }}</small><p>{{ message.content }}</p></div></div>
             </template>
           </main>
         </section>
+
+        <!-- 自定义美化确认弹窗 -->
+        <transition name="listen-hub-fade">
+          <div v-if="showDeleteConfirm" class="listen-confirm-backdrop" @click.self="showDeleteConfirm = false">
+            <div class="listen-confirm-modal" role="dialog" aria-modal="true">
+              <div class="confirm-icon">
+                <svg viewBox="0 0 24 24" width="26" height="26">
+                  <path d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+                </svg>
+              </div>
+              <h3>{{ pendingDeleteType === 'batch' ? `确认删除选中的 ${selectedRecordIds.length} 条记录？` : '确认删除此条一起听记录？' }}</h3>
+              <p>删除后将无法恢复该记录内容及聊天片段。</p>
+              <div class="confirm-actions">
+                <button type="button" class="btn-cancel" @click="showDeleteConfirm = false">取消</button>
+                <button type="button" class="btn-danger" @click="executeDelete">确认删除</button>
+              </div>
+            </div>
+          </div>
+        </transition>
       </div>
     </transition>
   </Teleport>
 </template>
 
 <style scoped>
-.listen-hub-overlay{position:fixed;inset:0;z-index:12050;display:flex;align-items:flex-end;justify-content:center;background:rgba(0,0,0,.42);backdrop-filter:blur(3px)}.listen-hub{display:flex;width:min(100%,480px);height:min(88vh,780px);flex-direction:column;overflow:hidden;border-radius:22px 22px 0 0;background:var(--sys-bg-primary,#fff);color:var(--text-primary,#202124);box-shadow:0 -18px 48px rgba(0,0,0,.18);padding-bottom:env(safe-area-inset-bottom);font-family:-apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif}.listen-hub-header{display:grid;grid-template-columns:56px 1fr 56px;align-items:center;min-height:58px;border-bottom:1px solid var(--border-color,#ececef)}.listen-hub-header>button{height:44px;border:0;background:transparent;color:inherit;font:inherit;font-size:13px}.listen-hub-header>button:first-child{font-size:27px}.listen-hub-header>div{text-align:center}.listen-hub-header strong,.listen-hub-header small{display:block}.listen-hub-header strong{font-size:15px}.listen-hub-header small{margin-top:3px;color:var(--text-tertiary,#999);font-size:9px}.listen-hub main{min-height:0;flex:1;overflow:auto}.listen-home,.listen-role-page,.listen-settings,.listen-records{padding:16px}.listen-current-track,.listen-participant,.listen-room-track{display:flex;align-items:center;gap:12px}.listen-current-track{padding:13px;border-radius:16px;background:var(--sys-bg-secondary,#f6f6f7)}.listen-cover{display:grid;width:48px;height:48px;flex:none;place-items:center;border-radius:12px;background:#252528 center/cover;color:#fff;font-style:normal}.listen-cover.large{width:64px;height:64px}.listen-current-track>div,.listen-participant>span:nth-child(2),.listen-room-track>div{display:flex;min-width:0;flex:1;flex-direction:column;gap:3px}.listen-current-track small,.listen-current-track span,.listen-mode-card small,.role-list small,.suggested-role small,.listen-participant small,.listen-room-track small{color:var(--text-tertiary,#999);font-size:10px}.listen-current-track strong,.listen-current-track span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.listen-mode-card{display:flex;width:100%;align-items:center;gap:12px;margin-top:11px;padding:15px 13px;border:1px solid var(--border-color,#ececef);border-radius:16px;background:var(--sys-bg-secondary,#fff);color:inherit;text-align:left}.listen-mode-card>i{display:grid;width:42px;height:42px;flex:none;place-items:center;border-radius:14px;background:#242426;color:#fff;font-size:18px;font-style:normal}.listen-mode-card>.stranger-icon{background:linear-gradient(145deg,#7b68ee,#4a90e2)}.listen-mode-card>span{display:flex;min-width:0;flex:1;flex-direction:column;gap:4px}.listen-mode-card>b{color:var(--text-tertiary,#aaa);font-size:24px}.listen-quiet-row{display:flex;width:100%;justify-content:space-between;margin-top:13px;padding:13px 2px;border:0;border-bottom:1px solid var(--border-color,#eee);background:transparent;color:inherit}.listen-quiet-row b{color:var(--text-tertiary,#999);font-weight:400}.listen-disclosure{margin:15px 3px;color:var(--text-tertiary,#999);font-size:9px;line-height:1.55}.role-search{box-sizing:border-box;width:100%;height:40px;margin:8px 0 12px;padding:0 13px;border:1px solid var(--border-color,#e5e5e8);border-radius:12px;background:var(--sys-bg-secondary,#f6f6f7);color:inherit;outline:0}.suggested-role{margin-bottom:14px}.suggested-role>small{display:block;margin:0 3px 6px}.suggested-role button,.role-list button{display:flex;width:100%;align-items:center;gap:11px;padding:10px 4px;border:0;border-bottom:1px solid var(--border-color,#eee);background:transparent;color:inherit;text-align:left}.role-avatar{display:grid;width:40px;height:40px;flex:none;place-items:center;border-radius:50%;background:var(--sys-bg-tertiary,#e5e5e8) center/cover;font-size:13px}.suggested-role button>span:nth-child(2),.role-list button>span:nth-child(2){display:flex;min-width:0;flex:1;flex-direction:column;gap:4px}.suggested-role button>b,.role-list button>b{padding:6px 11px;border-radius:12px;background:#242426;color:#fff;font-size:10px}.listen-room{display:flex!important;flex-direction:column;overflow:hidden!important}.listen-room-track{padding:12px 15px;border-bottom:1px solid var(--border-color,#eee);background:var(--sys-bg-secondary,#f7f7f8)}.listen-room-track p{margin:2px 0 0;overflow:hidden;color:var(--text-secondary,#666);font-size:10px;text-overflow:ellipsis;white-space:nowrap}.listen-controls{display:flex!important;flex:0!important;flex-direction:row!important}.listen-controls button{width:34px;height:34px;border:0;border-radius:50%;background:var(--sys-bg-tertiary,#e7e7e9);color:inherit}.listen-waiting,.listen-empty-room{display:flex;flex:1;align-items:center;justify-content:center;flex-direction:column;gap:11px;padding:30px;text-align:center}.listen-waiting small{color:var(--text-tertiary,#999);font-size:10px}.listen-waiting button,.listen-empty-room button{padding:8px 18px;border:0;border-radius:13px;background:#262629;color:#fff}.listen-spinner{width:30px;height:30px;border:3px solid #ddd;border-top-color:#444;border-radius:50%;animation:listen-spin .8s linear infinite}.listen-participant{padding:9px 14px;border-bottom:1px solid var(--border-color,#eee)}.listen-participant em{padding:3px 7px;border-radius:9px;background:var(--sys-bg-tertiary,#eee);color:var(--text-tertiary,#777);font-size:8px;font-style:normal}.listen-chat{min-height:0;flex:1;overflow:auto;padding:13px 14px}.listen-message{display:flex;margin-bottom:10px;flex-direction:column;align-items:flex-start}.listen-message.user{align-items:flex-end}.listen-message small{margin:0 4px 3px;color:var(--text-tertiary,#999);font-size:8px}.listen-message p{max-width:78%;margin:0;padding:8px 11px;border-radius:14px 14px 14px 4px;background:var(--sys-bg-tertiary,#ececef);font-size:12px;line-height:1.5;white-space:pre-wrap}.listen-message.user p{border-radius:14px 14px 4px 14px;background:#252527;color:#fff}.listen-message.system{align-items:center}.listen-message.system p{max-width:90%;padding:3px 9px;border-radius:9px;background:transparent;color:var(--text-tertiary,#999);font-size:9px;text-align:center}.friend-request-card{margin:13px 5px;padding:13px;border:1px solid var(--border-color,#ddd);border-radius:14px;background:var(--sys-bg-secondary,#fff)}.friend-request-card p{margin:6px 0;color:var(--text-secondary,#666);font-size:11px}.friend-request-card div{display:flex;gap:7px}.friend-request-card button{height:31px;flex:1;border:1px solid var(--border-color,#ddd);border-radius:9px;background:transparent;color:inherit}.friend-request-card button:last-child{background:#242426;color:#fff}.listen-error{padding:6px 14px;color:#c34d4d;font-size:10px}.friend-request-inline{display:flex;gap:7px;padding:7px 12px}.friend-request-inline input{min-width:0;flex:1;border:1px solid var(--border-color,#ddd);border-radius:10px;background:transparent;color:inherit;padding:0 9px}.friend-request-inline button{height:34px;border:0;border-radius:10px;background:var(--sys-bg-tertiary,#eee);color:inherit;font-size:10px}.friend-request-status{padding:6px 14px;color:var(--text-tertiary,#999);font-size:9px;text-align:center}.friend-request-status.success{color:#3d8662}.listen-composer{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:6px;padding:9px 12px;border-top:1px solid var(--border-color,#eee)}.listen-composer input{min-width:0;height:36px;padding:0 10px;border:1px solid var(--border-color,#ddd);border-radius:11px;background:var(--sys-bg-secondary,#f7f7f8);color:inherit;outline:0}.listen-composer button{border:0;border-radius:10px;background:var(--sys-bg-tertiary,#eee);color:inherit;font-size:10px;padding:0 10px}.listen-composer .api{background:#262629;color:#fff}.end-listen{height:38px;margin:0 12px 8px;border:0;border-radius:11px;background:transparent;color:#c24b4b}.listen-settings section{margin-bottom:15px;overflow:hidden;border:1px solid var(--border-color,#e7e7e9);border-radius:14px}.listen-settings h3{margin:0;padding:10px 12px;background:var(--sys-bg-secondary,#f7f7f8);color:var(--text-tertiary,#777);font-size:10px}.listen-settings label{display:flex;min-height:52px;align-items:center;gap:12px;padding:7px 12px;border-top:1px solid var(--border-color,#eee)}.listen-settings label>span{display:flex;min-width:0;flex:1;flex-direction:column;gap:3px}.listen-settings label strong{font-size:12px}.listen-settings label small{color:var(--text-tertiary,#999);font-size:9px}.listen-settings select{max-width:145px;border:0;background:transparent;color:inherit;font-size:10px;text-align:right}.listen-settings input[type=checkbox]{width:18px;height:18px}.listen-records button{display:flex;width:100%;padding:12px 3px;border:0;border-bottom:1px solid var(--border-color,#eee);background:transparent;color:inherit;text-align:left}.listen-records button span{min-width:0}.listen-records small{display:block;margin-top:3px;color:var(--text-tertiary,#999);font-size:9px}.listen-records p{margin:7px 0 0;color:var(--text-secondary,#666);font-size:10px;line-height:1.5}.record-empty{padding:80px 20px;color:var(--text-tertiary,#999);font-size:11px;text-align:center}.listen-hub-fade-enter-active,.listen-hub-fade-leave-active{transition:.2s}.listen-hub-fade-enter-from,.listen-hub-fade-leave-to{opacity:0}.listen-hub-fade-enter-from .listen-hub,.listen-hub-fade-leave-to .listen-hub{transform:translateY(30px)}.listen-hub{transition:.2s}@keyframes listen-spin{to{transform:rotate(360deg)}}@media(max-width:360px){.listen-composer{grid-template-columns:minmax(0,1fr) auto}.listen-composer .api{grid-column:1/-1;height:34px}.listen-hub{height:94vh}}
+.listen-hub-overlay{position:fixed;inset:0;z-index:12050;display:flex;align-items:flex-end;justify-content:center;background:rgba(0,0,0,.42);backdrop-filter:blur(3px)}.listen-hub{display:flex;width:min(100%,480px);height:min(88vh,780px);flex-direction:column;overflow:hidden;border-radius:22px 22px 0 0;background:var(--sys-bg-primary,#fff);color:var(--text-primary,#202124);box-shadow:0 -18px 48px rgba(0,0,0,.18);padding-bottom:env(safe-area-inset-bottom);font-family:-apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif}.listen-hub-header{display:grid;grid-template-columns:56px 1fr 56px;align-items:center;min-height:58px;border-bottom:1px solid var(--border-color,#ececef)}.listen-hub-header>button{height:44px;border:0;background:transparent;color:inherit;font:inherit;font-size:13px}.listen-hub-header>button:first-child{font-size:27px}.listen-hub-header>div{text-align:center}.listen-hub-header strong,.listen-hub-header small{display:block}.listen-hub-header strong{font-size:15px}.listen-hub-header small{margin-top:3px;color:var(--text-tertiary,#999);font-size:9px}.listen-hub main{min-height:0;flex:1;overflow:auto}.listen-home,.listen-role-page,.listen-settings,.listen-records{padding:16px}.listen-current-track,.listen-participant,.listen-room-track{display:flex;align-items:center;gap:12px}.listen-current-track{padding:13px;border-radius:16px;background:var(--sys-bg-secondary,#f6f6f7)}.listen-cover{display:grid;width:48px;height:48px;flex:none;place-items:center;border-radius:12px;background:#252528 center/cover;color:#fff;font-style:normal}.listen-cover.large{width:64px;height:64px}.listen-current-track>div,.listen-participant>span:nth-child(2),.listen-room-track>div{display:flex;min-width:0;flex:1;flex-direction:column;gap:3px}.listen-current-track small,.listen-current-track span,.listen-mode-card small,.role-list small,.suggested-role small,.listen-participant small,.listen-room-track small{color:var(--text-tertiary,#999);font-size:10px}.listen-current-track strong,.listen-current-track span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.listen-mode-card{display:flex;width:100%;align-items:center;gap:12px;margin-top:11px;padding:15px 13px;border:1px solid var(--border-color,#ececef);border-radius:16px;background:var(--sys-bg-secondary,#fff);color:inherit;text-align:left}.listen-mode-card>i{display:grid;width:42px;height:42px;flex:none;place-items:center;border-radius:14px;background:#242426;color:#fff;font-size:18px;font-style:normal}.listen-mode-card>.stranger-icon{background:linear-gradient(145deg,#7b68ee,#4a90e2)}.listen-mode-card>span{display:flex;min-width:0;flex:1;flex-direction:column;gap:4px}.listen-mode-card>b{color:var(--text-tertiary,#aaa);font-size:24px}.listen-quiet-row{display:flex;width:100%;justify-content:space-between;margin-top:13px;padding:13px 2px;border:0;border-bottom:1px solid var(--border-color,#eee);background:transparent;color:inherit}.listen-quiet-row b{color:var(--text-tertiary,#999);font-weight:400}.listen-disclosure{margin:15px 3px;color:var(--text-tertiary,#999);font-size:9px;line-height:1.55}.role-search{box-sizing:border-box;width:100%;height:40px;margin:8px 0 12px;padding:0 13px;border:1px solid var(--border-color,#e5e5e8);border-radius:12px;background:var(--sys-bg-secondary,#f6f6f7);color:inherit;outline:0}.suggested-role{margin-bottom:14px}.suggested-role>small{display:block;margin:0 3px 6px}.suggested-role button,.role-list button{display:flex;width:100%;align-items:center;gap:11px;padding:10px 4px;border:0;border-bottom:1px solid var(--border-color,#eee);background:transparent;color:inherit;text-align:left}.role-avatar{display:grid;width:40px;height:40px;flex:none;place-items:center;border-radius:50%;background:var(--sys-bg-tertiary,#e5e5e8) center/cover;font-size:13px}.suggested-role button>span:nth-child(2),.role-list button>span:nth-child(2){display:flex;min-width:0;flex:1;flex-direction:column;gap:4px}.suggested-role button>b,.role-list button>b{padding:6px 11px;border-radius:12px;background:#242426;color:#fff;font-size:10px}.listen-room{display:flex!important;flex-direction:column;overflow:hidden!important}.listen-room-track{padding:12px 15px;border-bottom:1px solid var(--border-color,#eee);background:var(--sys-bg-secondary,#f7f7f8)}.listen-room-track p{margin:2px 0 0;overflow:hidden;color:var(--text-secondary,#666);font-size:10px;text-overflow:ellipsis;white-space:nowrap}.listen-controls{display:flex!important;flex:0!important;flex-direction:row!important}.listen-controls button{width:34px;height:34px;border:0;border-radius:50%;background:var(--sys-bg-tertiary,#e7e7e9);color:inherit}.listen-waiting,.listen-empty-room{display:flex;flex:1;align-items:center;justify-content:center;flex-direction:column;gap:11px;padding:30px;text-align:center}.listen-waiting small{color:var(--text-tertiary,#999);font-size:10px}.listen-waiting button,.listen-empty-room button{padding:8px 18px;border:0;border-radius:13px;background:#262629;color:#fff}.listen-spinner{width:30px;height:30px;border:3px solid #ddd;border-top-color:#444;border-radius:50%;animation:listen-spin .8s linear infinite}.listen-participant{padding:9px 14px;border-bottom:1px solid var(--border-color,#eee)}.listen-participant em{padding:3px 7px;border-radius:9px;background:var(--sys-bg-tertiary,#eee);color:var(--text-tertiary,#777);font-size:8px;font-style:normal}.listen-chat{min-height:0;flex:1;overflow:auto;padding:13px 14px}.listen-message{display:flex;margin-bottom:10px;flex-direction:column;align-items:flex-start}.listen-message.user{align-items:flex-end}.listen-message small{margin:0 4px 3px;color:var(--text-tertiary,#999);font-size:8px}.listen-message p{max-width:78%;margin:0;padding:8px 11px;border-radius:14px 14px 14px 4px;background:var(--sys-bg-tertiary,#ececef);font-size:12px;line-height:1.5;white-space:pre-wrap}.listen-message.user p{border-radius:14px 14px 4px 14px;background:#252527;color:#fff}.listen-message.system{align-items:center}.listen-message.system p{max-width:90%;padding:3px 9px;border-radius:9px;background:transparent;color:var(--text-tertiary,#999);font-size:9px;text-align:center}.friend-request-card{margin:13px 5px;padding:13px;border:1px solid var(--border-color,#ddd);border-radius:14px;background:var(--sys-bg-secondary,#fff)}.friend-request-card p{margin:6px 0;color:var(--text-secondary,#666);font-size:11px}.friend-request-card div{display:flex;gap:7px}.friend-request-card button{height:31px;flex:1;border:1px solid var(--border-color,#ddd);border-radius:9px;background:transparent;color:inherit}.friend-request-card button:last-child{background:#242426;color:#fff}.listen-error{padding:6px 14px;color:#c34d4d;font-size:10px}.friend-request-inline{display:flex;gap:7px;padding:7px 12px}.friend-request-inline input{min-width:0;flex:1;border:1px solid var(--border-color,#ddd);border-radius:10px;background:transparent;color:inherit;padding:0 9px}.friend-request-inline button{height:34px;border:0;border-radius:10px;background:var(--sys-bg-tertiary,#eee);color:inherit;font-size:10px}.friend-request-status{padding:6px 14px;color:var(--text-tertiary,#999);font-size:9px;text-align:center}.friend-request-status.success{color:#3d8662}.listen-composer{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:6px;padding:9px 12px;border-top:1px solid var(--border-color,#eee)}.listen-composer input{min-width:0;height:36px;padding:0 10px;border:1px solid var(--border-color,#ddd);border-radius:11px;background:var(--sys-bg-secondary,#f7f7f8);color:inherit;outline:0}.listen-composer button{border:0;border-radius:10px;background:var(--sys-bg-tertiary,#eee);color:inherit;font-size:10px;padding:0 10px}.listen-composer .api{background:#262629;color:#fff}.end-listen{height:38px;margin:0 12px 8px;border:0;border-radius:11px;background:transparent;color:#c24b4b}.listen-settings section{margin-bottom:15px;overflow:hidden;border:1px solid var(--border-color,#e7e7e9);border-radius:14px}.listen-settings h3{margin:0;padding:10px 12px;background:var(--sys-bg-secondary,#f7f7f8);color:var(--text-tertiary,#777);font-size:10px}.listen-settings label{display:flex;min-height:52px;align-items:center;gap:12px;padding:7px 12px;border-top:1px solid var(--border-color,#eee)}.listen-settings label>span{display:flex;min-width:0;flex:1;flex-direction:column;gap:3px}.listen-settings label strong{font-size:12px}.listen-settings label small{color:var(--text-tertiary,#999);font-size:9px}.listen-settings select{max-width:145px;border:0;background:transparent;color:inherit;font-size:10px;text-align:right}.listen-settings input[type=checkbox]{width:18px;height:18px}.listen-records{position:relative;padding:12px 14px 16px}.listen-records.with-batch-bar{padding-bottom:70px}
+.listen-record-item{display:flex;align-items:center;padding:10px 8px;border-radius:12px;transition:background-color .15s ease,transform .15s ease;cursor:pointer;-webkit-tap-highlight-color:transparent;user-select:none;margin-bottom:2px}
+.listen-record-item:active{background:var(--sys-bg-secondary,#f6f6f8)}
+.listen-record-item.is-selected{background:var(--card-selected-bg,rgba(74,144,226,.08))}
+.listen-record-content{display:flex;align-items:center;gap:12px;flex:1;min-width:0}
+.listen-record-copy{min-width:0;flex:1}
+.listen-record-copy strong{display:block;font-size:13px;font-weight:600}
+.listen-record-copy small{display:block;margin-top:3px;color:var(--text-tertiary,#999);font-size:9px}
+.listen-record-copy p{margin:6px 0 0;color:var(--text-secondary,#666);font-size:10px;line-height:1.5;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+
+.record-checkbox-wrap{display:flex;align-items:center;justify-content:center;padding-right:10px;animation:fade-in .2s ease}
+.record-checkbox{display:grid;place-items:center;width:20px;height:20px;border-radius:50%;border:1.5px solid var(--border-color,#ccc);background:var(--sys-bg-primary,#fff);color:#fff;transition:all .18s ease}
+.record-checkbox.checked{background:var(--accent-color,#4a90e2);border-color:var(--accent-color,#4a90e2)}
+.check-icon{width:13px;height:13px}
+
+.record-batch-bar{position:absolute;bottom:0;left:0;right:0;height:56px;display:flex;align-items:center;justify-content:space-between;padding:0 16px;background:var(--sys-bg-primary,#fff);border-top:1px solid var(--border-color,#ececef);box-shadow:0 -4px 16px rgba(0,0,0,.06);z-index:10}
+.batch-select-all{display:flex;align-items:center;gap:8px;border:0;background:transparent;color:inherit;font:inherit;font-size:12px;cursor:pointer}
+.batch-delete-btn{height:34px;padding:0 18px;border:0;border-radius:17px;background:#e5484d;color:#fff;font-size:12px;font-weight:500;transition:opacity .15s ease;cursor:pointer}
+.batch-delete-btn:disabled{opacity:.35;cursor:not-allowed}
+
+.header-action-btn{color:var(--accent-color,#4a90e2)!important;font-weight:500}
+.record-detail-actions{display:flex;gap:8px;margin-top:10px}
+.record-detail-actions .action-btn{flex:1;height:32px;border:0;border-radius:9px;background:#252527;color:#fff;font-size:11px}
+.record-detail-actions .delete-btn{background:rgba(229,72,77,.1);color:#e5484d}
+
+.listen-confirm-backdrop{position:fixed;inset:0;z-index:13000;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.5);backdrop-filter:blur(4px);padding:24px}
+.listen-confirm-modal{width:100%;max-width:300px;background:var(--sys-bg-primary,#fff);border-radius:18px;padding:20px;text-align:center;box-shadow:0 12px 36px rgba(0,0,0,.24)}
+.confirm-icon{display:inline-flex;align-items:center;justify-content:center;width:48px;height:48px;border-radius:50%;background:rgba(229,72,77,.1);color:#e5484d;margin-bottom:12px}
+.listen-confirm-modal h3{margin:0 0 6px;font-size:15px;font-weight:600;color:var(--text-primary,#202124)}
+.listen-confirm-modal p{margin:0 0 18px;font-size:11px;line-height:1.5;color:var(--text-secondary,#666)}
+.confirm-actions{display:flex;gap:10px}
+.confirm-actions button{flex:1;height:36px;border:0;border-radius:10px;font-size:12px;font-weight:500;cursor:pointer}
+.btn-cancel{background:var(--sys-bg-tertiary,#ececef);color:inherit}
+.btn-danger{background:#e5484d;color:#fff}
+
+.fade-slide-enter-active,.fade-slide-leave-active{transition:all .2s ease}
+.fade-slide-enter-from,.fade-slide-leave-to{transform:translateY(100%);opacity:0}
+@keyframes fade-in{from{opacity:0;transform:scale(.8)}to{opacity:1;transform:scale(1)}}
+
+.record-empty{padding:80px 20px;color:var(--text-tertiary,#999);font-size:11px;text-align:center}.listen-hub-fade-enter-active,.listen-hub-fade-leave-active{transition:.2s}.listen-hub-fade-enter-from,.listen-hub-fade-leave-to{opacity:0}.listen-hub-fade-enter-from .listen-hub,.listen-hub-fade-leave-to .listen-hub{transform:translateY(30px)}.listen-hub{transition:.2s}@keyframes listen-spin{to{transform:rotate(360deg)}}@media(max-width:360px){.listen-composer{grid-template-columns:minmax(0,1fr) auto}.listen-composer .api{grid-column:1/-1;height:34px}.listen-hub{height:94vh}}
 .listen-wait-actions{display:flex;gap:8px}
 .listen-record-detail{padding:15px}.record-detail-head{padding:13px;border-radius:14px;background:var(--sys-bg-secondary,#f7f7f8)}.record-detail-head small{display:block;margin-top:4px;color:var(--text-tertiary,#999);font-size:9px;line-height:1.5}.record-detail-head p{margin:9px 0 0;color:var(--text-secondary,#666);font-size:11px;line-height:1.6}.record-detail-messages{padding:15px 2px}
-.listen-summary-action button,.record-detail-head button{height:31px;border:0;border-radius:9px;background:#252527;color:#fff;padding:0 12px;font-size:10px}.record-detail-head button{margin-top:10px}
+.listen-summary-action button{height:31px;border:0;border-radius:9px;background:#252527;color:#fff;padding:0 12px;font-size:10px}
 .listen-track-picker-toggle{display:flex;width:100%;justify-content:space-between;margin:9px 0 0;padding:10px 12px;border:1px solid var(--border-color,#e6e6e8);border-radius:12px;background:transparent;color:inherit;font-size:11px}.listen-track-picker-toggle b{font-size:16px}.listen-track-picker-toggle.room{margin:0;border-width:0 0 1px;border-radius:0}.listen-track-picker{margin-top:8px;padding:10px;border:1px solid var(--border-color,#e7e7e9);border-radius:13px}.listen-track-picker.room{margin:0;border-width:0 0 1px;border-radius:0;max-height:245px;overflow:auto}.listen-track-picker form{display:flex;gap:6px;margin-bottom:8px}.listen-track-picker form input{min-width:0;height:35px;flex:1;padding:0 10px;border:1px solid var(--border-color,#ddd);border-radius:10px;background:var(--sys-bg-secondary,#f6f6f7);color:inherit}.listen-track-picker form button{padding:0 12px;border:0;border-radius:10px;background:#272729;color:#fff}.listen-track-picker>small{display:block;margin:3px 2px;color:var(--text-tertiary,#999);font-size:9px}.listen-track-picker>button{display:flex;width:100%;align-items:center;gap:8px;padding:8px 2px;border:0;border-bottom:1px solid var(--border-color,#eee);background:transparent;color:inherit;text-align:left}.listen-track-picker>button span{display:flex;min-width:0;flex:1;flex-direction:column}.listen-track-picker>button strong,.listen-track-picker>button small{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.listen-track-picker>button small,.listen-track-picker>p{color:var(--text-tertiary,#999);font-size:9px}.listen-track-picker>button b{font-size:9px;font-weight:400}.listen-setting-text{max-width:145px;height:30px;padding:0 8px;border:1px solid var(--border-color,#ddd);border-radius:9px;background:transparent;color:inherit;text-align:right}
 .listen-connection{display:flex;align-items:center;flex-direction:column;padding:10px 16px 13px;border-bottom:1px solid var(--border-color,#eee);background:linear-gradient(180deg,var(--sys-bg-secondary,#f7f7f8),transparent)}.listen-connection>p{margin:3px 0 0;color:var(--text-tertiary,#888);font-size:9px;text-align:center}.listen-avatar-pair{position:relative;width:136px;height:66px}.listen-paired-avatar{position:absolute;top:2px;left:9px;z-index:2;display:grid;width:62px;height:62px;place-items:center;border-radius:50%;background:linear-gradient(145deg,#e4e4e8,#c9c9d0) center/cover;color:#555;font-size:17px;box-shadow:0 3px 12px rgba(0,0,0,.12)}.listen-paired-avatar.partner{left:65px;z-index:1}.listen-paired-avatar.anonymous{background:linear-gradient(145deg,#8177a8,#4f526d);color:#fff}.listen-paired-avatar.pending{animation:listen-avatar-pulse 1.5s ease-in-out infinite}.listen-participant>span{display:flex;min-width:0;flex:1;flex-direction:column;gap:3px}.listen-records button{align-items:center;gap:12px}.listen-record-avatars{position:relative;display:block;width:61px;min-width:61px!important;height:39px}.listen-record-avatars i{position:absolute;top:1px;display:grid;width:36px;height:36px;place-items:center;border-radius:50%;background:linear-gradient(145deg,#e4e4e8,#c9c9d0) center/cover;color:#555;font-size:10px;font-style:normal}.listen-record-avatars i:first-child{left:0;z-index:2}.listen-record-avatars i:last-child{left:31px}.listen-record-avatars i.anonymous{background:linear-gradient(145deg,#8177a8,#4f526d);color:#fff}.listen-record-copy{flex:1}.record-detail-pair{display:flex;justify-content:center;margin:0 0 4px}.record-detail-head{text-align:center}.record-detail-head>small,.record-detail-head>p{text-align:left}@keyframes listen-avatar-pulse{50%{transform:scale(.94);opacity:.72}}
 </style>

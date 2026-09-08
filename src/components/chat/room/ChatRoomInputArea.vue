@@ -3,7 +3,7 @@
 import { computed, nextTick, ref } from 'vue'
 import { ensureRelationship, formatRelationshipPlan } from '../../../composables/useChatRelationship'
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   selectionMode: 'recall' | 'mark' | 'general' | null
   getSelectedCount: number
   displayMessages: any[]
@@ -16,7 +16,9 @@ const props = defineProps<{
   isMixedOfflineActive: boolean
   mentionOptions?: Array<{ id: string; name: string; avatarUrl?: string; avatarText?: string; description?: string; disabled?: boolean }>
   showTransferFeature?: boolean
-}>()
+}>(), {
+  showTransferFeature: true
+})
 
 const emit = defineEmits<{
   (e: 'exit-multi-select-mode'): void

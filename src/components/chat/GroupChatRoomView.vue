@@ -869,7 +869,14 @@ onMounted(async () => { await loadEmojis(); updateTimeStr(); if (settleExpiredGr
     <GroupFinanceModal :visible="showGroupFinanceModal" :group="group" :members="members" @close="showGroupFinanceModal = false" @send="handleCreateGroupFinance" />
     <ChatVoiceModal :visible="media.showVoiceModal.value" @close="media.showVoiceModal.value = false" @send="handleSendVoice" />
     <ChatImageModal :visible="media.showImageModal.value" @close="media.showImageModal.value = false" @send="handleSendImage" />
-    <ChatUserThoughtModal :visible="showUserThoughtModal" :initial-text="group.pendingUserThought || ''" @close="showUserThoughtModal = false" @save="handleSaveUserThought" />
+    <ChatUserThoughtModal
+      :visible="showUserThoughtModal"
+      :initial-text="group.pendingUserThought || ''"
+      :user-avatar="groupUserProfile?.avatarUrl || ''"
+      :user-name="groupUserProfile?.name || '我'"
+      @close="showUserThoughtModal = false"
+      @save="handleSaveUserThought"
+    />
     <ChatWebSearchModal :visible="showWebSearchModal" :enabled="group.webSearchEnabled === true" @close="showWebSearchModal = false" @save="handleSaveWebSearch" />
     <ChatInnerThoughtModal :visible="showInnerThoughtModal" :chat="group" @close="showInnerThoughtModal = false" @save="persist" />
     <ChatMemoryModal :visible="showMemoryModal" :memories="group.memoryBook || []" :messages="group.messages || []" :is-summarizing="isSummarizing || isSummarizingMemories" @close="showMemoryModal = false" @update-memories="updateGroupMemories" @summarize-memories="refreshGroupMemories" />

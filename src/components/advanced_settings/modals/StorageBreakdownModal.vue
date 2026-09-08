@@ -276,7 +276,7 @@ const pieChartSegments = computed(() => {
   position: fixed; /* 强制基于浏览器视口，无视父级限制 */
   top: 0; left: 0; right: 0; bottom: 0;
   width: 100vw;
-  height: 100vh;
+  height: var(--app-height, 100vh);
   background: var(--sys-bg-primary, #ffffff);
   z-index: 9999; /* 绝对顶层，秒杀一切底层顶栏 */
   display: flex;
@@ -297,10 +297,11 @@ const pieChartSegments = computed(() => {
 
 .fullscreen-header {
   position: relative;
-  height: 60px;
+  height: calc(60px + var(--app-safe-top, 0px));
   display: flex;
   align-items: center;
-  padding: 0 16px;
+  padding: var(--app-safe-top, 0px) 16px 0;
+  box-sizing: border-box;
   flex-shrink: 0;
   border-bottom: 1px solid var(--sys-bg-tertiary);
 }
@@ -342,7 +343,7 @@ const pieChartSegments = computed(() => {
 .fullscreen-content {
   flex: 1;
   overflow-y: auto;
-  padding-bottom: 40px;
+  padding-bottom: calc(40px + var(--app-safe-bottom, 0px));
 }
 
 .scanning-state {

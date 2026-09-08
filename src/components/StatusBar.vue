@@ -2,15 +2,61 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { globalSettings } from '../store'
+import { useMusicPlayer } from '../composables/useMusicPlayer'
 
 defineProps<{
   isDark?: boolean
 }>()
 
+const emit = defineEmits<{
+  (e: 'open-app', appId: string): void
+}>()
+
+const { 
+  currentTrack, 
+  isPlaying, 
+  isBuffering, 
+  currentTime: musicCurrentTime, 
+  progressPercent, 
+  currentLyricIndex,
+  isLikedCurrent,
+  togglePlay, 
+  toggleLike,
+  nextTrack, 
+  prevTrack, 
+  seek,
+  formatTime 
+} = useMusicPlayer()
+
+const currentLyricText = computed(() => {
+  if (!currentTrack.value) return ''
+  const lyrics = currentTrack.value.lyrics
+  if (!lyrics || !lyrics.length) return ''
+  if (currentLyricIndex.value >= 0 && currentLyricIndex.value < lyrics.length) {
+    return lyrics[currentLyricIndex.value].text || ''
+  }
+  return ''
+})
+
 const currentTime = ref('')
 const isExpanded = ref(false)
 const notchRef = ref<HTMLElement | null>(null)
 let timer: ReturnType<typeof setInterval>
+
+const remainingTimeStr = computed(() => {
+  const duration = currentTrack.value?.duration || 0
+  const rem = Math.max(0, duration - musicCurrentTime.value)
+  return `-${formatTime(rem)}`
+})
+
+const handleProgressBarClick = (e: MouseEvent) => {
+  e.stopPropagation()
+  const target = e.currentTarget as HTMLElement
+  if (!target || !currentTrack.value?.duration) return
+  const rect = target.getBoundingClientRect()
+  const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width))
+  seek(ratio * currentTrack.value.duration)
+}
 
 const batteryLevel = ref(100)
 const isCharging = ref(false)
@@ -43,9 +89,35 @@ const updateTime = () => {
 }
 
 const handleClickOutside = (event: MouseEvent) => {
-  if (isExpanded.value && notchRef.value && !notchRef.value.contains(event.target as Node)) {
+  if (!isExpanded.value || !notchRef.value) return
+  const path = event.composedPath ? event.composedPath() : []
+  if (path.length > 0) {
+    if (!path.includes(notchRef.value)) {
+      isExpanded.value = false
+    }
+  } else if (!notchRef.value.contains(event.target as Node)) {
     isExpanded.value = false
   }
+}
+
+const handleOpenMusic = () => {
+  isExpanded.value = false
+  emit('open-app', 'music')
+}
+
+const handlePrev = (e: MouseEvent) => {
+  e.stopPropagation()
+  prevTrack()
+}
+
+const handleTogglePlay = (e: MouseEvent) => {
+  e.stopPropagation()
+  togglePlay()
+}
+
+const handleNext = (e: MouseEvent) => {
+  e.stopPropagation()
+  nextTrack()
 }
 
 onMounted(() => {
@@ -79,20 +151,105 @@ onUnmounted(() => {
 <template>
   <div class="status-bar" :class="{ 'dark-mode': isDark }">
     <div class="time">{{ currentTime }}</div>
-    <div class="notch" ref="notchRef" :class="{ expanded: isExpanded }" v-if="globalSettings.showNotch" @click="isExpanded = !isExpanded">
-      <div class="notch-content" :class="{ show: isExpanded }">
-        <div class="content-left">
-          <div class="music-cover">
-            <svg viewBox="0 0 24 24" width="16" height="16" fill="white"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 14.5c-2.49 0-4.5-2.01-4.5-4.5S9.51 7.5 12 7.5s4.5 2.01 4.5 4.5-2.01 4.5-4.5 4.5zM12 9c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"/></svg>
+    <div 
+      class="notch" 
+      ref="notchRef" 
+      :class="{ expanded: isExpanded, 'has-music': !!currentTrack, 'is-playing': isPlaying }" 
+      v-if="globalSettings.showNotch" 
+      @click="isExpanded = !isExpanded"
+    >
+      <!-- 未展开状态下的紧凑音乐指示器（有音乐时显示封面与跳动声波） -->
+      <div class="notch-compact-music" :class="{ 'is-hidden': isExpanded }">
+        <template v-if="currentTrack">
+          <div class="compact-cover" :style="currentTrack.coverUrl ? { backgroundImage: `url(${currentTrack.coverUrl})` } : {}">
+            <svg v-if="!currentTrack.coverUrl" viewBox="0 0 24 24" width="10" height="10" fill="white">
+              <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 14.5c-2.49 0-4.5-2.01-4.5-4.5S9.51 7.5 12 7.5s4.5 2.01 4.5 4.5-2.01 4.5-4.5 4.5z"/>
+            </svg>
           </div>
-          <span class="greeting">Love OS</span>
+          <div class="music-wave mini" :class="{ 'is-active': isPlaying }">
+            <span></span><span></span><span></span>
+          </div>
+        </template>
+      </div>
+
+      <!-- 展开后的灵动岛大卡片 (1:1 iOS 原生音乐岛) -->
+      <div class="notch-content" :class="{ show: isExpanded }">
+        <!-- 顶部信息行：封面 + 歌曲歌手 + 声波 -->
+        <div class="notch-top-row">
+          <div class="notch-main-info" @click.stop="handleOpenMusic">
+            <div class="music-cover" :style="currentTrack?.coverUrl ? { backgroundImage: `url(${currentTrack.coverUrl})` } : {}">
+              <svg v-if="!currentTrack?.coverUrl" viewBox="0 0 24 24" width="22" height="22" fill="white">
+                <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 14.5c-2.49 0-4.5-2.01-4.5-4.5S9.51 7.5 12 7.5s4.5 2.01 4.5 4.5-2.01 4.5-4.5 4.5zM12 9c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"/>
+              </svg>
+            </div>
+            <div class="notch-track-details">
+              <div class="track-title">{{ isBuffering ? '正在缓冲…' : (currentTrack?.title || 'Love OS 音乐') }}</div>
+              <div class="track-artist">{{ currentTrack?.artist || '点击进入播放器' }}</div>
+              <div class="track-lyric" v-if="currentLyricText" :key="currentLyricText">
+                {{ currentLyricText }}
+              </div>
+            </div>
+          </div>
+          <div class="music-wave expanded-wave" :class="{ 'is-active': isPlaying }" @click.stop="handleOpenMusic">
+            <span></span><span></span><span></span><span></span><span></span>
+          </div>
         </div>
-        <div class="music-wave">
-          <span></span><span></span><span></span><span></span>
+
+        <!-- 中部时间与胶囊进度条 -->
+        <div class="notch-progress-row">
+          <span class="time-label">{{ formatTime(musicCurrentTime) }}</span>
+          <div class="progress-bar-wrapper" @click="handleProgressBarClick">
+            <div class="progress-bar-track">
+              <div class="progress-bar-fill" :style="{ width: `${progressPercent}%` }"></div>
+            </div>
+          </div>
+          <span class="time-label">{{ remainingTimeStr }}</span>
+        </div>
+
+        <!-- 底部控制栏：喜欢 + 上一首/播放暂停/下一首 + 直达音乐App -->
+        <div class="notch-bottom-row" @click.stop="">
+          <!-- 喜欢/收藏星标 -->
+          <button class="action-icon-btn star-btn" :class="{ 'is-liked': isLikedCurrent }" @click="toggleLike" title="收藏">
+            <svg viewBox="0 0 24 24" width="20" height="20" :fill="isLikedCurrent ? '#ef4444' : 'none'" :stroke="isLikedCurrent ? '#ef4444' : 'currentColor'" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>
+            </svg>
+          </button>
+
+          <!-- 中间三键播放控制 -->
+          <div class="playback-controls">
+            <button class="action-icon-btn nav-btn" @click="handlePrev" title="上一首">
+              <svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor">
+                <path d="M11 18V6l-8.5 6 8.5 6zm.5-6l8.5 6V6l-8.5 6z"/>
+              </svg>
+            </button>
+            <button class="action-icon-btn play-main-btn" @click="handleTogglePlay" :title="isPlaying ? '暂停' : '播放'">
+              <svg v-if="isPlaying" viewBox="0 0 24 24" width="28" height="28" fill="currentColor">
+                <rect x="5" y="4" width="4.5" height="16" rx="1.5"/>
+                <rect x="14.5" y="4" width="4.5" height="16" rx="1.5"/>
+              </svg>
+              <svg v-else viewBox="0 0 24 24" width="28" height="28" fill="currentColor">
+                <path d="M7 4v16l13-8z"/>
+              </svg>
+            </button>
+            <button class="action-icon-btn nav-btn" @click="handleNext" title="下一首">
+              <svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor">
+                <path d="M4 18l8.5-6L4 6v12zm9-12v12l8.5-6L13 6z"/>
+              </svg>
+            </button>
+          </div>
+
+          <!-- 右侧直达音乐App/AirPlay图标 -->
+          <button class="action-icon-btn airplay-btn" @click="handleOpenMusic" title="打开音乐播放器">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M5 17H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2h-1"/>
+              <polygon points="12 15 17 21 7 21 12 15" fill="currentColor"/>
+            </svg>
+          </button>
         </div>
       </div>
-      <div class="notch-sensor"></div>
-      <div class="notch-camera"></div>
+
+      <div class="notch-sensor" v-if="!currentTrack || isExpanded"></div>
+      <div class="notch-camera" v-if="!currentTrack || isExpanded"></div>
     </div>
     <div class="icons">
       <!-- 精细 WiFi (1:1 风格, 调整尺寸适应电池比例) -->
@@ -125,19 +282,19 @@ onUnmounted(() => {
 
 <style scoped>
 .status-bar {
-  height: 44px;
+  height: var(--app-status-bar-height, 44px);
   width: 100%;
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 0 20px;
+  padding: 0 max(20px, var(--app-safe-right, 0px)) 0 max(20px, var(--app-safe-left, 0px));
   font-size: 14px;
   font-weight: 600;
   z-index: 100;
   color: var(--text-primary);
   transition: color 0.3s ease;
   position: absolute;
-  top: 0;
+  top: var(--app-safe-top, 0px);
   left: 0;
 }
 
@@ -147,7 +304,7 @@ onUnmounted(() => {
 
 /* 模拟刘海/灵动岛区域 */
 .notch {
-  width: 120px;
+  width: 124px;
   height: 28px;
   background-color: #000000;
   border-radius: 14px;
@@ -158,20 +315,82 @@ onUnmounted(() => {
   box-shadow: 
     inset 0px 1px 2px rgba(255, 255, 255, 0.15),
     inset 0px -1px 2px rgba(255, 255, 255, 0.05);
-  transition: all 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
+  transition: all 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
   cursor: pointer;
   z-index: 1000;
+  user-select: none;
+}
+
+.notch.has-music:not(.expanded) {
+  width: 176px;
 }
 
 .notch.expanded {
-  width: 280px;
-  height: 64px;
-  border-radius: 32px;
+  width: min(336px, calc(100vw - var(--app-safe-left, 0px) - var(--app-safe-right, 0px) - 16px));
+  height: 176px;
+  border-radius: 38px;
   box-shadow: 
-    inset 0px 1px 2px rgba(255, 255, 255, 0.15),
-    inset 0px -1px 2px rgba(255, 255, 255, 0.05),
-    0 10px 30px rgba(0,0,0,0.4);
+    inset 0px 1px 2px rgba(255, 255, 255, 0.22),
+    inset 0px -1px 2px rgba(255, 255, 255, 0.06),
+    0 16px 40px rgba(0, 0, 0, 0.68);
 }
+
+.notch-compact-music {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 9px;
+  box-sizing: border-box;
+  opacity: 1;
+  transition: opacity 0.2s ease;
+  pointer-events: none;
+}
+
+.notch-compact-music.is-hidden {
+  opacity: 0;
+}
+
+.compact-cover {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #a18cd1 0%, #fbc2eb 100%);
+  background-size: cover;
+  background-position: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
+  flex-shrink: 0;
+}
+
+.music-wave.mini {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  height: 12px;
+}
+
+.music-wave.mini span {
+  display: block;
+  width: 2.5px;
+  height: 3px;
+  background-color: #32d74b;
+  border-radius: 1px;
+}
+
+.music-wave.mini.is-active span {
+  animation: wave 1.2s ease-in-out infinite;
+}
+
+.music-wave.mini span:nth-child(1) { animation-delay: 0.0s; }
+.music-wave.mini span:nth-child(2) { animation-delay: 0.2s; }
+.music-wave.mini span:nth-child(3) { animation-delay: 0.4s; }
 
 .notch-sensor {
   position: absolute;
@@ -225,9 +444,9 @@ onUnmounted(() => {
   width: 100%;
   height: 100%;
   display: flex;
+  flex-direction: column;
   justify-content: space-between;
-  align-items: center;
-  padding: 0 20px;
+  padding: 16px 20px 14px;
   box-sizing: border-box;
   opacity: 0;
   pointer-events: none;
@@ -236,58 +455,222 @@ onUnmounted(() => {
 
 .notch-content.show {
   opacity: 1;
-  transition: opacity 0.3s ease 0.2s;
+  transition: opacity 0.28s cubic-bezier(0.2, 0.8, 0.2, 1) 0.12s;
   pointer-events: auto;
 }
 
-.content-left {
+/* 顶部第一行 */
+.notch-top-row {
   display: flex;
   align-items: center;
-  gap: 10px;
+  justify-content: space-between;
+  width: 100%;
+  min-height: 48px;
+}
+
+.notch-main-info {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: 1;
+  min-width: 0;
+  cursor: pointer;
 }
 
 .music-cover {
-  width: 32px;
-  height: 32px;
-  background: linear-gradient(135deg, #a18cd1 0%, #fbc2eb 100%);
-  border-radius: 8px;
+  width: 48px;
+  height: 48px;
+  background: linear-gradient(135deg, #2b3a4a 0%, #1e2630 100%);
+  background-size: cover;
+  background-position: center;
+  border-radius: 12px;
   display: flex;
   justify-content: center;
   align-items: center;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.45);
+  flex-shrink: 0;
 }
 
-.greeting {
+.notch-track-details {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 3px;
+  min-width: 0;
+  flex: 1;
+  padding-right: 8px;
+}
+
+.track-title {
   color: #ffffff;
   font-size: 15px;
-  font-weight: 600;
-  letter-spacing: 0.5px;
+  font-weight: 700;
+  letter-spacing: -0.2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.music-wave {
+.track-artist {
+  color: rgba(255, 255, 255, 0.55);
+  font-size: 12px;
+  font-weight: 400;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.track-lyric {
+  color: rgba(255, 255, 255, 0.88);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.25;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  animation: lyricFadeIn 0.3s ease-out;
+  margin-top: 1px;
+}
+
+.expanded-wave {
   display: flex;
   align-items: center;
   gap: 3px;
-  height: 16px;
+  height: 20px;
+  flex-shrink: 0;
+  cursor: pointer;
 }
 
-.music-wave span {
+.expanded-wave span {
   display: block;
-  width: 3px;
-  height: 4px;
-  background-color: #32d74b;
-  border-radius: 1.5px;
-  animation: wave 1.2s ease-in-out infinite;
+  width: 3.5px;
+  height: 5px;
+  background-color: #3b82f6;
+  border-radius: 2px;
 }
 
-.music-wave span:nth-child(1) { animation-delay: 0.0s; }
-.music-wave span:nth-child(2) { animation-delay: 0.2s; }
-.music-wave span:nth-child(3) { animation-delay: 0.4s; }
-.music-wave span:nth-child(4) { animation-delay: 0.6s; }
+.expanded-wave.is-active span {
+  animation: expandedWaveAnim 1.2s ease-in-out infinite;
+}
 
-@keyframes wave {
+.expanded-wave span:nth-child(1) { animation-delay: 0.0s; }
+.expanded-wave span:nth-child(2) { animation-delay: 0.25s; }
+.expanded-wave span:nth-child(3) { animation-delay: 0.1s; }
+.expanded-wave span:nth-child(4) { animation-delay: 0.35s; }
+.expanded-wave span:nth-child(5) { animation-delay: 0.18s; }
+
+@keyframes expandedWaveAnim {
   0%, 100% { height: 4px; }
-  50% { height: 16px; }
+  50% { height: 18px; }
+}
+
+/* 中部第二行：时间与进度条 */
+.notch-progress-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  margin: 4px 0 2px;
+}
+
+.time-label {
+  color: rgba(255, 255, 255, 0.45);
+  font-size: 11px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  width: 32px;
+}
+
+.time-label:last-child {
+  text-align: right;
+}
+
+.progress-bar-wrapper {
+  flex: 1;
+  padding: 6px 0;
+  cursor: pointer;
+}
+
+.progress-bar-track {
+  width: 100%;
+  height: 6px;
+  background: rgba(255, 255, 255, 0.16);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.progress-bar-fill {
+  height: 100%;
+  background: rgba(255, 255, 255, 0.7);
+  border-radius: 3px;
+  transition: width 0.2s linear;
+}
+
+/* 底部第三行：控制按钮 */
+.notch-bottom-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+}
+
+.action-icon-btn {
+  background: none;
+  border: none;
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  padding: 6px;
+  border-radius: 50%;
+  transition: transform 0.15s, opacity 0.15s;
+}
+
+.action-icon-btn:hover {
+  opacity: 0.85;
+}
+
+.action-icon-btn:active {
+  transform: scale(0.88);
+}
+
+.playback-controls {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+}
+
+.nav-btn {
+  opacity: 0.95;
+}
+
+.play-main-btn {
+  padding: 4px;
+  opacity: 1;
+}
+
+.star-btn {
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.star-btn.is-liked {
+  color: #ef4444;
+}
+
+.airplay-btn {
+  color: rgba(255, 255, 255, 0.6);
+}
+
+@keyframes lyricFadeIn {
+  from {
+    opacity: 0.2;
+    transform: translateY(2px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .icons {

@@ -19,31 +19,20 @@ const handleRefresh = () => {
 
 <template>
   <div class="chat-appearance-container">
-    <!-- 仿 EDGE 地址栏 -->
-    <header class="edge-header">
-      <div class="edge-nav-buttons">
-        <button class="nav-btn" @click="handleBack" title="后退">
-          <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>
+    <!-- Safari 胶囊药丸风格顶栏 -->
+    <header class="safari-header">
+      <div class="safari-address-bar">
+        <button class="safari-action-btn aa-btn" @click="handleBack" title="返回">
+          <span class="aa-text"><sub>A</sub>A</span>
         </button>
-        <button class="nav-btn disabled" title="前进">
-          <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"></line><polyline points="12 5 19 12 12 19"></polyline></svg>
-        </button>
-        <button class="nav-btn" @click="handleRefresh" title="刷新">
-          <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
-        </button>
-      </div>
-      <div class="edge-address-bar">
-        <div class="address-icon lock-icon">
-          <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
+        <div class="safari-url-display">
+          {{ currentUrl }}
         </div>
-        <input type="text" class="address-input" v-model="currentUrl" readonly />
-        <div class="address-icon star-icon">
-          <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>
-        </div>
-      </div>
-      <div class="edge-extensions">
-        <button class="nav-btn">
-          <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="1"></circle><circle cx="19" cy="12" r="1"></circle><circle cx="5" cy="12" r="1"></circle></svg>
+        <button class="safari-action-btn refresh-btn" @click="handleRefresh" title="刷新">
+          <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="23 4 23 10 17 10"></polyline>
+            <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
+          </svg>
         </button>
       </div>
     </header>
@@ -80,103 +69,97 @@ const handleRefresh = () => {
   overflow: hidden;
 }
 
-/* 仿 EDGE 地址栏样式 */
-.edge-header {
-  display: flex;
-  align-items: center;
-  padding: 8px 12px;
-  background: #f3f3f3;
-  border-bottom: 1px solid #e5e5e5;
-  padding-top: calc(8px + env(safe-area-inset-top, 40px)); /* 适配刘海屏 */
-  gap: 8px;
-}
-
-.edge-nav-buttons {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-
-.nav-btn {
-  background: transparent;
-  border: none;
-  border-radius: 4px;
-  width: 32px;
-  height: 32px;
+/* Safari 胶囊药丸风格顶栏 */
+.safari-header {
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #4a4a4a;
-  cursor: pointer;
+  padding: 8px 16px;
+  background: #ffffff;
+  padding-top: calc(10px + env(safe-area-inset-top, 20px));
+}
+
+.safari-address-bar {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: #f1f2f4;
+  border-radius: 14px;
+  height: 42px;
+  padding: 0 10px;
+  position: relative;
   transition: background-color 0.2s;
 }
 
-.nav-btn:hover {
-  background-color: #e5e5e5;
-}
-
-.nav-btn.disabled {
-  color: #b0b0b0;
-  cursor: not-allowed;
-}
-
-.nav-btn.disabled:hover {
-  background-color: transparent;
-}
-
-.edge-address-bar {
-  flex: 1;
-  display: flex;
-  align-items: center;
-  background: #ffffff;
-  border: 1px solid #ffffff;
-  border-radius: 20px;
-  height: 34px;
-  padding: 0 12px;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.05);
-  transition: box-shadow 0.2s, border-color 0.2s;
-}
-
-.edge-address-bar:focus-within {
-  border-color: #0078d4;
-  box-shadow: 0 0 0 1px rgba(0, 120, 212, 0.3);
-}
-
-.address-icon {
+.safari-action-btn {
+  background: transparent;
+  border: none;
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #666666;
+  color: #3c3c43;
+  cursor: pointer;
+  height: 32px;
+  min-width: 32px;
+  padding: 0 4px;
+  border-radius: 8px;
+  user-select: none;
+  transition: opacity 0.15s;
 }
 
-.address-input {
+.safari-action-btn:active {
+  opacity: 0.5;
+}
+
+.aa-btn {
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, sans-serif;
+  font-weight: 500;
+  letter-spacing: -0.5px;
+}
+
+.aa-text {
+  font-size: 15px;
+  line-height: 1;
+  display: inline-flex;
+  align-items: baseline;
+}
+
+.aa-text sub {
+  font-size: 11px;
+  bottom: 0;
+  margin-right: 1px;
+}
+
+.safari-url-display {
   flex: 1;
-  border: none;
-  outline: none;
-  background: transparent;
-  font-size: 13px;
-  color: #333333;
-  padding: 0 8px;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  text-align: center;
+  font-size: 14px;
+  color: #1c1c1e;
+  font-weight: 400;
+  white-space: nowrap;
+  overflow: hidden;
   text-overflow: ellipsis;
+  padding: 0 8px;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, sans-serif;
 }
 
-.edge-extensions {
-  display: flex;
-  align-items: center;
+.refresh-btn {
+  color: #8e8e93;
 }
 
 /* 主体区域 */
 .appearance-main {
   flex: 1;
-  background: var(--sys-bg-primary, #ffffff);
+  background: #ffffff;
   padding: 24px 16px;
 }
 
 .appearance-settings-list {
-  background: var(--sys-bg-secondary, #f8f9fa);
+  background: #ffffff;
   border-radius: 12px;
   padding: 0 16px;
+  border: 1px solid #f0f0f0;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.02);
 }
 
@@ -185,7 +168,7 @@ const handleRefresh = () => {
   justify-content: space-between;
   align-items: center;
   padding: 16px 0;
-  border-bottom: 1px solid var(--border-color, #e5e5e5);
+  border-bottom: 1px solid #f5f5f5;
 }
 
 .setting-item:last-child {

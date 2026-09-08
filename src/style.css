@@ -25,7 +25,13 @@ body {
 
 :root {
   --app-height: 100vh;
+  --app-safe-top: env(safe-area-inset-top, 0px);
+  --app-safe-right: env(safe-area-inset-right, 0px);
   --app-safe-bottom: env(safe-area-inset-bottom, 0px);
+  --app-safe-left: env(safe-area-inset-left, 0px);
+  --app-status-bar-height: 44px;
+  --app-content-top: var(--app-safe-top);
+  --app-content-bottom: var(--app-safe-bottom);
   /* ========================================= */
   /* 全局浅色模式变量 (默认)                     */
   /* ========================================= */
@@ -101,4 +107,46 @@ html.keyboard-open {
   flex-direction: column;
   min-width: 0;
   min-height: 0;
+}
+
+/* iOS 网页始终保留可操作安全区；开关只改变背景是否沉浸铺到系统栏后方。 */
+html.is-ios-web:not(.ios-pwa-fullscreen) #app::before {
+  position: absolute;
+  z-index: 9998;
+  top: 0;
+  right: 0;
+  left: 0;
+  height: var(--app-safe-top);
+  background: var(--sys-bg-primary);
+  pointer-events: none;
+  content: '';
+}
+
+html.is-ios-web:not(.ios-pwa-fullscreen) #app::after {
+  position: absolute;
+  z-index: 9998;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  height: var(--app-safe-bottom);
+  background: var(--sys-bg-primary);
+  pointer-events: none;
+  content: '';
+}
+
+/* ========================================= */
+/* 防自动填充与安全文本遮罩                   */
+/* ========================================= */
+.masked-secret-input {
+  -webkit-text-security: disc !important;
+  font-family: text-security-disc, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
+}
+
+/* 消除浏览器自动填充导致的浅蓝/浅黄背景高亮 */
+input:-webkit-autofill,
+input:-webkit-autofill:hover,
+input:-webkit-autofill:focus,
+input:-webkit-autofill:active {
+  transition: background-color 5000s ease-in-out 0s, color 5000s ease-in-out 0s !important;
+  -webkit-text-fill-color: inherit !important;
 }

@@ -408,7 +408,7 @@ onUnmounted(() => {
             <svg viewBox="0 0 24 24"><path d="m7 10 5 5 5-5"/></svg>
           </button>
           <div v-if="showSettings" class="settings-body">
-            <label class="field"><span>Auth Key</span><div class="input-action"><input v-model="config.apiKey" :type="showApiKey ? 'text' : 'password'" autocomplete="off" placeholder="Google AI Studio Auth Key"><button type="button" @click="showApiKey = !showApiKey">{{ showApiKey ? '隐藏' : '显示' }}</button></div><small>仅保存在当前浏览器，不读取聊天或图像接入配置。</small></label>
+            <label class="field"><span>Auth Key</span><div class="input-action"><input v-model="config.apiKey" :type="globalSettings.disableBrowserAutofill ? 'text' : (showApiKey ? 'text' : 'password')" :class="{ 'masked-secret-input': globalSettings.disableBrowserAutofill && !showApiKey }" autocomplete="new-password" autocorrect="off" autocapitalize="off" data-lpignore="true" data-form-type="other" spellcheck="false" placeholder="Google AI Studio Auth Key"><button type="button" @click="showApiKey = !showApiKey">{{ showApiKey ? '隐藏' : '显示' }}</button></div><small>仅保存在当前浏览器，不读取聊天或图像接入配置。</small></label>
             <label class="field"><span>Base URL</span><div class="input-action"><input v-model="config.baseUrl" inputmode="url"><button type="button" @click="config.baseUrl = VEO_DEFAULT_BASE_URL">默认</button></div></label>
           </div>
         </section>

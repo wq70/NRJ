@@ -1,5 +1,6 @@
 /* WARNING: 本项目专属“粘人精”，严禁出现 Kiro、Krio、周棋洛等任何相关英文或拼音命名！ */
 <script setup lang="ts">
+import { globalSettings } from '../store/global'
 import { useVoiceAccess } from '../composables/useVoiceAccess'
 import './app_VoiceAccess.css'
 
@@ -375,7 +376,18 @@ const {
                   {{ isCheckingBalance ? '查询中...' : '查询余额' }}
                 </button>
               </div>
-              <input type="password" v-model="apiKey" placeholder="在此输入您的 API Key" class="fluid-input" />
+              <input 
+                :type="globalSettings.disableBrowserAutofill ? 'text' : 'password'" 
+                :class="['fluid-input', { 'masked-secret-input': globalSettings.disableBrowserAutofill }]"
+                autocomplete="new-password"
+                autocorrect="off"
+                autocapitalize="off"
+                data-lpignore="true"
+                data-form-type="other"
+                spellcheck="false"
+                v-model="apiKey" 
+                placeholder="在此输入您的 API Key" 
+              />
               
               <div class="msg-box">
                 <div v-if="hasTokenPlan === true && balanceMsg" class="success-msg">
@@ -455,7 +467,18 @@ const {
 
             <div class="form-row column-row">
               <div class="row-header"><span class="row-label">接口密钥</span></div>
-              <input type="password" v-model="seedApiKey" placeholder="在此输入独立的 Seed Audio API Key" class="fluid-input" autocomplete="off" />
+              <input 
+                :type="globalSettings.disableBrowserAutofill ? 'text' : 'password'" 
+                :class="['fluid-input', { 'masked-secret-input': globalSettings.disableBrowserAutofill }]"
+                autocomplete="new-password"
+                autocorrect="off"
+                autocapitalize="off"
+                data-lpignore="true"
+                data-form-type="other"
+                spellcheck="false"
+                v-model="seedApiKey" 
+                placeholder="在此输入独立的 Seed Audio API Key" 
+              />
             </div>
 
             <div v-if="seedTransport === 'custom'" class="form-row column-row">
@@ -543,7 +566,18 @@ const {
 
             <div class="form-row column-row">
               <div class="row-header"><span class="row-label">接口密钥</span></div>
-              <input type="password" v-model="geminiApiKey" placeholder="在此输入独立的 Gemini TTS API Key" class="fluid-input" autocomplete="off" />
+              <input 
+                :type="globalSettings.disableBrowserAutofill ? 'text' : 'password'" 
+                :class="['fluid-input', { 'masked-secret-input': globalSettings.disableBrowserAutofill }]"
+                autocomplete="new-password"
+                autocorrect="off"
+                autocapitalize="off"
+                data-lpignore="true"
+                data-form-type="other"
+                spellcheck="false"
+                v-model="geminiApiKey" 
+                placeholder="在此输入独立的 Gemini TTS API Key" 
+              />
             </div>
 
             <div v-if="geminiTransport === 'custom'" class="form-row column-row">
@@ -618,7 +652,18 @@ const {
 
             <div class="form-row column-row">
               <div class="row-header"><span class="row-label">接口密钥</span></div>
-              <input type="password" v-model="elevenLabsApiKey" placeholder="在此输入独立的 ElevenLabs API Key" class="fluid-input" autocomplete="off" />
+              <input 
+                :type="globalSettings.disableBrowserAutofill ? 'text' : 'password'" 
+                :class="['fluid-input', { 'masked-secret-input': globalSettings.disableBrowserAutofill }]"
+                autocomplete="new-password"
+                autocorrect="off"
+                autocapitalize="off"
+                data-lpignore="true"
+                data-form-type="other"
+                spellcheck="false"
+                v-model="elevenLabsApiKey" 
+                placeholder="在此输入独立的 ElevenLabs API Key" 
+              />
               <div class="provider-hint">官方密钥建议仅开放文本转语音权限，并设置使用额度。</div>
             </div>
 
@@ -702,7 +747,18 @@ const {
 
             <div class="form-row column-row">
               <div class="row-header"><span class="row-label">接口密钥</span></div>
-              <input type="password" v-model="microsoftMaiApiKey" placeholder="在此输入独立的 Azure Speech 或中转 API Key" class="fluid-input" autocomplete="off" />
+              <input 
+                :type="globalSettings.disableBrowserAutofill ? 'text' : 'password'" 
+                :class="['fluid-input', { 'masked-secret-input': globalSettings.disableBrowserAutofill }]"
+                autocomplete="new-password"
+                autocorrect="off"
+                autocapitalize="off"
+                data-lpignore="true"
+                data-form-type="other"
+                spellcheck="false"
+                v-model="microsoftMaiApiKey" 
+                placeholder="在此输入独立的 Azure Speech 或中转 API Key" 
+              />
               <div class="provider-hint">公开部署时建议使用中转服务，避免在浏览器中暴露 Azure Speech 资源密钥。</div>
             </div>
 
@@ -807,7 +863,18 @@ const {
 
             <div class="form-row column-row">
               <div class="row-header"><span class="row-label">接口密钥</span></div>
-              <input type="password" v-model="aliyunApiKey" placeholder="在此输入独立的百炼或中转 API Key" class="fluid-input" autocomplete="off" />
+              <input 
+                :type="globalSettings.disableBrowserAutofill ? 'text' : 'password'" 
+                :class="['fluid-input', { 'masked-secret-input': globalSettings.disableBrowserAutofill }]"
+                autocomplete="new-password"
+                autocorrect="off"
+                autocapitalize="off"
+                data-lpignore="true"
+                data-form-type="other"
+                spellcheck="false"
+                v-model="aliyunApiKey" 
+                placeholder="在此输入独立的百炼或中转 API Key" 
+              />
               <div class="provider-hint">北京与新加坡地域的 API Key 不通用，请与所选地域保持一致。</div>
             </div>
 
@@ -905,7 +972,18 @@ const {
 
             <div class="form-row column-row">
               <div class="row-header"><span class="row-label">Access Token</span></div>
-              <input type="password" v-model="doubaoAccessToken" placeholder="填写该语音应用的 Access Token" class="fluid-input" autocomplete="off" />
+              <input 
+                :type="globalSettings.disableBrowserAutofill ? 'text' : 'password'" 
+                :class="['fluid-input', { 'masked-secret-input': globalSettings.disableBrowserAutofill }]"
+                autocomplete="new-password"
+                autocorrect="off"
+                autocapitalize="off"
+                data-lpignore="true"
+                data-form-type="other"
+                spellcheck="false"
+                v-model="doubaoAccessToken" 
+                placeholder="填写该语音应用的 Access Token" 
+              />
               <div class="provider-hint">凭据仅保存在当前浏览器。请使用自己的账号凭据，不要在公开页面内置共享 Token。</div>
             </div>
 
@@ -1015,7 +1093,18 @@ const {
 
             <div class="form-row column-row">
               <div class="row-header"><span class="row-label">API Key</span></div>
-              <input type="password" v-model="fishAudioApiKey" placeholder="填写 Fish Audio API Key" class="fluid-input" autocomplete="off" />
+              <input 
+                :type="globalSettings.disableBrowserAutofill ? 'text' : 'password'" 
+                :class="['fluid-input', { 'masked-secret-input': globalSettings.disableBrowserAutofill }]"
+                autocomplete="new-password"
+                autocorrect="off"
+                autocapitalize="off"
+                data-lpignore="true"
+                data-form-type="other"
+                spellcheck="false"
+                v-model="fishAudioApiKey" 
+                placeholder="填写 Fish Audio API Key" 
+              />
               <div v-if="fishAudioConnectionMode === 'web'" class="pill-tabs wide-tabs compact-tabs">
                 <div class="pill-tab" :class="{ active: !fishAudioRememberWebKey }" @click="fishAudioRememberWebKey = false">仅当前会话</div>
                 <div class="pill-tab" :class="{ active: fishAudioRememberWebKey }" @click="fishAudioRememberWebKey = true">记住到浏览器</div>

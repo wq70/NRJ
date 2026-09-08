@@ -482,7 +482,7 @@ const generatePresets = async () => {
 
 @media (max-width: 480px) {
   .journal-container {
-    height: 100vh;
+    height: var(--app-height, 100vh);
     border-radius: 0;
     border: none;
   }
@@ -490,8 +490,9 @@ const generatePresets = async () => {
 
 /* 顶栏 */
 .journal-header {
-  height: 54px;
-  padding: 0 16px;
+  height: calc(54px + var(--app-safe-top, 0px));
+  padding: var(--app-safe-top, 0px) 16px 0;
+  box-sizing: border-box;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -563,7 +564,7 @@ const generatePresets = async () => {
 .journal-page-body {
   flex: 1;
   overflow-y: auto;
-  padding: 16px;
+  padding: 16px 16px calc(16px + var(--app-safe-bottom, 0px));
   display: flex;
   flex-direction: column;
   gap: 14px;

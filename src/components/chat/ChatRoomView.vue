@@ -1546,6 +1546,7 @@ onUnmounted(() => {
       :isGenerating="isGenerating || isRelationshipAdvancing"
       :selectedChat="selectedChat"
       :isMixedOfflineActive="isMixedOfflineSessionActive"
+      :show-transfer-feature="true"
       @exit-multi-select-mode="exitMultiSelectMode"
       @select-all="selectAll"
       @recall-selected-messages="recallSelectedMessages"
@@ -1599,6 +1600,8 @@ onUnmounted(() => {
     <ChatUserThoughtModal
       :visible="showUserThoughtModal"
       :initial-text="selectedChat?.pendingUserThought || ''"
+      :user-avatar="myProfile?.avatarUrl || ''"
+      :user-name="myProfile?.name || '我'"
       @close="showUserThoughtModal = false"
       @save="handleSaveUserThought"
     />

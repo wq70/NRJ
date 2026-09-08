@@ -798,6 +798,9 @@ const handleSaveTimeDisplayStyle = (style: 'none' | 'hm' | 'hms', position: 'ava
 
     <ChatSettingsSearchBar
       v-model="searchQuery"
+      :user-time="userCurrentTime"
+      :character-time="characterCurrentTime"
+      :character-name="selectedChat?.realName || selectedChat?.name || '角色'"
       @back="emit('back')"
     />
 

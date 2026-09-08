@@ -1,6 +1,7 @@
 <!-- WARNING: 本项目专属“粘人精”，严禁出现 Kiro、Krio、周棋洛等任何相关英文或拼音命名！ -->
 <script setup lang="ts">
 import { computed, onUnmounted, ref, watch } from 'vue'
+import { globalSettings } from '../../store'
 import {
   useGeminiImage,
   type GeminiImageMimeType,
@@ -285,7 +286,18 @@ onUnmounted(() => Object.values(historyImageUrls.value).forEach(url => url.start
         <label class="field">
           <span>API Key</span>
           <div class="row">
-            <input v-model="config.apiKey" :type="showApiKey ? 'text' : 'password'" :placeholder="config.transport === 'official' ? 'Google AI Studio API Key' : 'OpenRouter API Key'">
+            <input 
+              v-model="config.apiKey" 
+              :type="globalSettings.disableBrowserAutofill ? 'text' : (showApiKey ? 'text' : 'password')"
+              :class="{ 'masked-secret-input': globalSettings.disableBrowserAutofill && !showApiKey }"
+              autocomplete="new-password"
+              autocorrect="off"
+              autocapitalize="off"
+              data-lpignore="true"
+              data-form-type="other"
+              spellcheck="false"
+              :placeholder="config.transport === 'official' ? 'Google AI Studio API Key' : 'OpenRouter API Key'"
+            >
             <button class="soft-btn" @click="showApiKey = !showApiKey">{{ showApiKey ? '隐藏' : '显示' }}</button>
           </div>
         </label>

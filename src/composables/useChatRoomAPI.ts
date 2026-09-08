@@ -812,6 +812,20 @@ export function useChatRoomAPI(
             return
           }
 
+          const isLastVisibleAction = (currentIndex: number) => {
+            for (let i = currentIndex + 1; i < extractedActions.length; i++) {
+              const act = extractedActions[i]
+              if (['msg', 'send_image', 'send_voice', 'send_emoji', 'send_existing_file', 'generate_file', 'send_existing_video', 'generate_video', 'send_transfer', 'send_red_packet', 'narration'].includes(act.type)) {
+                if (callMode && CALL_BLOCKED_ACTIONS.has(act.type)) continue
+                if (offlineMeetMode && chatSettings.disableSpecialTagsInOffline !== false && OFFLINE_BLOCKED_ACTIONS.has(act.type)) continue
+                if (act.type === 'send_voice' && !chatToUpdate?.enableVoiceReply) continue
+                if (act.type === 'send_image' && !chatToUpdate?.enableNAIImageGen) continue
+                return false
+              }
+            }
+            return true
+          }
+
           if (['send_existing_file', 'generate_file', 'send_existing_video', 'generate_video'].includes(action.type)) {
             if (chatToUpdate) {
               try {
@@ -823,9 +837,10 @@ export function useChatRoomAPI(
                   signal: abortController?.signal
                 })
                 const id = Date.now() + index
+                const isLastMsg = isLastVisibleAction(index)
                 pushMsg(chatToUpdate, result.kind === 'file'
-                  ? { id, timestamp: id, type: 'left', messageType: 'file', content: `[文件：${result.fileData.name}]`, fileData: result.fileData, turnId, sequence: index }
-                  : { id, timestamp: id, type: 'left', messageType: 'video', content: `[视频：${result.videoData.name}]`, videoData: result.videoData, turnId, sequence: index })
+                  ? { id, timestamp: id, type: 'left', messageType: 'file', content: `[文件：${result.fileData.name}]`, fileData: result.fileData, turnId, sequence: index, costTime: isLastMsg ? costSeconds : undefined }
+                  : { id, timestamp: id, type: 'left', messageType: 'video', content: `[视频：${result.videoData.name}]`, videoData: result.videoData, turnId, sequence: index, costTime: isLastMsg ? costSeconds : undefined })
                 const preview = result.kind === 'file' ? '[发来一个文件]' : '[发来一段视频]'
                 chatToUpdate.preview = preview
                 chatToUpdate.time = new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
@@ -891,6 +906,10 @@ export function useChatRoomAPI(
                   action.content,
                   isRoomActive.value
                 )
+                if (isLastVisibleAction(index)) {
+                  const createdMsg = chatToUpdate.messages.find((m: any) => m.id === baseMessageId)
+                  if (createdMsg) createdMsg.costTime = costSeconds
+                }
               }
             }
             const timer2 = setTimeout(() => {
@@ -908,10 +927,12 @@ export function useChatRoomAPI(
             }
             if (chatToUpdate) {
               const voiceSeconds = action.amount || Math.max(1, Math.ceil(action.content.length / 4))
+              const isLastMsg = isLastVisibleAction(index)
               pushMsg(chatToUpdate,{
                 id: Date.now() + index,
                 type: 'left',
                 content: '[发来一段语音]',
+                costTime: isLastMsg ? costSeconds : undefined,
                 voiceData: {
                   text: action.content,
                   seconds: voiceSeconds
@@ -974,13 +995,15 @@ export function useChatRoomAPI(
                 urlToSave = URL.createObjectURL(matchedEmoji.data)
               }
               
+              const isLastMsg = isLastVisibleAction(index)
               pushMsg(chatToUpdate,{
                 id: Date.now() + index,
                 type: 'left',
                 content: matchedEmoji.name || `[表情]`,
                 isEmoji: true,
                 emojiId: matchedEmoji.id,
-                emojiUrl: urlToSave
+                emojiUrl: urlToSave,
+                costTime: isLastMsg ? costSeconds : undefined
               })
               
               chatToUpdate.preview = `[发来一个表情包]`
@@ -1020,10 +1043,12 @@ export function useChatRoomAPI(
                 tType,
                 action.content || (tType === 'red_packet' ? '恭喜发财，大吉大利' : '转账')
               )
+              const isLastMsg = isLastVisibleAction(index)
               pushMsg(chatToUpdate,{
                 id: createChatMessageId(),
                 type: 'left',
                 content: text,
+                costTime: isLastMsg ? costSeconds : undefined,
                 transferData: createTransferData({
                   type: tType,
                   amount: action.amount || 0,
@@ -1063,7 +1088,7 @@ export function useChatRoomAPI(
           const timer1 = setTimeout(async () => {
             if (!chatToUpdate) return
             
-            const isLastMsg = index === extractedActions.length - 1 || !extractedActions.slice(index + 1).some(a => a.type === 'msg')
+            const isLastMsg = isLastVisibleAction(index)
             
             const thinking = index === 0 ? thinkingText : ''
             const msgContent = action.content

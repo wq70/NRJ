@@ -10,6 +10,7 @@ import AppearanceWatermarkModal from './AppearanceWatermarkModal.vue'
 import AvatarUploadModal from './AvatarUploadModal.vue'
 import { useCustomFonts } from '../composables/useCustomFonts'
 import { useWatermark } from '../composables/useWatermark'
+import { getIosWebDisplayMode, isIosWebEnvironment } from '../utils/iosWeb'
 
 const emit = defineEmits(['close'])
 const { records: customFonts, initialize: initializeFonts } = useCustomFonts()
@@ -50,6 +51,8 @@ const handleGlobalWallpaperSaved = async (url: string | null) => {
 }
 
 const activeTab = ref('all') // 'all', 'display', 'personalize', 'lockscreen'
+const showIosPwaFullscreenSetting = isIosWebEnvironment()
+const iosWebDisplayMode = getIosWebDisplayMode()
 
 const allSettingsData = computed(() => {
   const wallpaperItems: any[] = [
@@ -117,6 +120,12 @@ const allSettingsData = computed(() => {
       type: 'link',
       label: '侧边栏拖拽图标',
       valueText: globalSettings.sliderIcon
+    },
+    {
+      id: 'disableBrowserAutofill',
+      type: 'toggle',
+      label: '禁止浏览器自动填入',
+      value: globalSettings.disableBrowserAutofill
     }
   ]
 
@@ -174,42 +183,31 @@ const allSettingsData = computed(() => {
     }
   }
 
+  const displayItems: any[] = [
+    { id: 'darkMode', type: 'toggle', label: '夜间模式', value: globalSettings.darkMode },
+    { id: 'nightShift', type: 'toggle', label: '护眼模式', value: globalSettings.nightShift },
+    { id: 'showStatusBar', type: 'toggle', label: '显示状态栏', value: globalSettings.showStatusBar },
+    { id: 'showNotch', type: 'toggle', label: '灵动岛', value: globalSettings.showNotch },
+    { id: 'showDockAppNames', type: 'toggle', label: 'Dock应用名', value: globalSettings.showDockAppNames }
+  ]
+
+  if (showIosPwaFullscreenSetting) {
+    displayItems.push({
+      id: 'iosPwaFullscreen',
+      type: 'toggle',
+      label: 'iOS PWA 全屏',
+      description: iosWebDisplayMode === 'standalone'
+        ? '背景延伸至屏幕边缘，并避开时间、灵动岛与底部横条'
+        : 'Safari 仅适配安全区；添加到主屏幕后可获得沉浸显示',
+      value: globalSettings.iosPwaFullscreen
+    })
+  }
+
   return [
     {
       id: 'display',
       title: '显示',
-      items: [
-        { 
-          id: 'darkMode', 
-          type: 'toggle', 
-          label: '夜间模式', 
-          value: globalSettings.darkMode
-        },
-        { 
-          id: 'nightShift', 
-          type: 'toggle', 
-          label: '护眼模式', 
-          value: globalSettings.nightShift
-        },
-        {
-          id: 'showStatusBar',
-          type: 'toggle',
-          label: '显示状态栏',
-          value: globalSettings.showStatusBar
-        },
-        {
-          id: 'showNotch',
-          type: 'toggle',
-          label: '灵动岛',
-          value: globalSettings.showNotch
-        },
-        {
-          id: 'showDockAppNames',
-          type: 'toggle',
-          label: 'Dock应用名',
-          value: globalSettings.showDockAppNames
-        }
-      ]
+      items: displayItems
     },
     {
       id: 'personalize',
@@ -328,7 +326,7 @@ const handleInputModalSubmit = async () => {
 // 点击项目分发
 const handleItemClick = (item: any) => {
   if (item.type === 'toggle') {
-    if (['darkMode', 'nightShift', 'showStatusBar', 'showNotch', 'chargingBoltInside', 'enableAvatarCrop', 'enableSlider', 'showDockAppNames', 'enableLockScreen'].includes(item.id)) {
+    if (['darkMode', 'nightShift', 'showStatusBar', 'showNotch', 'iosPwaFullscreen', 'chargingBoltInside', 'enableAvatarCrop', 'enableSlider', 'showDockAppNames', 'enableLockScreen', 'disableBrowserAutofill'].includes(item.id)) {
       (globalSettings as any)[item.id] = !item.value
     }
   } else if (item.id === 'wallpaper') {
@@ -417,7 +415,10 @@ const handleItemClick = (item: any) => {
           </div>
           <div class="settings-list">
             <div class="setting-item" v-for="item in group.items" :key="item.id" @click="handleItemClick(item)">
-              <span class="item-label">{{ item.label }}</span>
+              <span class="item-copy">
+                <span class="item-label">{{ item.label }}</span>
+                <small v-if="item.description" class="item-description">{{ item.description }}</small>
+              </span>
               <div class="item-control">
                 <template v-if="item.type === 'toggle'">
                   <div class="soft-toggle" :class="{ 'is-active': item.value }">

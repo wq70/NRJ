@@ -107,6 +107,7 @@ export const DEFAULT_BUBBLE_CSS = `/* 系统原始气泡公开选择器 */
 .chat-bubble-theme [data-chat-bubble="other"] {
   width: fit-content;
   max-width: 100%;
+  box-sizing: border-box;
   padding: 8px 12px;
   color: var(--text-primary);
   background: transparent;
@@ -114,7 +115,10 @@ export const DEFAULT_BUBBLE_CSS = `/* 系统原始气泡公开选择器 */
   border-radius: 14px;
   font-size: 14px;
   line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
   word-break: break-word;
+  word-break: break-all;
 }
 
 .chat-bubble-theme [data-chat-bubble="self"] { border-top-right-radius: 4px; }
@@ -319,7 +323,7 @@ const sideCss = (side: BubbleSideStyle, direction: 'self' | 'other') => {
   const tailSide = direction === 'self' ? 'right' : 'left'
   const tailBorder = direction === 'self' ? `border-left:${side.tailSize}px solid ${safeColor(side.background, 'transparent')}` : `border-right:${side.tailSize}px solid ${safeColor(side.background, 'transparent')}`
   return `
-.chat-bubble-theme [data-chat-bubble="${direction}"]{position:relative;isolation:isolate;width:fit-content;max-width:${num(side.maxWidth,55,100)}%;padding:${num(side.paddingY,2,30)}px ${num(side.paddingX,2,36)}px;color:${safeColor(side.textColor,'var(--text-primary)')}!important;background:transparent!important;border:0!important;border-radius:${radii};box-shadow:none!important;font-size:${num(side.fontSize,10,24)}px;line-height:${num(side.lineHeight,1,2.2)};opacity:${num(side.opacity,.2,1)};overflow:visible!important;word-break:break-word}
+.chat-bubble-theme [data-chat-bubble="${direction}"]{position:relative;isolation:isolate;box-sizing:border-box;width:fit-content;max-width:${num(side.maxWidth,55,100)}%;padding:${num(side.paddingY,2,30)}px ${num(side.paddingX,2,36)}px;color:${safeColor(side.textColor,'var(--text-primary)')}!important;background:transparent!important;border:0!important;border-radius:${radii};box-shadow:none!important;font-size:${num(side.fontSize,10,24)}px;line-height:${num(side.lineHeight,1,2.2)};opacity:${num(side.opacity,.2,1)};overflow:visible!important;white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word;word-break:break-all}
 .chat-bubble-theme [data-chat-bubble="${direction}"]::before{content:"";position:absolute;inset:0;z-index:-1;box-sizing:border-box;pointer-events:none;background:${image ? `linear-gradient(rgba(255,255,255,${1-num(side.backgroundOpacity,0,1)}),rgba(255,255,255,${1-num(side.backgroundOpacity,0,1)})),url("${image}"),` : ''}${gradient};background-size:${image ? `${fit},${fit},auto` : 'auto'};background-position:${side.backgroundPositionX}% ${side.backgroundPositionY}%;background-repeat:${repeat};border:${num(side.borderWidth,0,8)}px ${side.borderStyle} ${safeColor(side.borderColor,'transparent')};border-radius:${radii};box-shadow:0 ${num(side.shadowY,-20,30)}px ${num(side.shadowBlur,0,60)}px ${safeColor(side.shadowColor,'transparent')};backdrop-filter:blur(${num(side.blur,0,30)}px);clip-path:${clip};${mask ? `-webkit-mask-image:url("${mask}");mask-image:url("${mask}");-webkit-mask-size:100% 100%;mask-size:100% 100%;` : ''}${frame ? `border:${num(side.frameWidth,1,50)}px solid transparent;border-image-source:url("${frame}");border-image-slice:${side.frameSliceTop}% ${side.frameSliceRight}% ${side.frameSliceBottom}% ${side.frameSliceLeft}% fill;border-image-repeat:stretch;` : ''}}
 .chat-bubble-theme [data-chat-bubble="${direction}"]::after{${side.tailType === 'none' ? 'content:none' : 'content:""'};position:absolute;z-index:-1;${tailSide}:-${side.tailSize-1}px;top:${tailTop};bottom:${tailBottom};width:${side.tailType === 'image' ? side.tailSize*1.5 : 0}px;height:${side.tailType === 'image' ? side.tailSize*1.5 : 0}px;${side.tailType === 'triangle' ? `border-top:${side.tailSize/2}px solid transparent;border-bottom:${side.tailSize/2}px solid transparent;${tailBorder};` : ''}${side.tailType === 'image' && tailImage ? `background:url("${tailImage}") center/contain no-repeat;` : ''}}
 `

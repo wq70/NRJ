@@ -1,6 +1,6 @@
 <!-- WARNING: 本项目专属“粘人精”，严禁出现 Kiro、Krio、周棋洛等任何相关英文或拼音命名！ -->
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import localforage from 'localforage'
 import { chatSettings, worldBooks, worldBookGroups } from '../../store'
 import { deleteGroupChat, saveGroupChat, type GroupChatRecord } from '../../services/groupChat'
@@ -44,6 +44,7 @@ import GroupAnnouncementEditModal from './group/GroupAnnouncementEditModal.vue'
 import { normalizeMemoryBridgeMemberSettings } from '../../services/memoryBridge'
 import {
   applyIdentityClock,
+  formatIdentityClockTime,
   getIdentityClockLabel,
   isConversationTimePaused,
   pauseConversationTime,
@@ -75,6 +76,30 @@ const bilingualLanguageKind = ref<'output' | 'translation'>('output')
 const showTimezoneModal = ref(false)
 const showIdentityTimeModal = ref(false)
 const timezoneTarget = ref<'user' | 'member'>('user')
+
+// 计算用户与群/成员时间
+const userCurrentTime = ref('')
+const groupCurrentTime = ref('')
+let groupTimer: any = null
+
+const updateGroupTimes = () => {
+  try {
+    userCurrentTime.value = formatIdentityClockTime(myProfile.value)
+  } catch {
+    userCurrentTime.value = '--:--'
+  }
+
+  try {
+    const firstMember = members.value[0] || (props.group.memberIds.length ? props.chats.find(c => String(c.characterEntityId || c.id) === props.group.memberIds[0]) : null)
+    if (firstMember) {
+      groupCurrentTime.value = formatIdentityClockTime(firstMember)
+    } else {
+      groupCurrentTime.value = userCurrentTime.value
+    }
+  } catch {
+    groupCurrentTime.value = '--:--'
+  }
+}
 const showMsgCountModal = ref(false)
 const showOfflinePresetModal = ref(false)
 const showGroupOptionModal = ref(false)
@@ -535,13 +560,33 @@ const resummarizeGroupCallRecord = (id: string | number) => {
   record.content = (record.rawMessages || []).map((message: any) => `${message.type === 'right' ? (props.group.userProfile?.name || '我') : (props.group.memberNicknames?.[String(message.senderId || '')] || message.senderNameSnapshot || '群成员')}：${message.content}`).join('\n') || '本次群通话无文字记录'
   save()
 }
-onMounted(async () => { if (!categories.includes(activeCategory.value)) activeCategory.value = '群聊'; await loadEmojis(); currentChatWallpaper.value = await wallpaperStore.getItem<string>(`wallpaper_${props.group.id}`); if ((props.group as any).openEmojiManagerRequested) { (props.group as any).openEmojiManagerRequested = false; showEmojiView.value = true } })
+onMounted(async () => {
+  if (!categories.includes(activeCategory.value)) activeCategory.value = '群聊'
+  await loadEmojis()
+  currentChatWallpaper.value = await wallpaperStore.getItem<string>(`wallpaper_${props.group.id}`)
+  if ((props.group as any).openEmojiManagerRequested) {
+    ;(props.group as any).openEmojiManagerRequested = false
+    showEmojiView.value = true
+  }
+  updateGroupTimes()
+  groupTimer = setInterval(updateGroupTimes, 10000)
+})
+
+onUnmounted(() => {
+  if (groupTimer) clearInterval(groupTimer)
+})
 </script>
 
 <template>
   <ChatSummaryView v-if="showSummaryView" :chat="group" :save-chat="saveSummary" @back="showSummaryView = false" />
   <div v-else class="view-container full-height chat-settings-base group-settings-view">
-    <ChatSettingsSearchBar v-model="searchQuery" @back="emit('back')" />
+    <ChatSettingsSearchBar
+      v-model="searchQuery"
+      :user-time="userCurrentTime"
+      :character-time="groupCurrentTime"
+      :character-name="group.name || '群聊'"
+      @back="emit('back')"
+    />
     <main class="settings-main-clean">
       <ChatSettingsTabs v-show="!searchQuery" :categories="categories" :active-category="activeCategory" @change="setCategory" />
 

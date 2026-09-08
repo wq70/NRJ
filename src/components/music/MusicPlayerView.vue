@@ -7,6 +7,7 @@ import { useTogetherListen } from '../../services/togetherListen'
 import { myProfile } from '../../composables/chatState/state'
 import MusicYouTubePlayer from './MusicYouTubePlayer.vue'
 import MusicBilibiliPlayer from './MusicBilibiliPlayer.vue'
+import MusicShareModal from './modals/MusicShareModal.vue'
 
 const {
   currentTrack,
@@ -34,6 +35,61 @@ const {
 
 const emit = defineEmits(['collapse', 'openPlaylistDrawer', 'openPlaybackSettings', 'openComments', 'openTogetherListen', 'addToPlaylist'])
 const { setMessage, loadComments } = useMusicLibrary()
+
+// 点赞动效与本地计数反馈
+const isLikeAnimating = ref(false)
+let likeAnimTimer: number | null = null
+
+// 基于歌曲标题与歌手哈希一个逼真的基础点赞数，使未点赞时也有真实氛围，点赞后即刻 +1
+const getBaseLikeCount = (trackId: string, title = '') => {
+  let hash = 0
+  const str = trackId + title
+  for (let i = 0; i < str.length; i++) {
+    hash = (hash << 5) - hash + str.charCodeAt(i)
+    hash |= 0
+  }
+  const abs = Math.abs(hash)
+  // 产生 600 ~ 68000 之间的随机但稳定的基础赞数
+  return 600 + (abs % 67400)
+}
+
+const currentTrackLikeCount = computed(() => {
+  if (!currentTrack.value) return 0
+  const key = currentTrack.value.id || currentTrack.value.sourceTrackId || currentTrack.value.title
+  const base = getBaseLikeCount(key, currentTrack.value.title)
+  return isLikedCurrent.value ? base + 1 : base
+})
+
+const formatLikeBadge = (count: number) => {
+  if (!count || count <= 0) return ''
+  if (count >= 100000) return `${Math.floor(count / 10000)}w+`
+  if (count >= 10000) return `${(count / 10000).toFixed(1).replace(/\.0$/, '')}w`
+  if (count > 999) return '999+'
+  return `${count}`
+}
+
+const handleToggleLike = () => {
+  if (!currentTrack.value) {
+    setMessage('请先播放一首歌曲')
+    return
+  }
+  const willLike = !isLikedCurrent.value
+  toggleLike()
+
+  // 触发弹跳心动动效
+  isLikeAnimating.value = true
+  if (likeAnimTimer !== null) clearTimeout(likeAnimTimer)
+  likeAnimTimer = window.setTimeout(() => {
+    isLikeAnimating.value = false
+  }, 650)
+
+  // 弹出轻提示
+  if (willLike) {
+    setMessage('已添加到「我喜欢的音乐」')
+  } else {
+    setMessage('已从「我喜欢的音乐」移除')
+  }
+}
 const playModeLabel = computed(() => ({ loop: '歌单循环', single: '单曲循环', shuffle: '歌单随机播放', random: '真随机播放' })[playMode.value])
 const { activeSession } = useTogetherListen()
 const listenClock = ref(Date.now())
@@ -176,6 +232,8 @@ watch(isLyricMode, (val) => {
   }
 })
 
+const isShareModalOpen = ref(false)
+
 onBeforeUnmount(() => {
   if (userScrollTimer !== null) {
     window.clearTimeout(userScrollTimer)
@@ -184,11 +242,12 @@ onBeforeUnmount(() => {
   if (listenBubbleTimer !== null) window.clearTimeout(listenBubbleTimer)
 })
 
-const shareCurrent = async () => {
-  if (!currentTrack.value) return
-  const data = { title: currentTrack.value.title, text: `${currentTrack.value.title} - ${currentTrack.value.artist}`, url: currentTrack.value.externalUrl || window.location.href }
-  if (navigator.share) { try { await navigator.share(data) } catch { return } }
-  else { await navigator.clipboard?.writeText(`${data.text}\n${data.url}`); setMessage('歌曲信息已复制') }
+const openShareModal = () => {
+  if (!currentTrack.value) {
+    setMessage('请先播放一首歌曲')
+    return
+  }
+  isShareModalOpen.value = true
 }
 </script>
 
@@ -207,7 +266,7 @@ const shareCurrent = async () => {
         <div class="track-artist">{{ currentTrack?.artist || '独奏' }}</div>
       </div>
 
-      <button class="header-action-btn" title="分享" @click="shareCurrent">
+      <button class="header-action-btn" title="分享" @click="openShareModal">
         <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none">
           <circle cx="18" cy="5" r="3"></circle>
           <circle cx="6" cy="12" r="3"></circle>
@@ -232,24 +291,26 @@ const shareCurrent = async () => {
       <MusicYouTubePlayer v-if="activePlaybackType === 'embed' && activeEmbedId && activeEmbedProvider === 'youtube'" :videoId="activeEmbedId" :volume="volume" />
       <MusicBilibiliPlayer v-else-if="activePlaybackType === 'embed' && activeEmbedId && activeEmbedProvider === 'bilibili'" :embedId="activeEmbedId" :volume="volume" :duration="currentTrack?.duration || 0" />
       <div class="disc-wrapper" v-else-if="!isLyricMode" @click="toggleLyricView">
-          <div class="vinyl-record" :class="{ 'is-rotating': isPlaying }">
-          <!-- 黑胶外圈光泽纹理 -->
+        <div class="vinyl-record" :class="{ 'is-rotating': isPlaying }">
+          <!-- 黑胶微细密纹与音轨分段 -->
+          <div class="vinyl-sheen"></div>
           <div class="vinyl-groove groove-1"></div>
           <div class="vinyl-groove groove-2"></div>
           <div class="vinyl-groove groove-3"></div>
+          <div class="vinyl-groove groove-4"></div>
 
-          <!-- 黑胶中心贴纸/封面 -->
-          <div class="vinyl-center-art" :style="currentTrack?.coverUrl ? { backgroundImage: `url(${currentTrack.coverUrl})`, backgroundSize: 'cover', backgroundPosition: 'center' } : {}">
-            <div class="art-inner-pattern">
-              <svg viewBox="0 0 100 100" width="100%" height="100%" fill="none">
-                <circle cx="50" cy="50" r="46" stroke="rgba(255,255,255,0.2)" stroke-width="1.5"/>
-                <circle cx="50" cy="50" r="28" stroke="rgba(255,255,255,0.15)" stroke-width="1"/>
-                <line x1="50" y1="18" x2="50" y2="82" stroke="rgba(255,255,255,0.3)" stroke-width="1.5"/>
-                <line x1="18" y1="50" x2="82" y2="50" stroke="rgba(255,255,255,0.3)" stroke-width="1.5"/>
-              </svg>
+          <!-- 黑胶中心封面 (无任何多余遮挡与装饰) -->
+          <div class="vinyl-center-recess">
+            <div class="vinyl-center-art" :style="currentTrack?.coverUrl ? { backgroundImage: `url(${currentTrack.coverUrl})` } : {}">
+              <!-- 无封面时的占位图标 -->
+              <div v-if="!currentTrack?.coverUrl" class="vinyl-fallback-label">
+                <svg viewBox="0 0 24 24" width="30" height="30" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M9 18V5l12-2v13"></path>
+                  <circle cx="6" cy="18" r="3"></circle>
+                  <circle cx="18" cy="16" r="3"></circle>
+                </svg>
+              </div>
             </div>
-            <!-- 中心转轴小孔 -->
-            <div class="spindle-hole"></div>
           </div>
         </div>
       </div>
@@ -288,10 +349,22 @@ const shareCurrent = async () => {
 
       <!-- 下方交互功能栏 (喜欢、评论、音效、更多) -->
       <div class="player-action-bar">
-      <button class="interact-btn" :class="{ liked: isLikedCurrent }" @click="toggleLike">
-        <svg viewBox="0 0 24 24" width="22" height="22" :fill="isLikedCurrent ? '#e5e5ea' : 'none'" stroke="currentColor" stroke-width="2">
-          <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path>
-        </svg>
+      <button
+        class="interact-btn like-btn"
+        :class="{ liked: isLikedCurrent, 'is-animating': isLikeAnimating }"
+        :title="isLikedCurrent ? '取消喜欢' : '喜欢'"
+        :aria-label="isLikedCurrent ? '取消喜欢' : '喜欢'"
+        @click="handleToggleLike"
+      >
+        <span class="heart-icon-wrapper">
+          <svg viewBox="0 0 24 24" width="22" height="22" class="player-heart-svg">
+            <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"></path>
+          </svg>
+          <span class="heart-sparkle" v-if="isLikedCurrent"></span>
+        </span>
+        <span v-if="currentTrackLikeCount > 0" class="like-badge" :class="{ 'badge-liked': isLikedCurrent }">
+          {{ formatLikeBadge(currentTrackLikeCount) }}
+        </span>
       </button>
 
       <button class="interact-btn comment-btn" title="评论" @click="openComments">
@@ -403,6 +476,13 @@ const shareCurrent = async () => {
       </button>
       </div>
     </div>
+
+    <!-- 专属美化分享弹窗 -->
+    <MusicShareModal
+      :visible="isShareModalOpen"
+      :track="currentTrack"
+      @close="isShareModalOpen = false"
+    />
   </div>
 </template>
 
@@ -635,15 +715,22 @@ const shareCurrent = async () => {
   width: min(72vw, 290px);
   height: min(72vw, 290px);
   border-radius: 50%;
-  background: radial-gradient(circle, #252528 0%, #111113 60%, #000000 100%);
-  border: 7px solid #222226;
-  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.28), inset 0 0 10px rgba(255, 255, 255, 0.1);
+  background:
+    radial-gradient(circle at center, rgba(255, 255, 255, 0.03) 0%, transparent 68%),
+    repeating-radial-gradient(circle at center, #19191d 0px, #19191d 1.5px, #121215 2px, #121215 3px);
+  border: 6px solid #18181b;
+  box-shadow:
+    0 22px 48px rgba(0, 0, 0, 0.36),
+    0 4px 12px rgba(0, 0, 0, 0.2),
+    inset 0 0 1px 1px rgba(255, 255, 255, 0.12),
+    inset 0 0 20px rgba(0, 0, 0, 0.9);
   position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
   transition: transform 0.3s;
   flex: 0 0 auto;
+  overflow: hidden;
 }
 
 @supports (height: 1cqh) {
@@ -654,9 +741,15 @@ const shareCurrent = async () => {
 }
 
 .is-dark .vinyl-record {
-  background: radial-gradient(circle, #18181b 0%, #0d0d0f 60%, #000000 100%);
-  border-color: #1c1c1f;
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.7), inset 0 0 10px rgba(255, 255, 255, 0.08);
+  background:
+    radial-gradient(circle at center, rgba(255, 255, 255, 0.03) 0%, transparent 68%),
+    repeating-radial-gradient(circle at center, #161619 0px, #161619 1.5px, #0e0e10 2px, #0e0e10 3px);
+  border-color: #141416;
+  box-shadow:
+    0 22px 50px rgba(0, 0, 0, 0.72),
+    0 6px 16px rgba(0, 0, 0, 0.45),
+    inset 0 0 1px 1px rgba(255, 255, 255, 0.08),
+    inset 0 0 24px rgba(0, 0, 0, 0.95);
 }
 
 .vinyl-record.is-rotating {
@@ -672,53 +765,102 @@ const shareCurrent = async () => {
   }
 }
 
+/* 拟真双向对角扇形高光扫光 */
+.vinyl-sheen {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: conic-gradient(
+    from 45deg at 50% 50%,
+    rgba(255, 255, 255, 0) 0deg,
+    rgba(255, 255, 255, 0.06) 45deg,
+    rgba(255, 255, 255, 0.16) 65deg,
+    rgba(255, 255, 255, 0.06) 85deg,
+    rgba(255, 255, 255, 0) 130deg,
+    rgba(255, 255, 255, 0) 225deg,
+    rgba(255, 255, 255, 0.06) 245deg,
+    rgba(255, 255, 255, 0.16) 265deg,
+    rgba(255, 255, 255, 0.06) 285deg,
+    rgba(255, 255, 255, 0) 330deg,
+    rgba(255, 255, 255, 0) 360deg
+  );
+  mix-blend-mode: screen;
+  pointer-events: none;
+  z-index: 1;
+}
+
 .vinyl-groove {
   position: absolute;
   border-radius: 50%;
-  border: 1px solid rgba(255, 255, 255, 0.08);
   pointer-events: none;
+  z-index: 2;
 }
 
 .groove-1 {
-  width: 86%;
-  height: 86%;
+  width: 90%;
+  height: 90%;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  box-shadow: inset 0 0 4px rgba(0, 0, 0, 0.5);
 }
 
 .groove-2 {
-  width: 72%;
-  height: 72%;
+  width: 78%;
+  height: 78%;
+  border: 1px dashed rgba(255, 255, 255, 0.06);
 }
 
 .groove-3 {
-  width: 58%;
-  height: 58%;
+  width: 66%;
+  height: 66%;
+  border: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.groove-4 {
+  width: 55%;
+  height: 55%;
+  border: 1px solid rgba(0, 0, 0, 0.6);
+  box-shadow: 0 0 2px rgba(255, 255, 255, 0.04);
+}
+
+/* 盘芯内嵌凹槽 */
+.vinyl-center-recess {
+  width: 48%;
+  height: 48%;
+  border-radius: 50%;
+  background: #111114;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow:
+    inset 0 2px 6px rgba(0, 0, 0, 0.8),
+    0 0 0 1px rgba(255, 255, 255, 0.06),
+    0 2px 8px rgba(0, 0, 0, 0.6);
+  position: relative;
+  z-index: 3;
 }
 
 .vinyl-center-art {
-  width: 42%;
-  height: 42%;
+  width: 92%;
+  height: 92%;
   border-radius: 50%;
-  background: linear-gradient(135deg, #3a3a40 0%, #1c1c1f 100%);
-  border: 3px solid #111113;
+  background: radial-gradient(circle at 35% 35%, #3d3d46 0%, #202025 70%, #17171a 100%);
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
   position: relative;
   overflow: hidden;
   display: flex;
   align-items: center;
   justify-content: center;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.35);
 }
 
-.art-inner-pattern {
-  width: 100%;
-  height: 100%;
-}
-
-.spindle-hole {
-  position: absolute;
-  width: 12px;
-  height: 12px;
-  border-radius: 50%;
-  background: #000000;
-  border: 2px solid rgba(255, 255, 255, 0.3);
+.vinyl-fallback-label {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: rgba(255, 255, 255, 0.72);
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.4));
 }
 
 /* 歌词 */
@@ -837,12 +979,89 @@ const shareCurrent = async () => {
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: color 0.2s;
+  transition: color 0.2s, transform 0.15s;
   position: relative;
+}
+
+.interact-btn:active {
+  transform: scale(0.92);
 }
 
 .is-dark .interact-btn {
   color: #8e8e93;
+}
+
+/* 点赞专属按钮样式与动效 */
+.like-btn {
+  position: relative;
+}
+
+.heart-icon-wrapper {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.player-heart-svg {
+  fill: transparent;
+  stroke: currentColor;
+  stroke-width: 2;
+  transition: fill 0.25s cubic-bezier(0.34, 1.56, 0.64, 1), stroke 0.25s ease, transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.like-btn.liked .player-heart-svg {
+  fill: #ff3b30;
+  stroke: #ff3b30;
+  filter: drop-shadow(0 2px 6px rgba(255, 59, 48, 0.38));
+}
+
+.like-btn.is-animating .player-heart-svg {
+  animation: heart-pop 0.6s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+@keyframes heart-pop {
+  0% {
+    transform: scale(1);
+  }
+  30% {
+    transform: scale(1.36);
+  }
+  60% {
+    transform: scale(0.92);
+  }
+  80% {
+    transform: scale(1.08);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+.like-badge {
+  position: absolute;
+  top: 1px;
+  left: calc(50% + 5px);
+  min-width: 14px;
+  height: 14px;
+  padding: 0 4px;
+  background: rgba(142, 142, 147, 0.85);
+  color: #ffffff;
+  font-size: 9px;
+  font-weight: 600;
+  line-height: 14px;
+  border-radius: 7px;
+  text-align: center;
+  white-space: nowrap;
+  pointer-events: none;
+  transform: scale(0.92);
+  transform-origin: left center;
+  transition: background 0.2s, transform 0.2s;
+}
+
+.like-badge.badge-liked {
+  background: #ff3b30;
+  box-shadow: 0 1px 5px rgba(255, 59, 48, 0.45);
 }
 
 .comment-btn {
@@ -856,7 +1075,7 @@ const shareCurrent = async () => {
   min-width: 14px;
   height: 14px;
   padding: 0 4px;
-  background: #ef4444;
+  background: rgba(142, 142, 147, 0.85);
   color: #ffffff;
   font-size: 9px;
   font-weight: 600;
@@ -864,20 +1083,13 @@ const shareCurrent = async () => {
   border-radius: 7px;
   text-align: center;
   white-space: nowrap;
-  box-shadow: 0 1px 4px rgba(239, 68, 68, 0.4);
   pointer-events: none;
   transform: scale(0.92);
   transform-origin: left center;
+  transition: background 0.2s, transform 0.2s;
 }
 
-.interact-btn.liked {
-  color: #111111;
-}
 .interact-btn:disabled{opacity:.35;cursor:default}
-
-.is-dark .interact-btn.liked {
-  color: #ffffff;
-}
 
 /* 进度条 */
 .progress-bar-container {

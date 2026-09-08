@@ -157,7 +157,7 @@ const requestOverwrite = (preset: ApiPreset, e: Event) => {
   top: 0;
   left: 0;
   width: 100vw;
-  height: 100vh;
+  height: var(--app-height, 100vh);
   z-index: 2200;
   display: flex;
   align-items: center;

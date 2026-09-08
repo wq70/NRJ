@@ -7,7 +7,7 @@ import ApiPresetManageModal from '../ApiPresetManageModal.vue'
 import NewApiImportModal from '../NewApiImportModal.vue'
 import NewApiNodeStatusCard from '../NewApiNodeStatusCard.vue'
 import { apiCapabilityGroups, assignableApiCapabilities, type ApiCapabilityId } from '../../services/apiCapabilities'
-import { apiNodeEffectiveKey, apiNodeEffectiveUrl, getCapabilityOwner, setApiNodeCapability, type ApiNode, type ApiPreset } from '../../store'
+import { apiNodeEffectiveKey, apiNodeEffectiveUrl, getCapabilityOwner, setApiNodeCapability, type ApiNode, type ApiPreset, globalSettings } from '../../store'
 import { detectNewApiNode, type NewApiDetectionResult } from '../../services/newApiNode'
 import { parseAdapterResponse, prepareAdapterRequest, type ModelAdapterProfile } from '../../services/modelAdapters'
 
@@ -588,7 +588,18 @@ const confirmReset = () => {
         <div v-show="isMatch('基础接入 API 密钥')" class="form-row">
           <div class="form-label">API 密钥</div>
           <div class="form-value input-with-action">
-            <input v-model="settings.key" :type="showPassword?'text':'password'" class="line-input" autocomplete="off" spellcheck="false" placeholder="sk-...">
+            <input 
+              v-model="settings.key" 
+              :type="globalSettings.disableBrowserAutofill ? 'text' : (showPassword ? 'text' : 'password')" 
+              :class="['line-input', { 'masked-secret-input': globalSettings.disableBrowserAutofill && !showPassword }]"
+              autocomplete="new-password" 
+              autocorrect="off"
+              autocapitalize="off"
+              data-lpignore="true"
+              data-form-type="other"
+              spellcheck="false" 
+              placeholder="sk-..."
+            >
             <button class="icon-action-btn" type="button" :title="showPassword?'隐藏':'显示'" @click="showPassword=!showPassword">
               <svg v-if="!showPassword" viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="1.2" fill="none"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
               <svg v-else viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="1.2" fill="none"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path><line x1="1" y1="1" x2="23" y2="23"></line></svg>

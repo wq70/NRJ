@@ -1,6 +1,6 @@
 /* WARNING: 本项目专属“粘人精”，严禁出现 Kiro、Krio、周棋洛等任何相关英文或拼音命名！ */
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import { useAppIcons } from '../composables/useAppIcons'
 import AvatarUploadModal from './AvatarUploadModal.vue'
 import { appRegistry } from '../appRegistry'
@@ -18,6 +18,13 @@ const close = () => {
 }
 
 const apps = appRegistry.map(app => ({ id: app.id, name: app.name, defaultIcon: app.icon }))
+
+const searchQuery = ref('')
+const filteredApps = computed(() => {
+  const query = searchQuery.value.trim().toLowerCase()
+  if (!query) return apps
+  return apps.filter(app => app.name.toLowerCase().includes(query))
+})
 
 const currentEditingApp = ref<string | null>(null)
 const showUploadModal = ref(false)
@@ -69,6 +76,29 @@ const saveCurrentAsPreset = async () => {
           <button class="btn btn-outline" @click="showPresetsList = true">我的预设方案</button>
           <button class="btn btn-primary" @click="showPresetInput = !showPresetInput">存为预设</button>
         </div>
+
+        <div v-if="!showPresetsList" class="search-bar-wrap">
+          <div class="search-box">
+            <svg class="search-icon" viewBox="0 0 24 24" width="15" height="15" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="11" cy="11" r="8"></circle>
+              <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+            </svg>
+            <input
+              type="text"
+              v-model="searchQuery"
+              placeholder="搜索应用名称..."
+              class="search-input"
+            />
+            <button
+              v-if="searchQuery"
+              class="clear-btn"
+              @click="searchQuery = ''"
+              title="清除搜索"
+            >
+              ×
+            </button>
+          </div>
+        </div>
         
         <div v-if="showPresetInput" class="preset-input-area">
           <input type="text" v-model="presetNameInput" placeholder="输入预设名称..." class="soft-input" />
@@ -99,20 +129,25 @@ const saveCurrentAsPreset = async () => {
           </div>
 
           <!-- 图标列表界面 -->
-          <div v-else class="app-grid-list">
-            <div class="app-item" v-for="app in apps" :key="app.id">
-              <!-- 预览区 -->
-              <div class="icon-preview" 
-                   :class="{ 'has-custom': !!customIcons[app.id] }"
-                   :style="customIcons[app.id] ? { backgroundImage: `url(${customIcons[app.id]})` } : {}">
-                <template v-if="!customIcons[app.id]">
-                  <div v-html="app.defaultIcon"></div>
-                </template>
+          <div v-else>
+            <div v-if="filteredApps.length === 0" class="empty-tip">
+              未找到相关应用
+            </div>
+            <div v-else class="app-grid-list">
+              <div class="app-item" v-for="app in filteredApps" :key="app.id">
+                <!-- 预览区 -->
+                <div class="icon-preview" 
+                     :class="{ 'has-custom': !!customIcons[app.id] }"
+                     :style="customIcons[app.id] ? { backgroundImage: `url(${customIcons[app.id]})` } : {}">
+                  <template v-if="!customIcons[app.id]">
+                    <div v-html="app.defaultIcon"></div>
+                  </template>
+                </div>
+                <span class="app-name">{{ app.name }}</span>
+                <button class="btn-change" @click="openEditModal(app.id)">
+                  {{ customIcons[app.id] ? '更改' : '设置' }}
+                </button>
               </div>
-              <span class="app-name">{{ app.name }}</span>
-              <button class="btn-change" @click="openEditModal(app.id)">
-                {{ customIcons[app.id] ? '更改' : '设置' }}
-              </button>
             </div>
           </div>
         </div>
@@ -180,6 +215,62 @@ const saveCurrentAsPreset = async () => {
   border-radius: 8px;
   background: var(--text-primary);
   color: var(--sys-bg-primary);
+}
+
+.search-bar-wrap {
+  padding: 0 20px 10px;
+}
+
+.search-box {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(0, 0, 0, 0.03);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  padding: 8px 12px;
+  transition: border-color 0.2s, background 0.2s;
+}
+
+.search-box:focus-within {
+  border-color: var(--text-primary);
+  background: var(--card-bg-solid, #ffffff);
+}
+
+.search-box .search-icon {
+  color: var(--text-tertiary);
+  flex-shrink: 0;
+}
+
+.search-input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  outline: none;
+  font-size: 13px;
+  color: var(--text-primary);
+  padding: 0;
+}
+
+.search-input::placeholder {
+  color: var(--text-tertiary);
+}
+
+.clear-btn {
+  background: none;
+  border: none;
+  font-size: 16px;
+  line-height: 1;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  padding: 0 2px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.clear-btn:hover {
+  color: var(--text-primary);
 }
 
 .preset-input-area {

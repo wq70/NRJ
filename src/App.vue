@@ -35,6 +35,7 @@ import { startAutonomyRuntime, stopAutonomyRuntime } from './services/autonomyRu
 import FriendRequestModal from './components/chat/modals/FriendRequestModal.vue'
 import { triggerFriendRequestNotification } from './composables/useFriendRequestPrompt'
 import type { WidgetType } from './composables/useDesktopLayout'
+import { isIosWebEnvironment, isStandaloneWebApp } from './utils/iosWeb'
 
 const { globalNotifications, dismissNotification, showNotification, loadCustomContacts, loadMyProfile, mockChats } = useChatState()
 const { loadData: loadAppIconsData, customIcons } = useAppIcons()
@@ -78,8 +79,8 @@ const showInstallPrompt = ref(false)
 const isInstallPromptReady = ref(false)
 const skipInstallPrompt = ref(false)
 const installPromptDismissedKey = 'nianrenji-install-prompt-dismissed'
-const isStandaloneApp = () => window.matchMedia('(display-mode: standalone)').matches || (navigator as Navigator & { standalone?: boolean }).standalone === true
-const isIos = () => /iPad|iPhone|iPod/.test(navigator.userAgent)
+const isStandaloneApp = () => isStandaloneWebApp()
+const isIos = () => isIosWebEnvironment()
 
 const openInstallPrompt = async () => {
   if (!deferredInstallPrompt.value) return
@@ -249,6 +250,16 @@ watchEffect(() => {
   } else {
     document.body.classList.remove('dark-theme')
   }
+})
+
+// 只标记网页/PWA显示环境，不接触任何原生状态栏能力。
+watchEffect(() => {
+  const root = document.documentElement
+  const iosWeb = isIosWebEnvironment()
+  const standalone = iosWeb && isStandaloneWebApp()
+  root.classList.toggle('is-ios-web', iosWeb)
+  root.classList.toggle('is-ios-pwa', standalone)
+  root.classList.toggle('ios-pwa-fullscreen', iosWeb && globalSettings.iosPwaFullscreen)
 })
 
 const handleUnlock = () => {
@@ -432,7 +443,12 @@ watch([activeApp, isLocked], ([appId, locked]) => {
     </Transition>
 
     <!-- 状态栏：只要桌面壁纸是浅色的，状态栏就应该是深色字体。目前壁纸写死为浅色，所以 is-dark 恒为 true -->
-    <StatusBar data-font-area="desktop" :is-dark="true" v-show="globalSettings.showStatusBar && activeApp === null && (!isLocked || globalSettings.lockScreenStyle !== 'classic')" />
+    <StatusBar 
+      data-font-area="desktop" 
+      :is-dark="true" 
+      v-show="globalSettings.showStatusBar && activeApp === null && (!isLocked || globalSettings.lockScreenStyle !== 'classic')" 
+      @open-app="handleOpenApp"
+    />
     <Desktop ref="desktopRef" data-font-area="desktop" :apps="apps" @open-app="handleOpenApp" v-show="!isLocked" />
 
     <Transition name="development-notice">
@@ -900,7 +916,7 @@ export default {
 /* 全局通知容器与卡片样式 */
 .global-notifications-container {
   position: absolute;
-  top: 6vh; /* 避开状态栏 */
+  top: max(54px, calc(var(--app-safe-top) + 54px));
   left: 0;
   width: 100%;
   display: flex;

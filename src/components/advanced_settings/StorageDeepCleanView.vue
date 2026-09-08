@@ -298,7 +298,7 @@ const totalSelectedSize = computed(() => {
   position: fixed; /* 强制基于浏览器视口全屏 */
   top: 0; left: 0; right: 0; bottom: 0;
   width: 100vw;
-  height: 100vh;
+  height: var(--app-height, 100vh);
   background: var(--sys-bg-primary, #ffffff);
   z-index: 10000; /* 极致顶层，盖过 BreakdownModal 以及一切底栏顶栏 */
   display: flex;
@@ -316,7 +316,9 @@ const totalSelectedSize = computed(() => {
 
 .view-header {
   position: relative;
-  height: 60px;
+  height: calc(60px + var(--app-safe-top, 0px));
+  padding-top: var(--app-safe-top, 0px);
+  box-sizing: border-box;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -538,13 +540,14 @@ const totalSelectedSize = computed(() => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 20px;
+  padding: 0 20px var(--app-safe-bottom, 0px);
+  box-sizing: border-box;
   overflow: hidden;
   transition: height 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .view-footer.is-visible {
-  height: 80px;
+  height: calc(80px + var(--app-safe-bottom, 0px));
 }
 
 .footer-info {
@@ -614,7 +617,7 @@ const totalSelectedSize = computed(() => {
 }
 
 .detail-header {
-  padding: 16px 20px;
+  padding: calc(16px + var(--app-safe-top, 0px)) 20px 16px;
   display: flex;
   align-items: center;
   justify-content: space-between;

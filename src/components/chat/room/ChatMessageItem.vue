@@ -281,7 +281,7 @@ const groupBadge = (memberId: string) => {
           </div>
           
           <template v-if="msg.fileData">
-            <ChatFileBubble :msg="msg" :asset="messageAsset" />
+            <ChatFileBubble :msg="msg" :asset="messageAsset" direction="left" :sender="messageSender" :selected-chat="selectedChat" :my-profile="myProfile" />
           </template>
 
           <template v-else-if="msg.videoData">
@@ -371,7 +371,7 @@ const groupBadge = (memberId: string) => {
             </div>
           </template>
 
-          <div style="display: flex; align-items: flex-end;">
+          <div style="display: flex; align-items: flex-end; max-width: 100%; min-width: 0;">
             <div v-if="!msg.fileData && !msg.videoData && !msg.imageData && !msg.voiceData && !msg.transferData && !groupFinanceInteraction && !msg.isEmoji && !msg.callData" class="bubble bubble-left" data-chat-bubble="other" @touchstart="emit('touch-start', msg.id)" @touchend="emit('touch-end')" @touchmove="emit('touch-move', $event)" @contextmenu.prevent>
               <img v-for="item in bubbleOrnaments('other')" :key="item.id" class="bubble-ornament" :src="bubbleAssetUrls[item.assetId]" :alt="item.name" :style="ornamentStyle(item)">
               <!-- 同气泡模式下的思考过程 -->
@@ -435,7 +435,7 @@ const groupBadge = (memberId: string) => {
           </div>
           
           <template v-if="msg.fileData">
-            <ChatFileBubble :msg="msg" :asset="messageAsset" />
+            <ChatFileBubble :msg="msg" :asset="messageAsset" direction="right" :sender="myProfile" :selected-chat="selectedChat" :my-profile="myProfile" />
           </template>
 
           <template v-else-if="msg.videoData">
@@ -517,7 +517,7 @@ const groupBadge = (memberId: string) => {
           </template>
 
           <!-- 普通消息气泡 -->
-          <div style="display: flex; align-items: flex-end;">
+          <div style="display: flex; align-items: flex-end; justify-content: flex-end; max-width: 100%; min-width: 0;">
           <div v-if="shouldShowTime && chatSettings.timeDisplayPosition === 'bubble_outer'" class="msg-time-inline-outer right">
               {{ formatMsgTime(msg.timestamp || msg.id) }}
             </div>
@@ -527,7 +527,7 @@ const groupBadge = (memberId: string) => {
                 <div class="msg-quote-sender">{{ msg.quote.sender }}</div>
                 <div class="msg-quote-content">{{ msg.quote.content }}</div>
               </div>
-              {{ msg.content }}
+              <div class="message-content">{{ msg.content }}</div>
             </div>
           </div>
           <div v-if="msg.isUndelivered" class="undelivered-label">未送达 · 对方不可见</div>

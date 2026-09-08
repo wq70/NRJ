@@ -24,7 +24,11 @@ const openSource = (widgetType: WidgetType) => { activeSourceType.value = widget
 
 <template>
   <div class="app-widget-beautify">
-    <header class="header"><small>WIDGET STORE</small><h2>小组件美化</h2><p>添加后回到桌面，长按并拖动到喜欢的位置。</p></header>
+    <header class="header">
+      <small>WIDGET STORE</small>
+      <h2 class="title-btn" role="button" tabindex="0" title="点击返回桌面" @click="emit('close')">小组件美化</h2>
+      <p>添加后回到桌面，长按并拖动到喜欢的位置。</p>
+    </header>
     <main class="content">
       <article class="widget-card">
         <div class="preview about-us-preview">
@@ -254,7 +258,7 @@ const openSource = (widgetType: WidgetType) => { activeSourceType.value = widget
 
 <style scoped>
 .app-widget-beautify{position:absolute;inset:0;z-index:50;display:flex;flex-direction:column;background:var(--sys-bg-primary,#fff);color:var(--text-primary,#000);animation:appOpen .3s cubic-bezier(.2,.8,.2,1)}
-.header{flex:0 0 auto;padding:max(42px,calc(env(safe-area-inset-top) + 28px)) 20px 16px;text-align:left;border-bottom:1px solid var(--border-color,#eee)}.header small{color:var(--text-secondary);font-size:10px;font-weight:700;letter-spacing:.12em}.header h2{margin:4px 0 5px;font-size:21px;font-weight:650}.header p{margin:0;color:var(--text-secondary);font-size:12px;line-height:1.5}
+.header{flex:0 0 auto;padding:max(42px,calc(env(safe-area-inset-top) + 28px)) 20px 16px;text-align:left;border-bottom:1px solid var(--border-color,#eee)}.header small{color:var(--text-secondary);font-size:10px;font-weight:700;letter-spacing:.12em}.header h2{margin:4px 0 5px;font-size:21px;font-weight:650}.header .title-btn{cursor:pointer;display:inline-block;user-select:none;transition:transform .15s ease,opacity .15s ease}.header .title-btn:hover{opacity:.85}.header .title-btn:active{transform:scale(.97);opacity:.7}.header p{margin:0;color:var(--text-secondary);font-size:12px;line-height:1.5}
 .content{flex:1;overflow-y:auto;padding:16px 16px 58px;box-sizing:border-box;overscroll-behavior:contain}.widget-card{max-width:430px;margin:0 auto 14px;padding:14px;border:1px solid var(--border-color);border-radius:22px;background:var(--sys-bg-secondary);box-shadow:0 4px 14px color-mix(in srgb,var(--shadow-color) 55%,transparent)}.preview{height:132px;margin-bottom:13px;overflow:hidden;border-radius:17px}.moment-preview{background:var(--card-bg-solid)}.moment-images{display:grid;grid-template-columns:1fr 1fr;height:60px}.moment-images i:first-child{background:#e4e6e8}.moment-images i:last-child{background:#d2d5d8}.moment-body{padding:10px 12px;display:flex;flex-direction:column;align-items:flex-end}.moment-body b{font-size:10px}.moment-body span{align-self:flex-start;margin-top:7px;font-size:9px;color:var(--text-secondary)}.moment-body em{align-self:stretch;height:3px;margin-top:9px;border-radius:2px;background:var(--border-color)}
 .about-us-preview{position:relative;width:200px;height:185px;margin:4px auto 10px;background:transparent;display:flex;flex-direction:column;justify-content:space-between;user-select:none;box-sizing:border-box;padding:2px}
 .preview-au-header{display:flex;align-items:center;justify-content:space-between;width:100%}
