@@ -24,6 +24,7 @@ const {
   toggleLike,
   nextTrack, 
   prevTrack, 
+  clearQueue,
   seek,
   formatTime 
 } = useMusicPlayer()
@@ -120,6 +121,12 @@ const handleNext = (e: MouseEvent) => {
   nextTrack()
 }
 
+const handleDismissMusic = (e: MouseEvent) => {
+  e.stopPropagation()
+  clearQueue()
+  isExpanded.value = false
+}
+
 onMounted(() => {
   document.addEventListener('click', handleClickOutside)
   updateTime()
@@ -206,7 +213,7 @@ onUnmounted(() => {
           <span class="time-label">{{ remainingTimeStr }}</span>
         </div>
 
-        <!-- 底部控制栏：喜欢 + 上一首/播放暂停/下一首 + 直达音乐App -->
+        <!-- 底部控制栏：喜欢 + 上一首/播放暂停/下一首 + 结束播放 -->
         <div class="notch-bottom-row" @click.stop="">
           <!-- 喜欢/收藏星标 -->
           <button class="action-icon-btn star-btn" :class="{ 'is-liked': isLikedCurrent }" @click="toggleLike" title="收藏">
@@ -238,11 +245,10 @@ onUnmounted(() => {
             </button>
           </div>
 
-          <!-- 右侧直达音乐App/AirPlay图标 -->
-          <button class="action-icon-btn airplay-btn" @click="handleOpenMusic" title="打开音乐播放器">
+          <!-- 右侧结束当前歌曲，并恢复普通灵动岛 -->
+          <button class="action-icon-btn dismiss-music-btn" @click="handleDismissMusic" title="结束播放">
             <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M5 17H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2h-1"/>
-              <polygon points="12 15 17 21 7 21 12 15" fill="currentColor"/>
+              <path d="M6 6l12 12M18 6L6 18"/>
             </svg>
           </button>
         </div>
@@ -391,6 +397,11 @@ onUnmounted(() => {
 .music-wave.mini span:nth-child(1) { animation-delay: 0.0s; }
 .music-wave.mini span:nth-child(2) { animation-delay: 0.2s; }
 .music-wave.mini span:nth-child(3) { animation-delay: 0.4s; }
+
+@keyframes wave {
+  0%, 100% { height: 3px; }
+  50% { height: 11px; }
+}
 
 .notch-sensor {
   position: absolute;
@@ -658,7 +669,7 @@ onUnmounted(() => {
   color: #ef4444;
 }
 
-.airplay-btn {
+.dismiss-music-btn {
   color: rgba(255, 255, 255, 0.6);
 }
 

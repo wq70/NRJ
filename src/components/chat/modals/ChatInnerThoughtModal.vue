@@ -197,7 +197,7 @@ watch(() => props.visible, (visible) => {
 
 <template>
   <transition name="elegant-fade">
-    <div v-if="visible" class="elegant-overlay" @click="emit('close')" @touchmove.prevent>
+    <div v-if="visible" class="elegant-overlay" @click="emit('close')" @touchmove.self.prevent>
       <div class="modal-shell" @click.stop>
         
         <!-- 绝对定位的右上角关闭按钮 -->
@@ -369,7 +369,7 @@ watch(() => props.visible, (visible) => {
 .elegant-fade-enter-from, .elegant-fade-leave-to { opacity: 0; }
 
 .elegant-overlay {
-  position: absolute;
+  position: fixed;
   inset: 0;
   z-index: 1000;
   display: grid;
@@ -535,4 +535,38 @@ watch(() => props.visible, (visible) => {
 .member-item:hover .selection-stamp { transform: rotate(5deg) scale(1.05); }
 .selection-stamp-inner { width: 62px; height: 62px; }
 .member-name { font-size: 14px; color: rgba(255,255,255,0.95); text-align: center; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 1; overflow: hidden; word-break: break-all; width: 100%; text-shadow: 0 1px 4px rgba(0,0,0,0.5); }
+
+@media (max-width: 480px) {
+  .elegant-overlay {
+    padding: max(16px, env(safe-area-inset-top, 0px)) 16px max(16px, env(safe-area-inset-bottom, 0px));
+  }
+  .modal-shell {
+    width: min(calc(100vw - 32px), 360px);
+    height: min(76dvh, calc(var(--app-height, 100dvh) - 88px));
+    max-height: none;
+    max-width: none;
+    margin-left: 0;
+    gap: 10px;
+  }
+  .avatar-wrapper-outer {
+    left: -16px;
+    top: 12px;
+    width: 70px;
+    height: 70px;
+  }
+  .stamp-inner { width: 62px; height: 62px; }
+  .paperclip-svg { top: -19px; width: 27px; height: 27px; }
+  .scrollable-content { padding: 20px 18px; }
+  .profile-header { gap: 8px; margin-bottom: 18px; }
+  .profile-info { margin-left: 48px; }
+  .view-toggle-btn { padding-inline: 8px; }
+  .thought-content-area { min-height: 112px; margin-top: 34px; margin-bottom: 14px; }
+  .external-controls { min-height: 34px; }
+  .top-close-btn { top: -36px; right: 0; }
+}
+
+@media (max-height: 620px) and (max-width: 480px) {
+  .modal-shell { height: min(70dvh, calc(var(--app-height, 100dvh) - 72px)); }
+  .thought-content-area { margin-top: 18px; }
+}
 </style>

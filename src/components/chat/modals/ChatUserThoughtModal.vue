@@ -34,7 +34,7 @@ const avatarFallbackText = computed(() => displayName.value.charAt(0) || '我')
 
 <template>
   <transition name="thought-modal-fade">
-    <div v-if="visible" class="thought-modal-overlay" @click="emit('close')" @touchmove.prevent>
+    <div v-if="visible" class="thought-modal-overlay" @click="emit('close')" @touchmove.self.prevent>
       <div class="thought-modal-shell" @click.stop>
         
         <!-- 右上角毛玻璃关闭按钮 -->
@@ -143,7 +143,7 @@ const avatarFallbackText = computed(() => displayName.value.charAt(0) || '我')
 }
 
 .thought-modal-overlay {
-  position: absolute;
+  position: fixed;
   inset: 0;
   z-index: 1000;
   display: grid;
@@ -406,5 +406,42 @@ const avatarFallbackText = computed(() => displayName.value.charAt(0) || '我')
 
 .top-close-btn:active {
   transform: scale(0.95);
+}
+
+@media (max-width: 480px) {
+  .thought-modal-overlay {
+    padding: max(16px, env(safe-area-inset-top, 0px)) 16px max(16px, env(safe-area-inset-bottom, 0px));
+  }
+  .thought-modal-shell {
+    width: min(calc(100vw - 32px), 360px);
+    height: min(76dvh, calc(var(--app-height, 100dvh) - 88px));
+    max-height: none;
+    max-width: none;
+    margin-right: 0;
+    gap: 10px;
+  }
+  .user-avatar-wrapper-outer {
+    right: -16px;
+    top: 12px;
+    width: 70px;
+    height: 70px;
+  }
+  .user-stamp-inner { width: 62px; height: 62px; }
+  .paperclip-svg-mirrored { top: -19px; width: 27px; height: 27px; }
+  .scrollable-content { padding: 20px 18px; }
+  .thought-note-header { margin-bottom: 20px; }
+  .header-titles { margin-right: 48px; }
+  .thought-edit-main,
+  .lined-textarea { min-height: 160px; }
+  .external-controls { min-height: 34px; }
+  .text-button { padding-inline: 13px; }
+  .top-close-btn { top: -36px; right: 0; }
+}
+
+@media (max-height: 620px) and (max-width: 480px) {
+  .thought-modal-shell { height: min(70dvh, calc(var(--app-height, 100dvh) - 72px)); }
+  .thought-note-header { margin-bottom: 12px; }
+  .thought-edit-main,
+  .lined-textarea { min-height: 120px; }
 }
 </style>
