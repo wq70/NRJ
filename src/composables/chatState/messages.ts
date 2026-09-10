@@ -345,9 +345,10 @@ export const buildChatMessages = async (
         // 如果是一条语音消息，给AI特殊的XML标签解析
         isVoice = true
         voiceSeconds = msg.voiceData.seconds
-        formattedContent = msg.type === 'left'
-          ? `[我发送了一段语音，内容：${msg.voiceData.text}]`
-          : `[对方发来一段语音，转文字内容：${msg.voiceData.text}]`
+        const voiceText = String(msg.voiceData.text || '').trim()
+        formattedContent = voiceText
+          ? (msg.type === 'left' ? `[我发送了一段语音，内容：${voiceText}]` : `[对方发来一段语音，转文字内容：${voiceText}]`)
+          : (msg.type === 'left' ? '[我发送了一段语音，但没有可用的转写]' : '[对方发来一段真实语音，但没有可用的转写，无法得知具体内容]')
       } else if (msg.transferData) {
         // 对转账红包的特殊解析渲染给AI
         isTransferMessage = true

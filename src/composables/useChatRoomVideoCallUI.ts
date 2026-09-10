@@ -48,8 +48,16 @@ export function useChatRoomVideoCallUI(
       .filter((m: any) => m.isVideoCallProcessMsg && !m.isHidden)
   })
 
+  const clearTransientVideoVision = () => {
+    if (!selectedChat.value?.messages) return false
+    const before = selectedChat.value.messages.length
+    selectedChat.value.messages = selectedChat.value.messages.filter((m: any) => !m.isTransientVideoVision)
+    return selectedChat.value.messages.length !== before
+  }
+
   const startVideoCall = async () => {
     if (isMultiSelectMode.value) return
+    if (clearTransientVideoVision()) saveCustomContacts()
     showVideoCallModal.value = true
     callStartIndex.value = selectedChat.value?.messages?.length || 0
 
@@ -143,6 +151,7 @@ export function useChatRoomVideoCallUI(
         const callMsgIds = new Set(callMsgs.map((m: any) => m.id))
         selectedChat.value.messages = selectedChat.value.messages.filter((m: any) => !callMsgIds.has(m.id))
       }
+      clearTransientVideoVision()
 
       const isCanceled = duration === '00:00'
       const recordContent = isCanceled ? '视频通话已取消' : `视频通话 ${duration}`
@@ -283,6 +292,7 @@ export function useChatRoomVideoCallUI(
         const callMsgIds = new Set(callMsgs.map((m: any) => m.id))
         selectedChat.value.messages = selectedChat.value.messages.filter((m: any) => !callMsgIds.has(m.id))
       }
+      clearTransientVideoVision()
 
       const callRecordMsgId = Date.now()
       selectedChat.value.messages.push({

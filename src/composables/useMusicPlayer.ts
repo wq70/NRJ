@@ -1,14 +1,16 @@
 /* WARNING: 本项目专属“粘人精”，严禁出现 Kiro、Krio、周棋洛等任何相关英文或拼音命名！ */
 import { computed, ref } from 'vue'
-import type { MusicPlaylist, MusicTrack } from '../types/music'
+import type { MusicPlaylist, MusicTrack, MusicVideoCandidate, MusicVideoMode, MusicVideoQuality } from '../types/music'
 import { musicTrackKey } from '../types/music'
 import { createMusicProviders } from '../services/musicProviders'
 import { getLocalMusicFile } from '../services/musicStorage'
 import { probeMusicUrl, verifiedEmbedTrack } from '../services/musicPlaybackValidation'
 import { markMusicSourceFailure, markMusicSourceSuccess, orderMusicSourcesForCapability } from '../services/musicSourceFallback'
+import { findMusicVideoCandidates, resolveMusicVideoUrl } from '../services/musicVideos'
 import {
   initializeMusicRuntime, musicCurrentIndex, musicCurrentTime, musicHistory, musicLikedKeys,
-  musicPlayMode, musicPreferredQuality, musicQueue, musicQueueSourcePlaylistId, musicSourceConfigs, musicVolume, persistMusicRuntime
+  musicPlayMode, musicPreferredQuality, musicPreferredVideoMode, musicPreferredVideoQuality, musicQueue, musicQueueSourcePlaylistId,
+  musicSourceConfigs, musicVideoDataSaver, musicVolume, persistMusicRuntime
 } from '../services/musicRuntime'
 
 export type { MusicPlaylist, MusicTrack } from '../types/music'
@@ -35,16 +37,26 @@ const playbackError = ref('')
 const isLyricMode = ref(false)
 const resolvedUrl = ref('')
 const sleepEndsAt = ref(0)
-const activePlaybackType = ref<'full' | 'local' | 'embed'>('full')
+const activePlaybackType = ref<'full' | 'local' | 'embed' | 'video'>('full')
 const activeEmbedId = ref('')
 const activeEmbedProvider = ref<'youtube' | 'bilibili'>('youtube')
 const embedViewRequest = ref(0)
+const activeVideo = ref<MusicVideoCandidate | null>(null)
+const activeVideoUrl = ref('')
+const musicVideoState = ref<'idle' | 'checking' | 'available' | 'unavailable' | 'playing' | 'error'>('idle')
+const musicVideoCandidates = ref<MusicVideoCandidate[]>([])
+const musicVideoMessage = ref('')
+const actualVideoQuality = ref(0)
 let localObjectUrl = ''
 let requestSequence = 0
 let sleepTimer: number | null = null
 let embedValidationTimer: number | null = null
 let activeCandidateId = ''
 let embedController: MusicEmbedController | null = null
+let videoRequestSequence = 0
+let shouldResumeAudioAfterVideo = false
+let autoStartMusicVideo: (() => void) | null = null
+let restoreAudioAfterVideo: ((message?: string) => void) | null = null
 const rejectedCandidateIds = new Set<string>()
 let navigationHistory: number[] = []
 let navigationCursor = -1
@@ -102,25 +114,31 @@ export const registerMusicEmbedController = (controller: MusicEmbedController | 
 }
 
 export const updateMusicEmbedState = (state: 'playing' | 'paused' | 'buffering' | 'ended' | 'error', duration = 0, currentTime = 0) => {
-  if (activePlaybackType.value !== 'embed') return
-  const validationSucceeded = state === 'playing' || state === 'ended' || state === 'error' || (state === 'paused' && activeEmbedProvider.value === 'bilibili')
+  if (activePlaybackType.value !== 'embed' && activePlaybackType.value !== 'video') return
+  const validationSucceeded = state === 'playing' || state === 'ended' || state === 'error' || (state === 'paused' && activePlaybackType.value === 'embed' && activeEmbedProvider.value === 'bilibili')
   if (validationSucceeded && embedValidationTimer !== null) { window.clearTimeout(embedValidationTimer); embedValidationTimer = null }
-  if (duration > 0 && currentTrack.value) currentTrack.value.duration = duration
+  if (duration > 0 && activeVideo.value) activeVideo.value.duration = duration
+  else if (duration > 0 && currentTrack.value) currentTrack.value.duration = duration
   if (currentTime >= 0) musicCurrentTime.value = currentTime
-  if (state === 'playing') { isPlaying.value = true; isBuffering.value = false; playbackError.value = '' }
+  if (state === 'playing') { isPlaying.value = true; isBuffering.value = false; playbackError.value = ''; if (activeVideo.value) musicVideoState.value = 'playing' }
   if (state === 'paused') { isPlaying.value = false; isBuffering.value = false }
   if (state === 'buffering') isBuffering.value = true
   if (state === 'ended') void nextTrack(true)
   if (state === 'error') {
     isPlaying.value = false; isBuffering.value = false
-    rejectedCandidateIds.add(activeCandidateId)
-    void loadCurrentTrack(true)
+    if (activeVideo.value) {
+      restoreAudioAfterVideo?.('当前 MV 无法播放，已继续播放歌曲')
+    } else {
+      rejectedCandidateIds.add(activeCandidateId)
+      void loadCurrentTrack(true)
+    }
   }
 }
 
 const currentTrack = computed(() => musicCurrentIndex.value >= 0 ? musicQueue.value[musicCurrentIndex.value] || null : null)
+const playbackDuration = computed(() => activeVideo.value?.duration || currentTrack.value?.duration || 0)
 const isLikedCurrent = computed(() => currentTrack.value ? musicLikedKeys.value.includes(musicTrackKey(currentTrack.value)) : false)
-const progressPercent = computed(() => currentTrack.value?.duration ? Math.min(100, Math.max(0, musicCurrentTime.value / currentTrack.value.duration * 100)) : 0)
+const progressPercent = computed(() => playbackDuration.value ? Math.min(100, Math.max(0, musicCurrentTime.value / playbackDuration.value * 100)) : 0)
 const currentLyricIndex = computed(() => {
   const lyrics = currentTrack.value?.lyrics || []
   if (!lyrics.length) return -1
@@ -211,6 +229,14 @@ const discoverPlaybackFallback = async (track: MusicTrack, existing: MusicTrack[
 const loadCurrentTrack = async (autoplay = true, restoreTime = 0) => {
   const track = currentTrack.value
   if (!track) return
+  videoRequestSequence += 1
+  if (activeVideo.value) embedController?.pause()
+  activeVideo.value = null
+  activeVideoUrl.value = ''
+  musicVideoCandidates.value = []
+  musicVideoState.value = 'idle'
+  musicVideoMessage.value = ''
+  actualVideoQuality.value = 0
   const sequence = ++requestSequence
   isBuffering.value = true
   playbackError.value = ''
@@ -276,6 +302,7 @@ const loadCurrentTrack = async (autoplay = true, restoreTime = 0) => {
         navigator.mediaSession.playbackState = autoplay ? 'playing' : 'paused'
       }
       persistMusicRuntime()
+      if (autoplay && musicPreferredVideoMode.value === 'auto') autoStartMusicVideo?.()
       return
     } catch (error) {
       markMusicSourceFailure(candidate.sourceId, 'stream', error)
@@ -289,10 +316,113 @@ const loadCurrentTrack = async (autoplay = true, restoreTime = 0) => {
   }
 }
 
+const startMusicVideoCandidate = async (video: MusicVideoCandidate, autoplay = true) => {
+  const track = currentTrack.value
+  if (!track) return
+  const sequence = ++videoRequestSequence
+  shouldResumeAudioAfterVideo = autoplay
+  const resumeTime = activeVideo.value ? musicCurrentTime.value : (Number.isFinite(audio.currentTime) ? audio.currentTime : musicCurrentTime.value)
+  musicVideoMessage.value = ''
+  musicVideoState.value = 'checking'
+  try {
+    const resolved = video.playbackType === 'direct'
+      ? await resolveMusicVideoUrl(video, musicPreferredVideoQuality.value, musicVideoDataSaver.value, musicSourceConfigs.value)
+      : null
+    if (sequence !== videoRequestSequence) return
+    if (video.playbackType === 'direct' && !resolved?.url) throw new Error('当前 MV 没有返回可播放地址')
+    audio.pause()
+    const targetPlaybackType = video.playbackType === 'embed' ? 'embed' : 'video'
+    const currentRenderer = activePlaybackType.value === 'embed' || activePlaybackType.value === 'video' ? activePlaybackType.value : null
+    const rendererChanged = Boolean(currentRenderer) && (currentRenderer !== targetPlaybackType || (targetPlaybackType === 'embed' && activeEmbedProvider.value !== (video.embedProvider || 'youtube')))
+    if (rendererChanged) { embedController?.pause(); embedController = null }
+    activeVideo.value = { ...video, actualQuality: resolved?.actualQuality }
+    actualVideoQuality.value = resolved?.actualQuality || 0
+    activeVideoUrl.value = resolved?.url || ''
+    activePlaybackType.value = targetPlaybackType
+    activeEmbedProvider.value = video.embedProvider || 'youtube'
+    activeEmbedId.value = video.embedId || ''
+    isLyricMode.value = false
+    isBuffering.value = autoplay
+    const payload = video.playbackType === 'embed' ? video.embedId || '' : resolved?.url || ''
+    const startController = () => {
+      if (!embedController || !payload) return
+      void embedController.load(payload, autoplay).then(() => {
+        if (resumeTime > 0) embedController?.seek(resumeTime)
+        if (autoplay) {
+          if (embedValidationTimer !== null) window.clearTimeout(embedValidationTimer)
+          embedValidationTimer = window.setTimeout(() => {
+            restoreAudioAfterVideo?.('当前 MV 加载超时，已继续播放歌曲')
+          }, musicVideoDataSaver.value ? 7000 : 10000)
+        } else {
+          musicVideoState.value = 'available'
+          isBuffering.value = false
+        }
+      }).catch(() => restoreAudioAfterVideo?.('当前 MV 无法播放，已继续播放歌曲'))
+    }
+    resumePendingEmbed = startController
+    startController()
+    embedViewRequest.value += 1
+  } catch (error) {
+    if (sequence !== videoRequestSequence) return
+    musicVideoState.value = 'error'
+    musicVideoMessage.value = error instanceof Error ? error.message : 'MV 加载失败'
+    restoreAudioAfterVideo?.(musicVideoMessage.value)
+  }
+}
+
+const requestCurrentTrackMusicVideo = async (autoplay = true) => {
+  const track = currentTrack.value
+  if (!track || musicPreferredVideoMode.value === 'off') return
+  if (activeVideo.value) return
+  const sequence = ++videoRequestSequence
+  musicVideoState.value = 'checking'
+  musicVideoMessage.value = '正在查找匹配的 MV'
+  const candidates = await findMusicVideoCandidates(track, musicSourceConfigs.value).catch(() => [])
+  if (sequence !== videoRequestSequence) return
+  musicVideoCandidates.value = candidates
+  if (!candidates.length) {
+    musicVideoState.value = 'unavailable'
+    musicVideoMessage.value = '暂时没有找到匹配的 MV'
+    return
+  }
+  musicVideoState.value = 'available'
+  musicVideoMessage.value = `找到 ${candidates.length} 个匹配视频`
+  await startMusicVideoCandidate(candidates[0], autoplay)
+}
+
+restoreAudioAfterVideo = (message = '') => {
+  const shouldResume = shouldResumeAudioAfterVideo
+  shouldResumeAudioAfterVideo = false
+  const resumeTime = musicCurrentTime.value
+  videoRequestSequence += 1
+  if (embedValidationTimer !== null) { window.clearTimeout(embedValidationTimer); embedValidationTimer = null }
+  embedController?.pause()
+  activeVideo.value = null
+  activeVideoUrl.value = ''
+  activeEmbedId.value = ''
+  activePlaybackType.value = currentTrack.value?.localBlobKey ? 'local' : 'full'
+  resumePendingEmbed = null
+  isBuffering.value = false
+  if (message) {
+    musicVideoState.value = 'error'
+    musicVideoMessage.value = message
+    playbackError.value = message
+  } else {
+    musicVideoState.value = musicVideoCandidates.value.length ? 'available' : 'idle'
+    musicVideoMessage.value = musicVideoCandidates.value.length ? `可切换 ${musicVideoCandidates.value.length} 个 MV` : ''
+    playbackError.value = ''
+  }
+  if (!audio.src) return
+  try { audio.currentTime = Math.max(0, Math.min(Number.isFinite(audio.duration) ? audio.duration : resumeTime, resumeTime)) } catch { /* 媒体元数据尚未恢复时保持原位置 */ }
+  if (shouldResume && audio.src) void audio.play().catch(() => undefined)
+}
+
+autoStartMusicVideo = () => { void requestCurrentTrackMusicVideo(true) }
+
 const nextTrack = async (fromEnded = false) => {
   if (!musicQueue.value.length) return
   if (fromEnded && musicPlayMode.value === 'single') {
-    if (activePlaybackType.value === 'embed') { embedController?.seek(0); embedController?.play(); return }
+    if (activePlaybackType.value === 'embed' || activePlaybackType.value === 'video') { embedController?.seek(0); embedController?.play(); return }
     audio.currentTime = 0
     await audio.play().catch(() => undefined)
     return
@@ -314,7 +444,7 @@ const nextTrack = async (fromEnded = false) => {
 
 const prevTrack = async () => {
   if (!musicQueue.value.length) return
-  if ((activePlaybackType.value === 'embed' ? musicCurrentTime.value : audio.currentTime) > 3) { seek(0); return }
+  if ((activePlaybackType.value === 'embed' || activePlaybackType.value === 'video' ? musicCurrentTime.value : audio.currentTime) > 3) { seek(0); return }
   if (musicPlayMode.value === 'shuffle' || musicPlayMode.value === 'random') {
     if (navigationCursor <= 0) { seek(0); return }
     musicCurrentIndex.value = navigationHistory[--navigationCursor]
@@ -324,8 +454,8 @@ const prevTrack = async () => {
 }
 
 const seek = (seconds: number) => {
-  if (activePlaybackType.value === 'embed' && embedController) {
-    const duration = currentTrack.value?.duration || 0
+  if ((activePlaybackType.value === 'embed' || activePlaybackType.value === 'video') && embedController) {
+    const duration = playbackDuration.value
     const target = Math.max(0, Math.min(duration, seconds))
     embedController.seek(target); musicCurrentTime.value = target
     return
@@ -355,7 +485,7 @@ audio.addEventListener('durationchange', () => {
 })
 audio.addEventListener('ended', () => { void nextTrack(true) })
 audio.addEventListener('error', () => {
-  if (!resolvedUrl.value || activePlaybackType.value === 'embed') return
+  if (!resolvedUrl.value || activePlaybackType.value === 'embed' || activePlaybackType.value === 'video') return
   isPlaying.value = false; isBuffering.value = true
   rejectedCandidateIds.add(activeCandidateId)
   playbackError.value = '当前地址加载失败，正在自动换源'
@@ -364,8 +494,8 @@ audio.addEventListener('error', () => {
 audio.volume = musicVolume.value
 
 if ('mediaSession' in navigator) {
-  navigator.mediaSession.setActionHandler('play', () => { void audio.play() })
-  navigator.mediaSession.setActionHandler('pause', () => audio.pause())
+  navigator.mediaSession.setActionHandler('play', () => { if (activePlaybackType.value === 'embed' || activePlaybackType.value === 'video') embedController?.play(); else void audio.play() })
+  navigator.mediaSession.setActionHandler('pause', () => { if (activePlaybackType.value === 'embed' || activePlaybackType.value === 'video') embedController?.pause(); else audio.pause() })
   navigator.mediaSession.setActionHandler('previoustrack', () => { void prevTrack() })
   navigator.mediaSession.setActionHandler('nexttrack', () => { void nextTrack() })
   navigator.mediaSession.setActionHandler('seekto', details => { if (typeof details.seekTime === 'number') seek(details.seekTime) })
@@ -380,7 +510,7 @@ export function useMusicPlayer() {
 
   const togglePlay = async () => {
     if (!currentTrack.value) return
-    if (activePlaybackType.value === 'embed' && embedController) {
+    if ((activePlaybackType.value === 'embed' || activePlaybackType.value === 'video') && embedController) {
       if (isPlaying.value) embedController.pause(); else embedController.play()
       return
     }
@@ -419,14 +549,14 @@ export function useMusicPlayer() {
     const removingCurrent = index === musicCurrentIndex.value
     musicQueue.value.splice(index, 1)
     musicQueueSourcePlaylistId.value = null
-    if (!musicQueue.value.length) { audio.pause(); embedController?.pause(); audio.removeAttribute('src'); musicCurrentIndex.value = -1; resolvedUrl.value = ''; activeEmbedId.value = '' }
+    if (!musicQueue.value.length) { audio.pause(); embedController?.pause(); audio.removeAttribute('src'); musicCurrentIndex.value = -1; resolvedUrl.value = ''; activeEmbedId.value = ''; activeVideo.value = null; activeVideoUrl.value = '' }
     else if (index < musicCurrentIndex.value) musicCurrentIndex.value -= 1
     else if (removingCurrent) { musicCurrentIndex.value %= musicQueue.value.length; void loadCurrentTrack(true) }
     resetNavigation()
     persistMusicRuntime()
   }
 
-  const clearQueue = () => { audio.pause(); embedController?.pause(); audio.removeAttribute('src'); cleanupObjectUrl(); musicQueue.value = []; musicCurrentIndex.value = -1; musicQueueSourcePlaylistId.value = null; musicCurrentTime.value = 0; resolvedUrl.value = ''; activeEmbedId.value = ''; activePlaybackType.value = 'full'; resetNavigation(); persistMusicRuntime() }
+  const clearQueue = () => { audio.pause(); embedController?.pause(); audio.removeAttribute('src'); cleanupObjectUrl(); videoRequestSequence += 1; musicQueue.value = []; musicCurrentIndex.value = -1; musicQueueSourcePlaylistId.value = null; musicCurrentTime.value = 0; resolvedUrl.value = ''; activeEmbedId.value = ''; activeVideo.value = null; activeVideoUrl.value = ''; musicVideoCandidates.value = []; musicVideoState.value = 'idle'; activePlaybackType.value = 'full'; resetNavigation(); persistMusicRuntime() }
   const detachQueueSource = () => { musicQueueSourcePlaylistId.value = null; persistMusicRuntime() }
   const toggleMode = () => {
     musicPlayMode.value = musicPlayMode.value === 'loop' ? 'single' : musicPlayMode.value === 'single' ? 'shuffle' : musicPlayMode.value === 'shuffle' ? 'random' : 'loop'
@@ -436,12 +566,34 @@ export function useMusicPlayer() {
   const toggleLike = () => { if (!currentTrack.value) return; const key = musicTrackKey(currentTrack.value); musicLikedKeys.value = musicLikedKeys.value.includes(key) ? musicLikedKeys.value.filter(item => item !== key) : [...musicLikedKeys.value, key]; persistMusicRuntime() }
   const setVolume = (value: number) => { musicVolume.value = Math.max(0, Math.min(1, value)); audio.volume = musicVolume.value; embedController?.setVolume(musicVolume.value); persistMusicRuntime() }
   const setQuality = (value: typeof musicPreferredQuality.value) => { musicPreferredQuality.value = value; persistMusicRuntime() }
+  const setVideoMode = (value: MusicVideoMode) => {
+    musicPreferredVideoMode.value = value
+    if (value === 'off' && activeVideo.value) restoreAudioAfterVideo?.()
+    persistMusicRuntime()
+  }
+  const setVideoQuality = (value: MusicVideoQuality) => {
+    musicPreferredVideoQuality.value = value
+    const video = activeVideo.value
+    if (video?.playbackType === 'direct') void startMusicVideoCandidate(video, isPlaying.value)
+    persistMusicRuntime()
+  }
+  const setVideoDataSaver = (value: boolean) => {
+    musicVideoDataSaver.value = value
+    const video = activeVideo.value
+    if (video?.playbackType === 'direct') void startMusicVideoCandidate(video, isPlaying.value)
+    persistMusicRuntime()
+  }
+  const toggleMusicVideo = async () => {
+    if (activeVideo.value) { restoreAudioAfterVideo?.(); return }
+    await requestCurrentTrackMusicVideo(isPlaying.value)
+  }
+  const selectMusicVideo = async (video: MusicVideoCandidate) => { await startMusicVideoCandidate(video, isPlaying.value) }
   const setSleepTimer = (minutes: number) => {
     if (sleepTimer !== null) window.clearTimeout(sleepTimer)
     sleepTimer = null; sleepEndsAt.value = 0
     if (minutes > 0) {
       sleepEndsAt.value = Date.now() + minutes * 60_000
-      sleepTimer = window.setTimeout(() => { audio.pause(); sleepEndsAt.value = 0; sleepTimer = null }, minutes * 60_000)
+      sleepTimer = window.setTimeout(() => { audio.pause(); embedController?.pause(); sleepEndsAt.value = 0; sleepTimer = null }, minutes * 60_000)
     }
   }
   const nextTrackAction = () => nextTrack()
@@ -449,9 +601,11 @@ export function useMusicPlayer() {
 
   return {
     playlist: musicQueue, queueSourcePlaylistId: musicQueueSourcePlaylistId, currentTrack, currentTrackIndex: musicCurrentIndex, isPlaying, isBuffering,
-    playbackError, currentTime: musicCurrentTime, isLikedCurrent, playMode: musicPlayMode,
+    playbackError, currentTime: musicCurrentTime, playbackDuration, isLikedCurrent, playMode: musicPlayMode,
     isLyricMode, progressPercent, currentLyricIndex, volume: musicVolume, sleepEndsAt, activePlaybackType, activeEmbedId, activeEmbedProvider, embedViewRequest,
-    preferredQuality: musicPreferredQuality, togglePlay, playTrack, playTracks, nextTrack: nextTrackAction,
-    prevTrack, seek, toggleMode, toggleLike, removeFromQueue, clearQueue, detachQueueSource, setVolume, setQuality, setSleepTimer, formatTime
+    activeVideo, activeVideoUrl, musicVideoState, musicVideoCandidates, musicVideoMessage, actualVideoQuality,
+    preferredQuality: musicPreferredQuality, preferredVideoMode: musicPreferredVideoMode, preferredVideoQuality: musicPreferredVideoQuality, videoDataSaver: musicVideoDataSaver,
+    togglePlay, playTrack, playTracks, nextTrack: nextTrackAction, prevTrack, seek, toggleMode, toggleLike, removeFromQueue, clearQueue, detachQueueSource,
+    setVolume, setQuality, setVideoMode, setVideoQuality, setVideoDataSaver, toggleMusicVideo, selectMusicVideo, setSleepTimer, formatTime
   }
 }

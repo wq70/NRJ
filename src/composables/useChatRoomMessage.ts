@@ -3,6 +3,7 @@ import { ref, computed } from 'vue'
 import { createChatMessageId, createTransferData } from '../services/transferLifecycle'
 import localforage from 'localforage'
 import { chatSettings, isApiSettingsReady, resolveApiCapability } from '../store'
+import { saveRecordedVoice } from '../services/browserMedia'
 import { sendCapabilityMessage } from '../services/api'
 import { useChatAuth } from './useChatAuth'
 import { canViewUserProfileSection, getCharacterOverride, loadUserSocialProfile } from '../services/userSocialProfile'
@@ -88,7 +89,7 @@ export function useChatRoomMessage(
   }
 
   const showVoiceModal = ref(false)
-  const handleSendVoice = async (data: { text: string, seconds: number }, showExtensionPanel: any) => {
+  const handleSendVoice = async (data: { text: string, seconds: number, audioBlob?: Blob, mimeType?: string, isRealVoice?: boolean, transcriptStatus?: string }, showExtensionPanel: any) => {
     if (!selectedChat.value) return
     resumeConversationTime(selectedChat.value)
     
@@ -97,6 +98,7 @@ export function useChatRoomMessage(
     }
 
     const messageId = Date.now()
+    const audioId = data.audioBlob ? await saveRecordedVoice(data.audioBlob) : undefined
     selectedChat.value.messages.push({
       id: messageId,
       type: 'right',
@@ -105,7 +107,11 @@ export function useChatRoomMessage(
       content: '[语音消息]',
       voiceData: {
         text: data.text,
-        seconds: data.seconds
+        seconds: data.seconds,
+        audioId,
+        mimeType: data.mimeType || data.audioBlob?.type,
+        isRealVoice: data.isRealVoice === true,
+        transcriptStatus: data.transcriptStatus || (data.text ? 'completed' : 'none')
       }
     })
     

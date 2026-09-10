@@ -126,7 +126,8 @@ const checkSource = async (source: MusicSourceConfig) => {
       if (verifiedEmbedTrack(candidate)) { setMessage(source.id === 'public-video' ? '国内公开视频目录正常，可打开完整播放器' : '官方视频目录正常，可打开完整播放器'); return }
       const url = provider.getStreamUrl ? await provider.getStreamUrl(candidate, 'standard') : null
       if (!url) { setMessage('搜索正常，但没有解析到完整播放地址'); return }
-      setMessage('搜索与播放地址解析正常；实际音频会在点击播放时验证')
+      const videos = provider.getRelatedMusicVideos ? await provider.getRelatedMusicVideos({ ...candidate, title: '稻香', artist: '周杰伦' }).catch(() => []) : []
+      setMessage(videos.length ? '搜索、播放地址与 MV 解析正常；播放时会继续验证媒体' : '搜索与播放地址解析正常；实际音频会在点击播放时验证')
     }
   } catch (error) { setMessage(error instanceof Error ? error.message : '连接测试失败') }
   finally { checkingId.value = '' }
@@ -261,7 +262,7 @@ const checkSource = async (source: MusicSourceConfig) => {
 
         <!-- Disclaimer -->
         <p class="source-note">
-          搜索阶段不会批量请求音频；点击播放时验证音频，遇到试听、失效地址或限流会自动切换下一家。
+          搜索阶段不会批量请求音视频；点击播放时验证媒体，遇到试听、失效地址或限流会自动切换来源或返回歌曲。
         </p>
 
         <!-- Footer Leave Button -->

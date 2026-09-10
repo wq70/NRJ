@@ -22,6 +22,20 @@ export const chatSettings = reactive({
   timeDisplayPosition: savedChatSettings.timeDisplayPosition ?? 'avatar_bottom', // 'avatar_bottom' | 'bubble_outer' | 'name_side'
   showSystemNarration: savedChatSettings.showSystemNarration ?? false, // 显示仅供模型衔接上下文的系统内部旁白
   autoTranscribeVoice: savedChatSettings.autoTranscribeVoice ?? true, // 语音自动转文字
+  enableRealMedia: savedChatSettings.enableRealMedia ?? false, // 浏览器真实音视频总开关
+  enableRealVoiceMessage: savedChatSettings.enableRealVoiceMessage ?? false, // 允许录制用户真实语音消息
+  enableRealVoiceCall: savedChatSettings.enableRealVoiceCall ?? false, // 允许语音通话使用真实麦克风
+  enableRealVideoCall: savedChatSettings.enableRealVideoCall ?? false, // 允许视频通话使用真实摄像头
+  enableRealVideoVision: savedChatSettings.enableRealVideoVision ?? false, // 允许将摄像头抽帧交给视觉模型
+  enableRealCallTts: savedChatSettings.enableRealCallTts ?? false, // 通话中自动播放角色真实声音
+  realMediaAutoTranscribeMessage: savedChatSettings.realMediaAutoTranscribeMessage ?? false, // 真实语音消息自动转写
+  realMediaAutoTranscribeCall: savedChatSettings.realMediaAutoTranscribeCall ?? false, // 通话录音自动转写
+  realMediaStopWhenHidden: savedChatSettings.realMediaStopWhenHidden ?? true, // 页面隐藏时释放摄像头和麦克风
+  realVideoVisionInterval: savedChatSettings.realVideoVisionInterval ?? 12, // 自动识图最短间隔（秒）
+  speechRecognitionUrl: savedChatSettings.speechRecognitionUrl ?? '',
+  speechRecognitionKey: savedChatSettings.speechRecognitionKey ?? '',
+  speechRecognitionModel: savedChatSettings.speechRecognitionModel ?? 'whisper-1',
+  speechRecognitionLanguage: savedChatSettings.speechRecognitionLanguage ?? 'zh',
   enableVisionTokenSaver: savedChatSettings.enableVisionTokenSaver ?? false, // 识别图片省TOKEN
   enableRoleImageTokenSaver: savedChatSettings.enableRoleImageTokenSaver ?? true, // 角色发图/表情包不传Base64省Token
   voiceMsgCount: savedChatSettings.voiceMsgCount ?? 15, // 语音对话短期上下文记忆条数

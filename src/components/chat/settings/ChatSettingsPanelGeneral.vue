@@ -30,6 +30,7 @@ const emit = defineEmits<{
   (e: 'open-relationship'): void
   (e: 'open-autonomy'): void
   (e: 'open-timeline-manager'): void
+  (e: 'open-real-media-settings'): void
 }>()
 
 const handleSave = () => {
@@ -427,7 +428,14 @@ onBeforeUnmount(() => {
       </div>
     </div>
 
-    <div class="glass-panel" v-show="matchSearch('允许角色主动来电', '来电', '响铃时长', '免打扰', '通话时禁用多媒体', '通话时禁用心声', '线下模式禁用多媒体', '线下模式禁用心声')">
+    <div class="glass-panel" v-show="matchSearch('真实音视频', '真实语音', '真实摄像头', '麦克风', '语音识别', 'STT', '允许角色主动来电', '来电', '响铃时长', '免打扰', '通话时禁用多媒体', '通话时禁用心声', '线下模式禁用多媒体', '线下模式禁用心声')">
+      <div class="glass-list-item" v-show="matchSearch('真实音视频', '真实语音', '真实摄像头', '麦克风', '语音识别', 'STT')" @click="emit('open-real-media-settings')">
+        <div>
+          <div class="item-label">真实音视频</div>
+          <div style="font-size:11px;color:var(--text-tertiary);margin-top:4px;">浏览器录音、摄像头、语音识别与通话声音</div>
+        </div>
+        <div class="item-value"><span class="item-value-text">{{ chatSettings.enableRealMedia ? '已开启' : '未开启' }}</span><span class="arrow">></span></div>
+      </div>
       <div class="glass-list-item" v-show="matchSearch('通话时禁用多媒体')" style="display:flex; flex-direction:column; align-items:flex-start; gap:8px;">
         <div style="display:flex; justify-content:space-between; width:100%; align-items:center;">
           <span class="item-label">通话时禁用多媒体与互动功能</span>

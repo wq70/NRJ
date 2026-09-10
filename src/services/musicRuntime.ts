@@ -1,6 +1,6 @@
 /* WARNING: 本项目专属“粘人精”，严禁出现 Kiro、Krio、周棋洛等任何相关英文或拼音命名！ */
 import { reactive, ref } from 'vue'
-import type { MusicPlaylist, MusicPlayMode, MusicQuality, MusicSourceConfig, MusicTrack } from '../types/music'
+import type { MusicPlaylist, MusicPlayMode, MusicQuality, MusicSourceConfig, MusicTrack, MusicVideoMode, MusicVideoQuality } from '../types/music'
 import { defaultMusicSourceConfigs, restoreMusicSourceConfigs } from './musicProviders'
 import { loadMusicState, saveMusicState } from './musicStorage'
 
@@ -11,6 +11,9 @@ export const musicVolume = ref(0.85)
 export const musicPlayMode = ref<MusicPlayMode>('loop')
 export const musicQueueSourcePlaylistId = ref<string | null>(null)
 export const musicPreferredQuality = ref<MusicQuality>('exhigh')
+export const musicPreferredVideoMode = ref<MusicVideoMode>('manual')
+export const musicPreferredVideoQuality = ref<MusicVideoQuality>('auto')
+export const musicVideoDataSaver = ref(false)
 export const musicLikedKeys = ref<string[]>([])
 export const musicHistory = ref<MusicTrack[]>([])
 export const musicCustomPlaylists = ref<MusicPlaylist[]>([])
@@ -42,6 +45,9 @@ export const persistMusicRuntime = () => {
       playMode: musicPlayMode.value,
       queueSourcePlaylistId: musicQueueSourcePlaylistId.value,
       preferredQuality: musicPreferredQuality.value,
+      preferredVideoMode: musicPreferredVideoMode.value,
+      preferredVideoQuality: musicPreferredVideoQuality.value,
+      videoDataSaver: musicVideoDataSaver.value,
       sourceConfigs: musicSourceConfigs.value,
       customTrackCount: musicCustomTrackCount.value,
       customTotalMinutes: musicCustomTotalMinutes.value,
@@ -76,6 +82,9 @@ export const initializeMusicRuntime = () => {
       musicPlayMode.value = ['loop', 'single', 'shuffle', 'random'].includes(saved.playMode || '') ? saved.playMode as MusicPlayMode : 'loop'
       musicQueueSourcePlaylistId.value = typeof saved.queueSourcePlaylistId === 'string' ? saved.queueSourcePlaylistId : null
       musicPreferredQuality.value = saved.preferredQuality || 'exhigh'
+      musicPreferredVideoMode.value = ['off', 'manual', 'auto'].includes(saved.preferredVideoMode || '') ? saved.preferredVideoMode as MusicVideoMode : 'manual'
+      musicPreferredVideoQuality.value = ['auto', '480', '720', '1080'].includes(saved.preferredVideoQuality || '') ? saved.preferredVideoQuality as MusicVideoQuality : 'auto'
+      musicVideoDataSaver.value = saved.videoDataSaver === true
       musicCustomTrackCount.value = typeof saved.customTrackCount === 'number' ? saved.customTrackCount : null
       musicCustomTotalMinutes.value = typeof saved.customTotalMinutes === 'number' ? saved.customTotalMinutes : null
       musicCustomNickname.value = typeof saved.customNickname === 'string' ? saved.customNickname : null

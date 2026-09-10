@@ -163,6 +163,7 @@ const newSession = (
   startedAt: Date.now(),
   initialTrack: track ? clone(track) : undefined,
   currentTrack: track ? clone(track) : undefined,
+  mediaMode: 'audio',
   trackHistory: track ? [clone(track)] : [],
   messages: [],
   playbackEvents: [],
@@ -552,6 +553,15 @@ const initializeRuntime = () => {
         if (activeSession.value?.id === session.id && activeSession.value.status === 'active') void requestPartnerReply({ automatic: true })
       }, 1800)
     }
+  }, { immediate: true })
+  watch(player.activeVideo, video => {
+    const session = activeSession.value
+    if (!session || session.status !== 'active') return
+    session.mediaMode = video ? 'mv' : 'audio'
+    session.musicVideoSourceId = video?.sourceId
+    session.musicVideoId = video?.id
+    session.playbackEvents.push({ id: uid('listen_event'), type: 'media', actor: 'system', detail: video ? `切换到MV：${video.title}` : '切换到歌曲音频', createdAt: Date.now() })
+    persist()
   }, { immediate: true })
 }
 

@@ -4,6 +4,7 @@ import { ref, watch, nextTick } from 'vue'
 import { chatSettings } from '../../store'
 import ChatVoiceMemoryModal from './modals/ChatVoiceMemoryModal.vue'
 import ChatVoiceCallMsgActionModal from './modals/ChatVoiceCallMsgActionModal.vue'
+import ChatCallMediaControls from './room/ChatCallMediaControls.vue'
 
 const props = defineProps<{
   show: boolean
@@ -28,6 +29,8 @@ const emit = defineEmits<{
   (e: 'minimize'): void
   (e: 'edit-message', messageId: number): void
   (e: 'delete-message', messageId: number): void
+  (e: 'real-voice-transcript', text: string): void
+  (e: 'real-media-notice', text: string): void
 }>()
 
 const inputMessage = ref('')
@@ -204,6 +207,13 @@ const handleSaveMemory = (countVal: number | null, thresholdVal: number | null) 
         <!-- 通话中：高透磨砂控制面板 -->
         <transition name="slide-up-fade">
           <div v-if="status === 'connected'" class="crystal-console">
+            <ChatCallMediaControls
+              mode="voice"
+              :active="status === 'connected'"
+              :disabled="isGenerating"
+              @transcript="emit('real-voice-transcript', $event)"
+              @notice="emit('real-media-notice', $event)"
+            />
             <div class="console-grid">
               <div class="squircle-action" @click="emit('regenerate')" :class="{ disabled: isGenerating }">
                 <div class="action-icon">

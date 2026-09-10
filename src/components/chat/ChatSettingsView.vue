@@ -64,6 +64,8 @@ import ChatIdentityProfileModal from './modals/ChatIdentityProfileModal.vue'
 import ChatGroupMemoryBridgeModal from './modals/ChatGroupMemoryBridgeModal.vue'
 import ChatSocialCircleModal from './modals/ChatSocialCircleModal.vue'
 import ChatTimelineManagerModal from './modals/ChatTimelineManagerModal.vue'
+import ChatRealMediaSettingsModal from './modals/ChatRealMediaSettingsModal.vue'
+import { deleteRecordedVoice } from '../../services/browserMedia'
 import TogetherListenHub from '../music/TogetherListenHub.vue'
 
 const searchQuery = ref('')
@@ -110,6 +112,7 @@ const { getTimezoneLabel } = useTimezone()
 const showTimezoneModal = ref(false)
 const showTogetherListenSettings = ref(false)
 const showIdentityTimeModal = ref(false)
+const showRealMediaSettings = ref(false)
 const currentSelectingTarget = ref<'user' | 'character'>('user')
 
 const openTimezoneModal = (target: 'user' | 'character') => {
@@ -541,6 +544,9 @@ const handleClearHistoryClick = () => {
 
 const confirmClearChatHistory = () => {
   if (selectedChat.value) {
+    selectedChat.value.messages?.forEach((message: any) => {
+      if (message.voiceData?.audioId) void deleteRecordedVoice(message.voiceData.audioId)
+    })
     selectedChat.value.messages = []
     
     // 更新外部 mockChats 里的列表预览
@@ -885,6 +891,7 @@ const handleSaveTimeDisplayStyle = (style: 'none' | 'hm' | 'hms', position: 'ava
         @open-relationship="emit('open-relationship')"
         @open-autonomy="emit('open-autonomy')"
         @open-timeline-manager="showTimelineManagerModal = true"
+        @open-real-media-settings="showRealMediaSettings = true"
       />
 
       <ChatSettingsPanelUser
@@ -1161,6 +1168,11 @@ const handleSaveTimeDisplayStyle = (style: 'none' | 'hm' | 'hms', position: 'ava
       <ChatClearHistoryModal
         v-model:visible="showClearConfirmModal"
         @confirm="confirmClearChatHistory"
+      />
+
+      <ChatRealMediaSettingsModal
+        :visible="showRealMediaSettings"
+        @close="showRealMediaSettings = false"
       />
 
       <Teleport to="body">

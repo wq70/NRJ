@@ -4,6 +4,7 @@ import { ref, watch, nextTick } from 'vue'
 import { chatSettings } from '../../store'
 import ChatVoiceMemoryModal from './modals/ChatVoiceMemoryModal.vue'
 import ChatVoiceCallMsgActionModal from './modals/ChatVoiceCallMsgActionModal.vue'
+import ChatCallMediaControls from './room/ChatCallMediaControls.vue'
 
 const props = defineProps<{
   show: boolean
@@ -14,6 +15,7 @@ const props = defineProps<{
   isGenerating: boolean
   displayMessages: any[]
   currentSummary?: string | null
+  visionBusy?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -29,6 +31,9 @@ const emit = defineEmits<{
   (e: 'edit-message', messageId: number): void
   (e: 'delete-message', messageId: number): void
   (e: 'update-temp-summary', summary: string | null): void
+  (e: 'real-voice-transcript', text: string): void
+  (e: 'vision-frame', payload: { dataUrl: string; manual: boolean }): void
+  (e: 'real-media-notice', text: string): void
 }>()
 
 const inputMessage = ref('')
@@ -213,6 +218,15 @@ const handleSaveMemory = (countVal: number | null, thresholdVal: number | null) 
 
         <transition name="slide-up-fade">
           <div v-if="status === 'connected'" class="crystal-console">
+            <ChatCallMediaControls
+              mode="video"
+              :active="status === 'connected'"
+              :vision-busy="visionBusy"
+              :disabled="isGenerating"
+              @transcript="emit('real-voice-transcript', $event)"
+              @vision-frame="emit('vision-frame', $event)"
+              @notice="emit('real-media-notice', $event)"
+            />
             <div class="console-grid">
               <div class="squircle-action" @click="emit('regenerate')" :class="{ disabled: isGenerating }">
                 <div class="action-icon">

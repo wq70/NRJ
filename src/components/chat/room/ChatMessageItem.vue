@@ -503,7 +503,7 @@ const groupBadge = (memberId: string) => {
                 :msg="msg"
                 direction="right"
                 :autoTranscribeVoice="chatSettings.autoTranscribeVoice ?? false"
-                :voice-playback-enabled="!!selectedChat?.enableVoiceReply"
+              :voice-playback-enabled="!!msg.voiceData?.audioId || !!selectedChat?.enableVoiceReply"
                 :expandedVoiceIds="expandedVoiceIds"
                 :playing-id="voicePlayingId"
                 :is-synthesizing="isVoiceSynthesizing"

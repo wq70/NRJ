@@ -57,7 +57,7 @@ export interface TogetherListenMessage {
 
 export interface TogetherListenPlaybackEvent {
   id: string
-  type: 'track' | 'play' | 'pause' | 'seek' | 'queue' | 'leave'
+  type: 'track' | 'play' | 'pause' | 'seek' | 'queue' | 'media' | 'leave'
   actor: 'user' | 'partner' | 'system'
   detail: string
   createdAt: number
@@ -83,6 +83,9 @@ export interface TogetherListenSession {
   endedAt?: number
   initialTrack?: MusicTrack
   currentTrack?: MusicTrack
+  mediaMode?: 'audio' | 'mv'
+  musicVideoSourceId?: string
+  musicVideoId?: string
   trackHistory: MusicTrack[]
   messages: TogetherListenMessage[]
   playbackEvents: TogetherListenPlaybackEvent[]

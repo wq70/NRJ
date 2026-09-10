@@ -39,6 +39,7 @@
     "test:music-playback": "tsx scripts/test-music-playback.ts",
     "test:music-fallback": "tsx scripts/test-music-source-fallback.ts",
     "test:music-source-policy": "tsx scripts/test-music-source-policy.ts",
+    "test:music-video": "tsx scripts/test-music-video.ts",
     "test:veo": "tsx scripts/test-veo-video.ts",
     "test:omni": "tsx scripts/test-gemini-omni-video.ts",
     "test:kling": "tsx scripts/test-kling-video.ts",

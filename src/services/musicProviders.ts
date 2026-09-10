@@ -1,5 +1,5 @@
 /* WARNING: 本项目专属“粘人精”，严禁出现 Kiro、Krio、周棋洛等任何相关英文或拼音命名！ */
-import type { MusicComment, MusicCommentPage, MusicHomeSection, MusicPlaylist, MusicQuality, MusicSearchPage, MusicSourceConfig, MusicSourceStatus, MusicTrack, MusicUserProfile } from '../types/music'
+import type { MusicComment, MusicCommentPage, MusicHomeSection, MusicPlaylist, MusicQuality, MusicSearchPage, MusicSourceConfig, MusicSourceStatus, MusicTrack, MusicUserProfile, MusicVideoCandidate, MusicVideoQuality } from '../types/music'
 import { parseMusicLyrics } from './musicLyrics'
 
 export interface MusicProvider {
@@ -11,6 +11,8 @@ export interface MusicProvider {
   getLyrics?(track: MusicTrack): Promise<MusicTrack['lyrics']>
   getComments?(track: MusicTrack, page?: number): Promise<MusicCommentPage>
   getProfile?(): Promise<MusicUserProfile | null>
+  getRelatedMusicVideos?(track: MusicTrack): Promise<MusicVideoCandidate[]>
+  getMusicVideoUrl?(video: MusicVideoCandidate, quality: MusicVideoQuality): Promise<{ url: string; actualQuality?: number } | null>
 }
 
 type JsonRecord = Record<string, unknown>
@@ -99,6 +101,25 @@ const neteasePlaylist = (item: any): MusicPlaylist => ({
   coverUrl: secureImageUrl(item.picUrl || item.coverImgUrl), description: item.description, ownerName: item.creator?.nickname
 })
 
+const neteaseVideoCandidate = (item: any): MusicVideoCandidate | null => {
+  const id = String(item?.id || item?.vid || '')
+  if (!id) return null
+  const resolutions = Array.isArray(item?.brs)
+    ? item.brs.map((entry: any) => numberValue(entry?.br)).filter(Boolean)
+    : [1080, 720, 480]
+  return {
+    id,
+    sourceId: 'netease',
+    title: textValue(item?.name, '未知 MV'),
+    artist: textValue(item?.artistName) || (Array.isArray(item?.artists) ? item.artists.map((artist: any) => textValue(artist?.name)).filter(Boolean).join(' / ') : '未知歌手'),
+    duration: Math.round(numberValue(item?.duration) / 1000),
+    coverUrl: secureImageUrl(item?.cover || item?.coverUrl || item?.imgurl),
+    playbackType: 'direct',
+    availableQualities: [...new Set<number>(resolutions)].sort((a, b) => b - a),
+    official: !/翻唱|reaction|片段|采访|饭制/i.test(textValue(item?.name))
+  }
+}
+
 class NeteaseMusicProvider implements MusicProvider {
   id: string
   private config: MusicSourceConfig
@@ -168,6 +189,19 @@ class NeteaseMusicProvider implements MusicProvider {
     if (!profile) return null
     const detail: any = await this.request('/user/detail', { uid: profile.userId }).catch(() => null)
     return { id: String(profile.userId), sourceId: this.id, nickname: profile.nickname, avatarUrl: profile.avatarUrl, signature: profile.signature, level: detail?.level, vipLabel: detail?.profile?.vipType ? '黑胶 VIP' : '网易云账号' }
+  }
+  async getRelatedMusicVideos(track: MusicTrack): Promise<MusicVideoCandidate[]> {
+    const data: any = await this.request('/search', { keywords: `${track.title} ${track.artist}`.trim(), type: 1004, limit: 12, offset: 0 })
+    const videos = data?.result?.mvs || data?.result?.videos || []
+    return (Array.isArray(videos) ? videos : []).map(neteaseVideoCandidate).filter((video: MusicVideoCandidate | null): video is MusicVideoCandidate => Boolean(video)).map(video => ({ ...video, sourceId: this.id }))
+  }
+  async getMusicVideoUrl(video: MusicVideoCandidate, quality: MusicVideoQuality) {
+    const requested = quality === 'auto' ? 720 : Number(quality)
+    const data: any = await this.request('/mv/url', { id: video.id, r: requested })
+    const item = data?.data || data
+    const rawUrl = textValue(item?.url).trim()
+    if (!rawUrl) return null
+    return { url: rawUrl.replace(/^http:\/\//i, 'https://'), actualQuality: numberValue(item?.r) || requested }
   }
 }
 
@@ -510,6 +544,14 @@ class OfficialVideoProvider implements MusicProvider {
     return { tracks, sourceStatuses: [{ id: this.id, name: '官方视频', ok: true, detail: tracks.length ? `找到 ${tracks.length} 个官方版本，嵌入权限播放时验证` : '本地官方目录已检查' }] }
   }
   async getStreamUrl() { return null }
+  async getRelatedMusicVideos(track: MusicTrack): Promise<MusicVideoCandidate[]> {
+    const normalized = normalizeMusicSearchText(`${track.title}${track.artist}`)
+    return officialVideoCatalog.filter(item => normalized.includes(normalizeMusicSearchText(item.title)) || normalizeMusicSearchText(`${item.title}${item.artist}`).includes(normalized)).map(item => ({
+      id: item.sourceTrackId, sourceId: this.id, title: item.title, artist: item.artist, duration: item.duration,
+      coverUrl: item.coverUrl, playbackType: 'embed', embedProvider: item.embedProvider, embedId: item.embedId,
+      availableQualities: [], official: true
+    }))
+  }
 }
 
 class PublicVideoProvider implements MusicProvider {
@@ -520,6 +562,14 @@ class PublicVideoProvider implements MusicProvider {
     return { tracks, sourceStatuses: [{ id: this.id, name: '国内公开视频', ok: true, detail: tracks.length ? `找到 ${tracks.length} 个完整公开版本` : '本地公开目录已检查' }] }
   }
   async getStreamUrl() { return null }
+  async getRelatedMusicVideos(track: MusicTrack): Promise<MusicVideoCandidate[]> {
+    const normalized = normalizeMusicSearchText(`${track.title}${track.artist}`)
+    return publicVideoCatalog.filter(item => normalized.includes(normalizeMusicSearchText(item.title)) || normalizeMusicSearchText(`${item.title}${item.artist}`).includes(normalized)).map(item => ({
+      id: item.sourceTrackId, sourceId: this.id, title: item.title, artist: item.artist, duration: item.duration,
+      coverUrl: item.coverUrl, playbackType: 'embed', embedProvider: item.embedProvider, embedId: item.embedId,
+      availableQualities: [], official: false
+    }))
+  }
 }
 
 class SubsonicMusicProvider implements MusicProvider {
@@ -547,12 +597,12 @@ export const defaultMusicSourceConfigs = (): MusicSourceConfig[] => {
   const bundledAggregateApiBase = deployedAggregateApiBase
   return [
     { id: 'local', name: '本地音乐', enabled: true, kind: 'local', capabilities: ['播放', '歌词', '歌单', '离线'] },
-    { id: 'thatapi-netease', name: '网易云公开一号源', enabled: true, kind: 'netease', apiBase: 'https://netease.thatapi.cn', anonymousPublic: true, capabilities: ['推荐歌单', '歌单详情', '搜索', '评论', '播放'] },
-    { id: 'cyanyun-netease', name: '网易云公开二号源', enabled: true, kind: 'netease', apiBase: 'https://www.cyanyun.com/api', anonymousPublic: true, capabilities: ['推荐歌单', '歌单详情', '搜索', '播放'] },
+    { id: 'thatapi-netease', name: '网易云公开一号源', enabled: true, kind: 'netease', apiBase: 'https://netease.thatapi.cn', anonymousPublic: true, capabilities: ['推荐歌单', '歌单详情', '搜索', '评论', '播放', 'MV搜索', 'MV播放'] },
+    { id: 'cyanyun-netease', name: '网易云公开二号源', enabled: true, kind: 'netease', apiBase: 'https://www.cyanyun.com/api', anonymousPublic: true, capabilities: ['推荐歌单', '歌单详情', '搜索', '播放', 'MV搜索', 'MV播放'] },
     { id: 'qijieya-meting', name: '网易云与QQ公共源', enabled: true, kind: 'meting', apiBase: 'https://api.qijieya.cn/meting/', anonymousPublic: true, capabilities: ['网易云', 'QQ音乐', '搜索', '歌单', '播放'] },
     { id: 'vkeys-music', name: '落月播放补源', enabled: true, kind: 'generic', apiBase: 'https://api.vkeys.cn/v2/music', anonymousPublic: true, capabilities: ['网易云', 'QQ音乐', '播放补源', '多音质'] },
     { id: 'injahow-meting', name: '公开歌单补源', enabled: true, kind: 'meting', apiBase: 'https://api.injahow.cn/meting/', anonymousPublic: true, capabilities: ['网易云', '歌单', '单曲', '播放补源'] },
-    { id: 'hf-netease', name: '网易云应急源', enabled: true, kind: 'netease', apiBase: 'https://moefurina-neteasecloudmusicapienhanced.hf.space', anonymousPublic: true, capabilities: ['推荐歌单', '评论', '播放', '应急备用'] },
+    { id: 'hf-netease', name: '网易云应急源', enabled: true, kind: 'netease', apiBase: 'https://moefurina-neteasecloudmusicapienhanced.hf.space', anonymousPublic: true, capabilities: ['推荐歌单', '评论', '播放', 'MV搜索', 'MV播放', '应急备用'] },
     { id: 'public-meting', name: '原公共音乐源', enabled: true, kind: 'meting', apiBase: 'https://meting.mikus.ink/api', anonymousPublic: true, capabilities: ['匿名搜索', '公开榜单', '无需部署', '第三方服务'] },
     { id: 'aggregate', name: '可选账号服务', enabled: Boolean(bundledAggregateApiBase), kind: 'aggregate', apiBase: bundledAggregateApiBase, capabilities: ['可选配置', '扫码登录', '个人歌单', '账号隔离'] },
     { id: 'official-video', name: '官方视频（免部署）', enabled: true, kind: 'embed', capabilities: ['官方完整内容', '无需登录', '无需部署', '网页播放'] },

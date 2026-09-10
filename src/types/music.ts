@@ -2,9 +2,27 @@
 
 export type MusicSourceId = 'local' | 'aggregate' | 'netease' | 'qq' | 'kugou' | 'kuwo' | 'migu' | 'bilibili' | 'subsonic' | string
 export type MusicQuality = 'standard' | 'higher' | 'exhigh' | 'lossless' | 'hires'
-export type MusicPlaybackType = 'full' | 'local' | 'embed'
+export type MusicPlaybackType = 'full' | 'local' | 'embed' | 'video'
 export type MusicValidationStatus = 'unknown' | 'checking' | 'verified' | 'trial' | 'unavailable'
 export type MusicPlayMode = 'loop' | 'single' | 'shuffle' | 'random'
+export type MusicVideoMode = 'off' | 'manual' | 'auto'
+export type MusicVideoQuality = 'auto' | '480' | '720' | '1080'
+
+export interface MusicVideoCandidate {
+  id: string
+  sourceId: string
+  title: string
+  artist: string
+  duration: number
+  coverUrl?: string
+  playbackType: 'direct' | 'embed'
+  embedProvider?: 'youtube' | 'bilibili'
+  embedId?: string
+  availableQualities: number[]
+  actualQuality?: number
+  official?: boolean
+  matchScore?: number
+}
 
 export interface MusicSourceStatus {
   id: string
@@ -189,6 +207,9 @@ export interface MusicPersistedState {
   playMode: MusicPlayMode
   queueSourcePlaylistId?: string | null
   preferredQuality: MusicQuality
+  preferredVideoMode?: MusicVideoMode
+  preferredVideoQuality?: MusicVideoQuality
+  videoDataSaver?: boolean
   sourceConfigs: MusicSourceConfig[]
   customTrackCount?: number | null
   customTotalMinutes?: number | null

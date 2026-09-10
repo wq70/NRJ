@@ -12,7 +12,8 @@ import { markMusicSourceFailure, markMusicSourceSuccess, orderMusicSourcesForCap
 import {
   initializeMusicRuntime, musicCustomPlaylists, musicCustomTrackCount, musicCustomTotalMinutes,
   musicCustomNickname, musicCustomVipLabel, musicCustomSignature,
-  musicHistory, musicLikedKeys, musicPlaylistTracks, musicPreferredQuality, musicSourceConfigs, persistMusicRuntime
+  musicHistory, musicLikedKeys, musicPlaylistTracks, musicPreferredQuality, musicPreferredVideoMode, musicPreferredVideoQuality,
+  musicSourceConfigs, musicVideoDataSaver, persistMusicRuntime
 } from '../services/musicRuntime'
 
 const searchQuery = ref('')
@@ -590,7 +591,7 @@ export function useMusicLibrary() {
   }
 
   const exportLibrary = () => {
-    const payload = JSON.stringify({ version: 2, exportedAt: Date.now(), likedTrackKeys: musicLikedKeys.value, history: musicHistory.value, customPlaylists: musicCustomPlaylists.value, playlistTracks: { ...musicPlaylistTracks }, sourceConfigs: musicSourceConfigs.value.map(({ token: _token, ...item }) => item), customTrackCount: musicCustomTrackCount.value, customTotalMinutes: musicCustomTotalMinutes.value, customNickname: musicCustomNickname.value, customVipLabel: musicCustomVipLabel.value, customSignature: musicCustomSignature.value }, null, 2)
+    const payload = JSON.stringify({ version: 2, exportedAt: Date.now(), likedTrackKeys: musicLikedKeys.value, history: musicHistory.value, customPlaylists: musicCustomPlaylists.value, playlistTracks: { ...musicPlaylistTracks }, sourceConfigs: musicSourceConfigs.value.map(({ token: _token, ...item }) => item), preferredQuality: musicPreferredQuality.value, preferredVideoMode: musicPreferredVideoMode.value, preferredVideoQuality: musicPreferredVideoQuality.value, videoDataSaver: musicVideoDataSaver.value, customTrackCount: musicCustomTrackCount.value, customTotalMinutes: musicCustomTotalMinutes.value, customNickname: musicCustomNickname.value, customVipLabel: musicCustomVipLabel.value, customSignature: musicCustomSignature.value }, null, 2)
     const url = URL.createObjectURL(new Blob([payload], { type: 'application/json' }))
     const anchor = document.createElement('a'); anchor.href = url; anchor.download = `黏人机音乐备份-${new Date().toISOString().slice(0, 10)}.json`; anchor.click(); URL.revokeObjectURL(url)
   }
@@ -606,6 +607,9 @@ export function useMusicLibrary() {
     if (typeof data.customNickname === 'string') musicCustomNickname.value = data.customNickname
     if (typeof data.customVipLabel === 'string') musicCustomVipLabel.value = data.customVipLabel
     if (typeof data.customSignature === 'string') musicCustomSignature.value = data.customSignature
+    if (['off', 'manual', 'auto'].includes(data.preferredVideoMode)) musicPreferredVideoMode.value = data.preferredVideoMode
+    if (['auto', '480', '720', '1080'].includes(data.preferredVideoQuality)) musicPreferredVideoQuality.value = data.preferredVideoQuality
+    if (typeof data.videoDataSaver === 'boolean') musicVideoDataSaver.value = data.videoDataSaver
     Object.entries(data.playlistTracks || {}).forEach(([key, tracks]) => { musicPlaylistTracks[key] = tracks as MusicTrack[] })
     persistMusicRuntime()
     setMessage('音乐资料已合并导入')

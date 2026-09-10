@@ -34,7 +34,7 @@ const handleBubbleClick = () => {
   
   // 2. 角色语音接入关闭时只保留转写展开能力，不触发合成或密钥检查
   if (props.voicePlaybackEnabled) {
-    emit('play-voice', props.msg.id, props.msg.voiceData.text)
+    emit('play-voice', props.msg.id, props.msg.voiceData.text || '')
   }
 }
 </script>
@@ -67,7 +67,7 @@ const handleBubbleClick = () => {
   <!-- 转文字内容 -->
   <transition name="fade-down">
     <div v-if="autoTranscribeVoice || expandedVoiceIds.has(msg.id)" class="voice-text-translation" :class="{ 'left': direction === 'left' }">
-      {{ msg.voiceData.text }}
+      {{ msg.voiceData.text || (msg.voiceData.isRealVoice ? '未生成转写' : '') }}
     </div>
   </transition>
 </template>

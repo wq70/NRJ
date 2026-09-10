@@ -52,6 +52,8 @@ import ChatReplyVariantActionsModal from './modals/ChatReplyVariantActionsModal.
 useBubbleBeautify()
 
 import { useVoicePlayer } from '../../composables/useVoicePlayer'
+import { deleteRecordedVoice, playRecordedVoice, stopRecordedVoicePlayback } from '../../services/browserMedia'
+import { sendCapabilityMessage } from '../../services/api'
 const { playVoice, stopVoice, isPlaying: isVoicePlaying, isSynthesizing: isVoiceSynthesizing, currentPlayingId: voicePlayingId } = useVoicePlayer()
 
 import ChatRoomHeader from './room/ChatRoomHeader.vue'
@@ -286,7 +288,18 @@ const missingVoiceKeyErrors = new Set([
 ])
 
 const handlePlayVoice = async (msgId: number, text: string) => {
-  if (isMultiSelectMode.value || !selectedChat.value?.enableVoiceReply) return
+  if (isMultiSelectMode.value) return
+  const message = selectedChat.value?.messages?.find((item: any) => item.id === msgId)
+  if (message?.voiceData?.audioId) {
+    stopVoice()
+    try {
+      await playRecordedVoice(message.voiceData.audioId)
+    } catch (err: any) {
+      showToast(err?.message || '真实语音播放失败')
+    }
+    return
+  }
+  if (!selectedChat.value?.enableVoiceReply) return
   try {
     await playVoice(msgId, text, selectedChat.value)
   } catch (err: any) {
@@ -367,7 +380,7 @@ const {
 )
 
 const handleSendImage = (data: { file?: File, dataUrl?: string, text?: string }) => originalHandleSendImage({ text: data.text ?? '' }, showExtensionPanel)
-const handleSendVoice = (data: { text: string, seconds: number }) => originalHandleSendVoice(data, showExtensionPanel)
+const handleSendVoice = (data: { text: string, seconds: number, audioBlob?: Blob, mimeType?: string, isRealVoice?: boolean, transcriptStatus?: string }) => originalHandleSendVoice(data, showExtensionPanel)
 const handleSendTransfer = (data: { type: 'red_packet' | 'transfer', amount: number, remark: string, expireHours: number, fundingSource: 'balance' | 'credit' | 'bank_card', fundingSourceId?: string }) => originalHandleSendTransfer(data, showExtensionPanel)
 
 const onModalReply = (msgId?: number) => {
@@ -501,7 +514,8 @@ const handleCallMessageDelete = (msgId: number) => {
   const idx = messages.findIndex((m: any) => m.id === msgId)
   if (idx === -1) return
 
-  messages.splice(idx, 1)
+  const [removed] = messages.splice(idx, 1)
+  if (removed?.voiceData?.audioId) void deleteRecordedVoice(removed.voiceData.audioId)
   saveCustomContacts()
   showToast('已删除')
 }
@@ -1045,6 +1059,68 @@ const {
   handleStopCall
 )
 
+const videoVisionBusy = ref(false)
+const handleRealCallTranscript = async (text: string, mode: 'voice' | 'video') => {
+  const normalized = text.trim()
+  if (!normalized) return
+  await handleAddMessage(normalized)
+  if (mode === 'voice') handleVoiceCallTriggerAPI()
+  else handleVideoCallTriggerAPI()
+}
+
+const handleVideoVisionFrame = async (payload: { dataUrl: string; manual: boolean }) => {
+  if (videoVisionBusy.value || !selectedChat.value || !chatSettings.enableRealMedia || !chatSettings.enableRealVideoVision) return
+  videoVisionBusy.value = true
+  try {
+    const result = await sendCapabilityMessage('vision-understanding', [{
+      role: 'user',
+      content: [
+        { type: 'text', text: '请客观简短描述视频通话摄像头当前可见的用户表情、动作、衣着、手中物品和周围环境变化。不要猜测身份、疾病、种族、性取向、精确年龄或其他敏感属性，也不要把表情当作确定的内心结论。只输出本次观察结果。' },
+        { type: 'image_url', image_url: { url: payload.dataUrl } }
+      ]
+    }])
+    const observation = String(typeof result === 'string' ? result : result.content || '').trim()
+    if (!observation) throw new Error('视觉接口没有返回观察结果')
+    selectedChat.value.messages ||= []
+    selectedChat.value.messages.push({
+      id: Date.now(),
+      type: 'system',
+      content: `[摄像头视觉观察，仅供本次视频通话参考] ${observation}`,
+      isHidden: true,
+      isVideoCallProcessMsg: true,
+      isTransientVideoVision: true
+    })
+    saveCustomContacts()
+    showToast(payload.manual ? 'AI 已看到当前画面' : 'AI 视觉观察已更新')
+    if (payload.manual) handleVideoCallTriggerAPI()
+  } catch (error: any) {
+    showToast(error?.message ? `视频识别失败：${error.message}` : '视频识别失败')
+  } finally {
+    videoVisionBusy.value = false
+  }
+}
+
+const playedCallVoiceIds = new Set<number>()
+const playLatestCallReply = async (messages: any[]) => {
+  if (!chatSettings.enableRealMedia || !chatSettings.enableRealCallTts || !selectedChat.value?.enableVoiceReply) return
+  const message = [...messages].reverse().find(item => item.type === 'left' && item.content && !playedCallVoiceIds.has(item.id))
+  if (!message) return
+  playedCallVoiceIds.add(message.id)
+  stopRecordedVoicePlayback()
+  try {
+    await playVoice(message.id, message.content, selectedChat.value)
+  } catch (error: any) {
+    showToast(error?.message || '角色通话声音播放失败，文字回复仍可查看')
+  }
+}
+
+watch(() => voiceCallMessages.value.map((item: any) => item.id).join(','), () => {
+  if (callStatus.value === 'connected') void playLatestCallReply(voiceCallMessages.value)
+})
+watch(() => videoCallMessages.value.map((item: any) => item.id).join(','), () => {
+  if (videoCallStatus.value === 'connected') void playLatestCallReply(videoCallMessages.value)
+})
+
 const handleVoiceCallRegenerate = () => {
   originalHandleRegenerate(showExtensionPanel, showToast, 'voice')
 }
@@ -1243,6 +1319,7 @@ onUnmounted(() => {
   if (autoSummaryTimer) clearTimeout(autoSummaryTimer)
   if (timeInterval) clearInterval(timeInterval)
   stopVoice()
+  stopRecordedVoicePlayback()
   window.removeEventListener('app-viewport-change', handleAppViewportChange)
   if (callStatus.value === 'incoming') {
     handleIncomingCallMissed('timeout')
@@ -1483,6 +1560,7 @@ onUnmounted(() => {
       :is-generating="isGenerating"
       :display-messages="videoCallMessages"
       :current-summary="currentVideoCallTempSummary"
+      :vision-busy="videoVisionBusy"
       @end-call="handleVideoCallEnd"
       @add-message="handleAddMessage"
       @trigger-api="handleVideoCallTriggerAPI"
@@ -1492,6 +1570,9 @@ onUnmounted(() => {
       @update-temp-summary="handleUpdateVideoTempSummary"
       @edit-message="onModalEdit"
       @delete-message="handleCallMessageDelete"
+      @real-voice-transcript="handleRealCallTranscript($event, 'video')"
+      @vision-frame="handleVideoVisionFrame"
+      @real-media-notice="showToast"
     />
 
     <ChatVoiceCallWidget
@@ -1524,6 +1605,8 @@ onUnmounted(() => {
       @update-temp-summary="currentCallTempSummary = $event"
       @edit-message="onModalEdit"
       @delete-message="handleCallMessageDelete"
+      @real-voice-transcript="handleRealCallTranscript($event, 'voice')"
+      @real-media-notice="showToast"
     />
 
     <ChatVoiceCallWidget

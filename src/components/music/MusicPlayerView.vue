@@ -7,6 +7,7 @@ import { useTogetherListen } from '../../services/togetherListen'
 import { myProfile } from '../../composables/chatState/state'
 import MusicYouTubePlayer from './MusicYouTubePlayer.vue'
 import MusicBilibiliPlayer from './MusicBilibiliPlayer.vue'
+import MusicDirectVideoPlayer from './MusicDirectVideoPlayer.vue'
 import MusicShareModal from './modals/MusicShareModal.vue'
 
 const {
@@ -15,6 +16,7 @@ const {
   isBuffering,
   playbackError,
   currentTime,
+  playbackDuration,
   isLikedCurrent,
   playMode,
   isLyricMode,
@@ -23,6 +25,13 @@ const {
   activePlaybackType,
   activeEmbedId,
   activeEmbedProvider,
+  activeVideo,
+  activeVideoUrl,
+  musicVideoState,
+  musicVideoMessage,
+  musicVideoCandidates,
+  actualVideoQuality,
+  preferredVideoMode,
   volume,
   togglePlay,
   nextTrack,
@@ -30,6 +39,8 @@ const {
   seek,
   toggleMode,
   toggleLike,
+  toggleMusicVideo,
+  selectMusicVideo,
   formatTime
 } = useMusicPlayer()
 
@@ -168,13 +179,26 @@ const openComments = () => {
   emit('openComments')
 }
 
+const handleToggleMusicVideo = async () => {
+  if (!currentTrack.value) { setMessage('请先播放一首歌曲'); return }
+  await toggleMusicVideo()
+  if (musicVideoMessage.value) setMessage(musicVideoMessage.value)
+}
+const activeVideoCandidateIndex = computed(() => activeVideo.value ? musicVideoCandidates.value.findIndex(item => item.sourceId === activeVideo.value?.sourceId && item.id === activeVideo.value?.id) : -1)
+const switchMusicVideoSource = async () => {
+  if (musicVideoCandidates.value.length < 2) return
+  const nextIndex = (Math.max(0, activeVideoCandidateIndex.value) + 1) % musicVideoCandidates.value.length
+  await selectMusicVideo(musicVideoCandidates.value[nextIndex])
+  setMessage(`已切换：${musicVideoCandidates.value[nextIndex].title}`)
+}
+
 const handleSeek = (e: MouseEvent) => {
   const target = e.currentTarget as HTMLElement
   const rect = target.getBoundingClientRect()
   const clickX = e.clientX - rect.left
   const ratio = Math.max(0, Math.min(1, clickX / rect.width))
   if (currentTrack.value) {
-    seek(ratio * currentTrack.value.duration)
+    seek(ratio * playbackDuration.value)
   }
 }
 
@@ -288,7 +312,8 @@ const openShareModal = () => {
         <small>和{{ listenPartnerName }}一起听了 {{ listenElapsed }}</small>
       </button>
       <!-- 黑胶唱片模式 (无摆臂，纯圆盘与同心纹) -->
-      <MusicYouTubePlayer v-if="activePlaybackType === 'embed' && activeEmbedId && activeEmbedProvider === 'youtube'" :videoId="activeEmbedId" :volume="volume" />
+      <MusicDirectVideoPlayer v-if="activePlaybackType === 'video' && activeVideo && activeVideoUrl" :url="activeVideoUrl" :volume="volume" :title="activeVideo.title" :quality="actualVideoQuality" />
+      <MusicYouTubePlayer v-else-if="activePlaybackType === 'embed' && activeEmbedId && activeEmbedProvider === 'youtube'" :videoId="activeEmbedId" :volume="volume" />
       <MusicBilibiliPlayer v-else-if="activePlaybackType === 'embed' && activeEmbedId && activeEmbedProvider === 'bilibili'" :embedId="activeEmbedId" :volume="volume" :duration="currentTrack?.duration || 0" />
       <div class="disc-wrapper" v-else-if="!isLyricMode" @click="toggleLyricView">
         <div class="vinyl-record" :class="{ 'is-rotating': isPlaying }">
@@ -341,11 +366,12 @@ const openShareModal = () => {
           </template>
         </div>
       </div>
+      <button v-if="activeVideo && musicVideoCandidates.length > 1" class="mv-source-switch" type="button" title="切换 MV 来源" @click.stop="switchMusicVideoSource">换源 {{ activeVideoCandidateIndex + 1 }}/{{ musicVideoCandidates.length }}</button>
     </div>
 
     <div class="player-control-deck">
       <div v-if="playbackError" class="playback-message">{{ playbackError }}</div>
-      <div v-else-if="isBuffering" class="playback-message">正在缓冲音频…</div>
+      <div v-else-if="isBuffering" class="playback-message">正在缓冲{{ activeVideo ? '视频' : '音频' }}…</div>
 
       <!-- 下方交互功能栏 (喜欢、评论、音效、更多) -->
       <div class="player-action-bar">
@@ -372,6 +398,18 @@ const openShareModal = () => {
           <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path>
         </svg>
         <span v-if="currentCommentCount > 0" class="comment-badge">{{ formatCommentBadge(currentCommentCount) }}</span>
+      </button>
+
+      <button
+        v-if="preferredVideoMode !== 'off' && !(activePlaybackType === 'embed' && !activeVideo)"
+        class="interact-btn mv-action-btn"
+        :class="{ active: !!activeVideo, checking: musicVideoState === 'checking' }"
+        :disabled="!currentTrack || musicVideoState === 'checking'"
+        :title="activeVideo ? '返回歌曲封面' : '播放 MV'"
+        :aria-label="activeVideo ? '返回歌曲封面' : '播放 MV'"
+        @click="handleToggleMusicVideo"
+      >
+        <span>{{ musicVideoState === 'checking' ? '···' : 'MV' }}</span>
       </button>
 
       <button class="interact-btn" title="音效" @click="emit('openPlaybackSettings')">
@@ -405,7 +443,7 @@ const openShareModal = () => {
           <div class="progress-thumb"></div>
         </div>
       </div>
-      <span class="time-label">{{ formatTime(currentTrack?.duration || 0) }}</span>
+      <span class="time-label">{{ formatTime(playbackDuration) }}</span>
       </div>
 
       <!-- 主播放控制器 -->
@@ -982,6 +1020,33 @@ const openShareModal = () => {
   transition: color 0.2s, transform 0.15s;
   position: relative;
 }
+.mv-action-btn span{display:grid;min-width:24px;height:17px;place-items:center;padding:0 3px;border:1.5px solid currentColor;border-radius:5px;font-size:8px;font-weight:750;letter-spacing:.04em;box-sizing:border-box}
+.mv-action-btn.active{color:#fff}.mv-action-btn.active span{background:rgba(255,255,255,.14)}
+.mv-action-btn.checking span{letter-spacing:.12em}
+
+.mv-source-switch {
+  position: absolute;
+  right: 14px;
+  bottom: 10px;
+  z-index: 7;
+  max-width: calc(100% - 28px);
+  overflow: hidden;
+  padding: 5px 8px;
+  border: 1px solid rgba(255, 255, 255, .2);
+  border-radius: 9px;
+  background: rgba(26, 26, 29, .58);
+  color: rgba(255, 255, 255, .82);
+  font: inherit;
+  font-size: 9px;
+  line-height: 1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  box-shadow: 0 3px 10px rgba(0, 0, 0, .12);
+  backdrop-filter: blur(8px);
+  cursor: pointer;
+}
+
+.mv-source-switch:active { transform: scale(.96); }
 
 .interact-btn:active {
   transform: scale(0.92);

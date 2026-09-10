@@ -4,6 +4,7 @@ import localforage from 'localforage'
 import { sendCapabilityMessage } from '../services/api'
 import { useChatState } from './useChatState'
 import { invalidateMemoriesForMessages, invalidateVectorMemoriesForMessages } from '../services/memoryEngine'
+import { deleteRecordedVoice } from '../services/browserMedia'
 
 export function useChatRoomMultiSelect(
   selectedChat: any,
@@ -233,6 +234,9 @@ export function useChatRoomMultiSelect(
     if (!selectedChat.value || selectedMessageIds.value.size === 0) return
     invalidateMemoriesForMessages(selectedChat.value, [...selectedMessageIds.value])
     void invalidateVectorMemoriesForMessages(selectedChat.value, [...selectedMessageIds.value])
+    selectedChat.value.messages.forEach((m: any) => {
+      if (selectedMessageIds.value.has(m.id) && m.voiceData?.audioId) void deleteRecordedVoice(m.voiceData.audioId)
+    })
     selectedChat.value.messages = selectedChat.value.messages.filter((m: any) => !selectedMessageIds.value.has(m.id))
     
     // 手动更新外部 mockChats 里的状态

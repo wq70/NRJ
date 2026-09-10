@@ -1,12 +1,15 @@
 /* WARNING: 本项目专属“粘人精”，严禁出现 Kiro、Krio、周棋洛等任何相关英文或拼音命名！ */
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import type { MusicQuality } from '../../../types/music'
+import type { MusicQuality, MusicVideoMode, MusicVideoQuality } from '../../../types/music'
 import { useMusicPlayer } from '../../../composables/useMusicPlayer'
 
 defineProps<{ visible: boolean }>()
 const emit = defineEmits<{ (e: 'close'): void }>()
-const { volume, preferredQuality, sleepEndsAt, setVolume, setQuality, setSleepTimer } = useMusicPlayer()
+const {
+  volume, preferredQuality, preferredVideoMode, preferredVideoQuality, videoDataSaver, sleepEndsAt,
+  setVolume, setQuality, setVideoMode, setVideoQuality, setVideoDataSaver, setSleepTimer
+} = useMusicPlayer()
 
 const qualities: Array<{ id: MusicQuality; name: string; desc: string }> = [
   { id: 'standard', name: '标准', desc: '省流' },
@@ -22,6 +25,15 @@ const timers = [
   { value: 30, label: '30分钟' },
   { value: 60, label: '1小时' }
 ]
+const videoModes: Array<{ id: MusicVideoMode; name: string; desc: string }> = [
+  { id: 'off', name: '关闭', desc: '不查询' },
+  { id: 'manual', name: '手动', desc: '点击播放' },
+  { id: 'auto', name: '自动', desc: '匹配即播' }
+]
+const videoQualities: Array<{ id: MusicVideoQuality; name: string }> = [
+  { id: 'auto', name: '自动' }, { id: '480', name: '480P' }, { id: '720', name: '720P' }, { id: '1080', name: '1080P' }
+]
+const videoModeText = computed(() => ({ off: '已关闭', manual: '手动开启', auto: '自动播放' })[preferredVideoMode.value])
 
 const customMinutes = ref<number | ''>('')
 const sleepText = computed(() => {
@@ -48,7 +60,7 @@ const applyCustomTimer = () => {
       <header class="dialog-header">
         <div class="header-titles">
           <h3 class="main-title">播放设置</h3>
-          <span class="sub-title">音质、音量与定时停止</span>
+          <span class="sub-title">音质、画面、音量与定时停止</span>
         </div>
         <button class="close-btn" aria-label="关闭" @click="emit('close')">
           <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" fill="none">
@@ -102,6 +114,28 @@ const applyCustomTimer = () => {
           </div>
         </div>
 
+        <div class="setting-card video-setting-card">
+          <div class="card-header">
+            <span class="card-label">MV 播放</span>
+            <span class="sub-badge">{{ videoModeText }}</span>
+          </div>
+          <div class="video-mode-selector">
+            <button v-for="item in videoModes" :key="item.id" type="button" class="video-mode-cell" :class="{ 'is-selected': preferredVideoMode === item.id }" @click="setVideoMode(item.id)">
+              <span>{{ item.name }}</span><small>{{ item.desc }}</small>
+            </button>
+          </div>
+          <div class="video-quality-row" :class="{ disabled: preferredVideoMode === 'off' }">
+            <span>视频清晰度</span>
+            <div>
+              <button v-for="item in videoQualities" :key="item.id" type="button" :class="{ 'is-selected': preferredVideoQuality === item.id }" :disabled="preferredVideoMode === 'off'" @click="setVideoQuality(item.id)">{{ item.name }}</button>
+            </div>
+          </div>
+          <button class="data-saver-row" type="button" :disabled="preferredVideoMode === 'off'" @click="setVideoDataSaver(!videoDataSaver)">
+            <span><b>省流模式</b><small>优先 480P，加载过慢时回到歌曲</small></span>
+            <i :class="{ active: videoDataSaver }"><em></em></i>
+          </button>
+        </div>
+
         <!-- Sleep Timer Section -->
         <div class="setting-card">
           <div class="card-header">
@@ -146,7 +180,7 @@ const applyCustomTimer = () => {
 
         <!-- Note Footer -->
         <p class="dialog-disclaimer">
-          平台实际返回音质视歌曲版权与来源支持决定，系统不会虚标音质参数。
+          音质与 MV 清晰度以平台实际返回为准；视频不可播放时会自动继续播放歌曲。
         </p>
       </div>
     </section>
@@ -402,6 +436,15 @@ const applyCustomTimer = () => {
   opacity: 0.65;
 }
 
+.video-setting-card{gap:10px}
+.video-mode-selector{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}
+.video-mode-cell{display:flex;min-width:0;height:43px;align-items:center;justify-content:center;flex-direction:column;gap:2px;border:1px solid var(--music-card-border,rgba(0,0,0,.07));border-radius:10px;background:var(--music-card-bg,#fff);color:var(--music-text,#334155)}
+.video-mode-cell span{font-size:11px;font-weight:650}.video-mode-cell small{color:inherit;font-size:8px;opacity:.62}
+.video-mode-cell.is-selected{border-color:var(--music-text,#0f172a);background:var(--music-text,#0f172a);color:var(--music-bg,#fff)}
+.video-quality-row{display:flex;min-width:0;align-items:center;justify-content:space-between;gap:8px}.video-quality-row>span{flex:none;color:var(--music-text-sub,#64748b);font-size:9.5px}.video-quality-row>div{display:flex;min-width:0;gap:4px}.video-quality-row button{min-width:0;height:27px;padding:0 7px;border:1px solid var(--music-card-border,rgba(0,0,0,.07));border-radius:8px;background:var(--music-card-bg,#fff);color:var(--music-text,#334155);font-size:8.5px;white-space:nowrap}.video-quality-row button.is-selected{border-color:var(--music-text,#0f172a);background:var(--music-text,#0f172a);color:var(--music-bg,#fff)}
+.video-quality-row.disabled,.data-saver-row:disabled{opacity:.42}
+.data-saver-row{display:flex;width:100%;min-width:0;align-items:center;gap:10px;padding:8px 0 0;border:0;border-top:1px solid var(--music-divider,rgba(0,0,0,.06));background:transparent;color:var(--music-text,#334155);text-align:left}.data-saver-row>span{display:flex;min-width:0;flex:1;flex-direction:column;gap:2px}.data-saver-row b{font-size:10.5px}.data-saver-row small{overflow:hidden;color:var(--music-text-sub,#64748b);font-size:8.5px;text-overflow:ellipsis;white-space:nowrap}.data-saver-row i{position:relative;width:31px;height:18px;flex:none;border-radius:999px;background:var(--music-card-border,rgba(0,0,0,.12));transition:.18s}.data-saver-row i em{position:absolute;top:2px;left:2px;width:14px;height:14px;border-radius:50%;background:var(--music-card-bg,#fff);box-shadow:0 1px 3px rgba(0,0,0,.2);transition:.18s}.data-saver-row i.active{background:var(--music-text,#0f172a)}.data-saver-row i.active em{transform:translateX(13px)}
+
 .timer-chips {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
@@ -513,4 +556,6 @@ const applyCustomTimer = () => {
     transform: scale(1);
   }
 }
+
+@media(max-width:340px){.playback-mask{padding:12px}.dialog-body{padding-left:14px;padding-right:14px}.setting-card{padding-left:12px;padding-right:12px}.video-quality-row button{padding:0 5px}.data-saver-row small{max-width:190px}}
 </style>
