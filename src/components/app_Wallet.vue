@@ -20,12 +20,20 @@ import {
 } from '../services/walletService'
 import { sendCapabilityMessage } from '../services/api'
 import { refreshWalletLiveMarket, setWalletMarketMode, shouldRefreshWalletLiveMarket } from '../services/walletMarketService'
+import {
+  createMomentReceiptCode,
+  createMomentReceiptPoster,
+  getActiveMomentReceiptCode,
+  savePendingReceiptShare,
+  saveReceiptPoster,
+  type MomentReceiptCode
+} from '../services/momentPayments'
 
-const emit = defineEmits<{ (event: 'close'): void }>()
-const { state, currentAccount, activeQuotes, activePositions, stockMarketValueCents, stockCostCents, bankAssetCents, liabilityCents, totalAssetCents, netAssetCents, persist } = useWallet()
+const emit = defineEmits<{ (event: 'close'): void; (event: 'open-moments'): void }>()
+const { accountId, state, currentAccount, activeQuotes, activePositions, stockMarketValueCents, stockCostCents, bankAssetCents, liabilityCents, totalAssetCents, netAssetCents, persist } = useWallet()
 
 type Tab = 'wallet' | 'stocks' | 'mine'
-type Panel = '' | 'bills' | 'payments' | 'cards' | 'security' | 'credit' | 'orders' | 'positions' | 'watchlist' | 'marketSettings' | 'help'
+type Panel = '' | 'bills' | 'payments' | 'receipt' | 'cards' | 'security' | 'credit' | 'orders' | 'positions' | 'watchlist' | 'marketSettings' | 'help'
 type Dialog = '' | 'balance' | 'deposit' | 'withdraw' | 'card' | 'trade' | 'repay' | 'reset' | 'deleteBills' | 'creditSettings' | 'removeCard' | 'cardDetails' | 'cardBalanceEdit' | 'paymentPassword'
 
 const activeTab = ref<Tab>('wallet')
@@ -37,6 +45,7 @@ watch(panel, (newPanel) => {
     refreshCreditLimitIfNeeded(state.value)
     persist()
   }
+  if (newPanel === 'receipt') void loadOrCreateReceiptCode()
 })
 
 watch(activeTab, (tab) => {
@@ -62,6 +71,11 @@ const tradeFunding = ref<WalletFundingSource>('balance')
 const marketRefreshing = ref(false)
 let marketRefreshTimer: number | undefined
 const toast = ref<{ text: string; error: boolean } | null>(null)
+const receiptAmountInput = ref('')
+const receiptRemarkInput = ref('')
+const receiptCode = ref<MomentReceiptCode | null>(null)
+const receiptPoster = ref('')
+const receiptGenerating = ref(false)
 
 // 银行卡相关
 const cardFilterType = ref<'all' | 'debit' | 'credit' | 'favorite'>('all')
@@ -251,6 +265,69 @@ const notify = (text: string, error = false) => {
   toast.value = { text, error }
   window.setTimeout(() => { if (toast.value?.text === text) toast.value = null }, 2400)
 }
+
+const renderReceiptPoster = async (code: MomentReceiptCode) => {
+  receiptGenerating.value = true
+  try {
+    receiptPoster.value = await createMomentReceiptPoster(code)
+  } finally {
+    receiptGenerating.value = false
+  }
+}
+
+const loadOrCreateReceiptCode = async () => {
+  let code = getActiveMomentReceiptCode(accountId.value)
+  if (!code) {
+    code = createMomentReceiptCode({
+      accountId: accountId.value,
+      ownerName: currentAccount.value?.name || state.value.accountName || '我',
+      paymentHandle: state.value.paymentHandle,
+      remark: ''
+    })
+  }
+  receiptCode.value = code
+  receiptAmountInput.value = code.amountCents ? (code.amountCents / 100).toFixed(2) : ''
+  receiptRemarkInput.value = code.remark || ''
+  try { await renderReceiptPoster(code) } catch (error) { notify(error instanceof Error ? error.message : '收款码生成失败', true) }
+}
+
+const generateReceiptCode = async () => {
+  const amount = receiptAmountInput.value.trim() ? Number(receiptAmountInput.value) : 0
+  if (!Number.isFinite(amount) || amount < 0 || amount > 99999.99) return notify('请输入 0.01 至 99999.99 元的金额，或留空', true)
+  if (receiptAmountInput.value.trim() && amount < 0.01) return notify('指定金额不能低于 0.01 元', true)
+  const code = createMomentReceiptCode({
+    accountId: accountId.value,
+    ownerName: currentAccount.value?.name || state.value.accountName || '我',
+    paymentHandle: state.value.paymentHandle,
+    amountCents: amount ? Math.round(amount * 100) : undefined,
+    remark: receiptRemarkInput.value.trim().slice(0, 40)
+  })
+  receiptCode.value = code
+  try {
+    await renderReceiptPoster(code)
+    notify('新的收款码已生成')
+  } catch (error) {
+    notify(error instanceof Error ? error.message : '收款码生成失败', true)
+  }
+}
+
+const downloadReceiptCode = async () => {
+  if (!receiptPoster.value) return
+  try { await saveReceiptPoster(receiptPoster.value) } catch (error) { notify(error instanceof Error ? error.message : '保存失败', true) }
+}
+
+const shareReceiptToMoments = () => {
+  if (!receiptCode.value || !receiptPoster.value) return
+  savePendingReceiptShare(accountId.value, { code: receiptCode.value, posterDataUrl: receiptPoster.value })
+  window.dispatchEvent(new CustomEvent('clingy:open-receipt-share'))
+  emit('open-moments')
+}
+
+watch(accountId, () => {
+  receiptCode.value = null
+  receiptPoster.value = ''
+  if (panel.value === 'receipt') void loadOrCreateReceiptCode()
+})
 const refreshLiveMarket = async (showResult = true) => {
   if (state.value.marketSettings.mode !== 'live' || marketRefreshing.value) return false
   marketRefreshing.value = true
@@ -563,7 +640,9 @@ const toggleHidden = () => { state.value.hideAmounts = !state.value.hideAmounts;
 const dateText = (value: number) => new Date(value).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
 const orderStatus = (status: WalletOrder['status']) => ({ pending: '待成交', filled: '已成交', cancelled: '已撤销', rejected: '已失败' })[status]
 const paymentStatus = (status: string) => ({ pending: '待处理', claimed: '已领取', rejected: '已退回', expired: '已过期' }[status] || status)
-const paymentTitle = (direction: string, kind: string) => `${direction === 'incoming' ? '收到' : '发出'}${kind === 'red_packet' ? '红包' : '转账'}`
+const paymentTitle = (item: any) => item.source === 'moment_receipt'
+  ? `收到${item.sourceActorName || '好友'}的朋友圈转账`
+  : `${item.direction === 'incoming' ? '收到' : '发出'}${item.kind === 'red_packet' ? '红包' : '转账'}`
 const fundingSourceLabel = (source?: string, sourceId?: string) => {
   if (source === 'credit') return '花呗'
   if (source === 'bank_card') {
@@ -704,6 +783,7 @@ const savePaymentPassword = () => {
         <section class="section-block">
           <h3>快捷功能</h3>
           <div class="quick-funcs">
+            <button class="quick-card" @click="panel = 'receipt'"><i><svg viewBox="0 0 24 24"><path d="M3 3h7v7H3zM14 3h7v7h-7zM3 14h7v7H3zM14 14h3v3h-3zM19 14h2v7h-7v-2"/></svg></i><span><strong>收款码</strong><small>保存并发到朋友圈</small></span></button>
             <button class="quick-card" @click="panel = 'cards'"><i><svg viewBox="0 0 24 24"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/></svg></i><span><strong>银行卡</strong><small>管理绑定卡片</small></span></button>
             <button class="quick-card" @click="panel = 'security'"><i><svg viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z"/></svg></i><span><strong>安全中心</strong><small>金额显示设置</small></span></button>
             <button class="quick-card" @click="panel = 'payments'"><i><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 10h18M8 2v4M16 2v4"/></svg></i><span><strong>红包</strong><small>查看收发记录</small></span></button>
@@ -742,7 +822,7 @@ const savePaymentPassword = () => {
     </template>
 
     <main v-else class="tab-content detail-page">
-      <header class="detail-header"><button class="back-button" aria-label="返回" @click="panel = ''">‹</button><h2>{{ ({ bills: '账单', payments: '转账与红包', cards: '银行卡', security: '安全中心', credit: '花呗', orders: '委托订单', positions: '我的持仓', watchlist: '我的自选', marketSettings: '行情设置', help: '帮助与反馈' } as Record<string, string>)[panel] }}</h2><button v-if="panel === 'cards'" class="text-button" @click="dialog = 'card'">添加</button><button v-else-if="panel === 'bills'" class="text-button" @click="toggleEditBills">{{ isEditingBills ? '完成' : '管理' }}</button><button v-else-if="panel === 'marketSettings' && state.marketSettings.mode === 'live'" class="text-button" :disabled="marketRefreshing" @click="refreshLiveMarket()">刷新</button><span v-else></span></header>
+      <header class="detail-header"><button class="back-button" aria-label="返回" @click="panel = ''">‹</button><h2>{{ ({ bills: '账单', payments: '转账与红包', receipt: '我的收款码', cards: '银行卡', security: '安全中心', credit: '花呗', orders: '委托订单', positions: '我的持仓', watchlist: '我的自选', marketSettings: '行情设置', help: '帮助与反馈' } as Record<string, string>)[panel] }}</h2><button v-if="panel === 'cards'" class="text-button" @click="dialog = 'card'">添加</button><button v-else-if="panel === 'bills'" class="text-button" @click="toggleEditBills">{{ isEditingBills ? '完成' : '管理' }}</button><button v-else-if="panel === 'marketSettings' && state.marketSettings.mode === 'live'" class="text-button" :disabled="marketRefreshing" @click="refreshLiveMarket()">刷新</button><span v-else></span></header>
       <section v-if="panel === 'bills'" class="detail-section elegant-bills">
         <div class="eb-header">
           <div class="eb-stats">
@@ -825,7 +905,23 @@ const savePaymentPassword = () => {
           </button>
         </div>
       </section>
-      <section v-if="panel === 'payments'" class="detail-section"><div class="info-card"><strong>聊天收付款记录</strong><span>转账和红包仍在聊天中发送、领取或退回；钱包这里只负责用户余额与本地记录。</span></div><div v-if="!paymentRows.length" class="empty-state"><strong>暂无转账或红包</strong><span>在聊天中使用后会显示在这里</span></div><div v-else class="row-list card-list"><div v-for="item in paymentRows" :key="item.id" class="data-row"><span><strong>{{ paymentTitle(item.direction, item.kind) }}</strong><small>{{ dateText(item.createdAt) }} · {{ paymentStatus(item.status) }}</small><small v-if="item.direction === 'outgoing'">付款方式：{{ fundingSourceLabel(item.fundingSource, item.fundingSourceId) }}</small></span><em :class="{ income: item.direction === 'incoming' }">{{ item.direction === 'incoming' ? '+' : '-' }}{{ formatWalletMoney(item.amountCents) }}</em></div></div></section>
+      <section v-if="panel === 'payments'" class="detail-section"><div class="info-card"><strong>聊天与朋友圈收付款记录</strong><span>聊天转账、红包以及朋友圈收款码到账都会保留在这里。</span></div><div v-if="!paymentRows.length" class="empty-state"><strong>暂无转账或红包</strong><span>在聊天或朋友圈中使用后会显示在这里</span></div><div v-else class="row-list card-list"><div v-for="item in paymentRows" :key="item.id" class="data-row"><span><strong>{{ paymentTitle(item) }}</strong><small>{{ dateText(item.createdAt) }} · {{ paymentStatus(item.status) }}</small><small v-if="item.remark">{{ item.remark }}</small><small v-if="item.direction === 'outgoing'">付款方式：{{ fundingSourceLabel(item.fundingSource, item.fundingSourceId) }}</small></span><em :class="{ income: item.direction === 'incoming' }">{{ item.direction === 'incoming' ? '+' : '-' }}{{ formatWalletMoney(item.amountCents) }}</em></div></div></section>
+      <section v-if="panel === 'receipt'" class="detail-section receipt-section">
+        <div class="receipt-poster-wrap">
+          <div v-if="receiptGenerating" class="receipt-loading">正在生成收款码…</div>
+          <img v-else-if="receiptPoster" :src="receiptPoster" alt="我的收款二维码" class="receipt-poster" />
+        </div>
+        <div class="receipt-fields">
+          <label>指定金额（可选）<input v-model="receiptAmountInput" inputmode="decimal" placeholder="不填写则由好友输入金额"></label>
+          <label>收款备注（可选）<input v-model="receiptRemarkInput" maxlength="40" placeholder="例如：请我喝奶茶"></label>
+          <button class="secondary-button wide" :disabled="receiptGenerating" @click="generateReceiptCode">生成新的收款码</button>
+        </div>
+        <div class="receipt-actions">
+          <button class="secondary-button" :disabled="!receiptPoster || receiptGenerating" @click="downloadReceiptCode">保存图片</button>
+          <button class="primary-button" :disabled="!receiptPoster || receiptGenerating" @click="shareReceiptToMoments">发到朋友圈</button>
+        </div>
+        <div class="info-card"><strong>虚拟收款码</strong><span>好友角色看到你发布的收款码后，会依据关系、情境和自己的意愿决定是否转账。收款行为受朋友圈中的全局默认和角色独立设置控制。</span></div>
+      </section>
       <section v-if="panel === 'cards'" class="detail-section cards-panel-redesign">
         <div class="cards-toolbar">
           <div class="cards-search">
@@ -1355,5 +1451,6 @@ const savePaymentPassword = () => {
 .live-symbol-list span strong { overflow: hidden; font-size: 3.3vw; text-overflow: ellipsis; white-space: nowrap; }
 .live-symbol-list span small { color: var(--sub); font-size: 2.6vw; }
 .live-symbol-list button { padding: 1vw 0; border: 0; background: none; color: var(--sub); font-size: 2.8vw; cursor: pointer; }
+.receipt-section{gap:4vw}.receipt-poster-wrap{display:flex;min-height:72vw;align-items:center;justify-content:center;overflow:hidden;border:1px solid var(--border);border-radius:4vw;background:var(--card-bg)}.receipt-poster{display:block;width:min(100%,360px);height:auto}.receipt-loading{color:var(--sub);font-size:3vw}.receipt-fields{display:flex;flex-direction:column;gap:3vw;padding:4vw;border:1px solid var(--border);border-radius:3vw;background:var(--card-bg)}.receipt-fields label{display:flex;flex-direction:column;gap:1.5vw;color:var(--sub);font-size:3vw}.receipt-fields input{box-sizing:border-box;width:100%;height:11vw;padding:0 3.5vw;border:1px solid var(--border);border-radius:2.5vw;outline:0;background:var(--app-bg);color:var(--app-text)}.receipt-actions{display:grid;grid-template-columns:1fr 1fr;gap:3vw}.receipt-actions button,.secondary-button.wide{width:100%;min-height:11vw}.receipt-actions button:disabled,.receipt-fields button:disabled{cursor:not-allowed;opacity:.4}
 @media (min-width:700px){.market-status{margin:-10px 0 26px;padding:16px 20px;border-radius:15px}.market-status strong{font-size:16px}.market-status small,.market-status em{font-size:13px}.market-mode-grid{gap:14px}.market-mode-grid>button{padding:18px;border-radius:15px}.market-mode-grid strong{font-size:17px}.market-mode-grid small{font-size:14px}.market-runtime-card{padding:18px}.market-runtime-card strong{font-size:16px}.market-runtime-card small{font-size:13px}.market-form-label,.custom-market-form label{font-size:14px}.market-form-label select,.custom-market-form input,.custom-market-form select{min-height:50px;padding:12px 15px;border-radius:14px}.custom-market-form textarea{min-height:100px;padding:12px 15px;border-radius:14px}}
 </style>

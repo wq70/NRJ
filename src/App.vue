@@ -7,6 +7,7 @@ import AppearanceSettings from './components/AppearanceSettings.vue'
 import AppAppearanceWardrobe from './components/app_AppearanceWardrobe.vue'
 import ApiSettings from './components/ApiSettings.vue'
 import AppChatPreview from './components/app_ChatPreview.vue'
+import AppDelivery from './components/app_Delivery.vue'
 import AppSMS from './components/app_SMS.vue'
 import AppWallet from './components/app_Wallet.vue'
 import AppWorldBook from './components/app_WorldBook.vue'
@@ -22,6 +23,7 @@ import AppMusic from './components/app_Music.vue'
 import AppForum from './components/app_Forum.vue'
 import AppMCP from './components/app_MCP.vue'
 import AppKeepAlive from './components/app_KeepAlive.vue'
+import AppBookStore from './components/app_BookStore.vue'
 import McpConfirmationHost from './components/mcp/McpConfirmationHost.vue'
 import AppVideoHall from './components/app_VideoHall.vue'
 import LockScreen from './components/LockScreen.vue'
@@ -36,6 +38,7 @@ import FriendRequestModal from './components/chat/modals/FriendRequestModal.vue'
 import { triggerFriendRequestNotification } from './composables/useFriendRequestPrompt'
 import type { WidgetType } from './composables/useDesktopLayout'
 import { isIosWebEnvironment, isStandaloneWebApp } from './utils/iosWeb'
+import { startSmsRuntime, stopSmsRuntime } from './services/smsRuntime'
 
 const { globalNotifications, dismissNotification, showNotification, loadCustomContacts, loadMyProfile, mockChats } = useChatState()
 const { loadData: loadAppIconsData, customIcons } = useAppIcons()
@@ -66,8 +69,25 @@ const desktopRef = ref<{ installWidget: (widgetType: WidgetType, widthUnits: num
 const isLocked = ref(globalSettings.enableLockScreen)
 const hasOpenedChatApp = ref(false)
 const chatAppRef = ref<any>(null)
+
+const openMomentsFromWallet = async () => {
+  hasOpenedChatApp.value = true
+  activeApp.value = 'chat'
+  await nextTick()
+  await chatAppRef.value?.openDiscoverFromOutside?.()
+}
 const developmentNotice = ref('')
 let developmentNoticeTimer: ReturnType<typeof setTimeout> | undefined
+
+const handleSmsNotificationRequest = (event: Event) => {
+  const detail = (event as CustomEvent).detail || {}
+  if (activeApp.value === 'sms') return
+  const isActiveChat = activeApp.value === 'chat'
+  if (detail.protectActiveChat && isActiveChat && !(detail.important && detail.allowImportantDuringChat)) return
+  showNotification(String(detail.name || '短信'), null, String(detail.avatarText || '短').slice(0, 2), String(detail.content || ''), {
+    deliveryId: String(detail.deliveryId || ''), important: Boolean(detail.important)
+  })
+}
 
 type InstallPromptEvent = Event & {
   prompt: () => Promise<void>
@@ -188,6 +208,8 @@ const handleViewportFocusOut = () => {
 const handleAppStatsPageHide = () => flushAppStatsStorage()
 
 onMounted(async () => {
+  window.addEventListener('clingy-sms-notification-request', handleSmsNotificationRequest)
+  startSmsRuntime()
   if (!isStandaloneApp() && localStorage.getItem(installPromptDismissedKey) !== 'true') {
     showInstallPrompt.value = true
   }
@@ -210,6 +232,12 @@ onMounted(async () => {
   await loadMyProfile()
   startAutonomyRuntime()
   await loadAppIconsData()
+  if (new URL(window.location.href).searchParams.get('delivery-share') === '1') {
+    activeApp.value = 'delivery'
+    const cleanUrl = new URL(window.location.href)
+    cleanUrl.searchParams.delete('delivery-share')
+    window.history.replaceState(window.history.state, '', `${cleanUrl.pathname}${cleanUrl.search}${cleanUrl.hash}`)
+  }
   // 页面核心数据就绪后再空闲预热其他已启用字体，不阻塞首次挂载。
   void schedulePreloadEnabledFonts()
 
@@ -224,6 +252,8 @@ const handleBeforeInstallPrompt = (event: Event) => {
 window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt)
 
 onUnmounted(() => {
+  window.removeEventListener('clingy-sms-notification-request', handleSmsNotificationRequest)
+  stopSmsRuntime()
   if (usageTimer) {
     clearInterval(usageTimer)
   }
@@ -492,6 +522,13 @@ watch([activeApp, isLocked], ([appId, locked]) => {
       />
     </Transition>
     <Transition name="app-fade">
+      <AppDelivery
+        v-if="activeApp === 'delivery'"
+        data-font-app="delivery"
+        @close="activeApp = null"
+      />
+    </Transition>
+    <Transition name="app-fade">
       <AppSMS 
         v-if="activeApp === 'messages'" 
         data-font-app="messages"
@@ -503,6 +540,7 @@ watch([activeApp, isLocked], ([appId, locked]) => {
         v-if="activeApp === 'wallet'" 
         data-font-app="wallet"
         @close="activeApp = null" 
+        @open-moments="openMomentsFromWallet"
       />
     </Transition>
     <Transition name="app-fade">
@@ -598,6 +636,14 @@ watch([activeApp, isLocked], ([appId, locked]) => {
         v-if="activeApp === 'keep_alive'"
         data-font-app="keep_alive"
         @close="activeApp = null"
+      />
+    </Transition>
+    <Transition name="app-fade">
+      <AppBookStore
+        v-if="activeApp === 'book_store'"
+        data-font-app="book_store"
+        @close="activeApp = null"
+        @open-api="activeApp = 'api_settings'"
       />
     </Transition>
     <Transition name="app-fade">

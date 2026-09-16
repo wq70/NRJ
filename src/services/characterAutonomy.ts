@@ -43,6 +43,7 @@ type AutonomyAction = {
   operation?: string
   appId?: string
   targetId?: string
+  media?: 'text' | 'voice'
 }
 
 type AutonomyDecision = {
@@ -225,7 +226,7 @@ const isWithinActiveHours = (chat: any, date = new Date()) => {
   return start < end ? hour >= start && hour < end : hour >= start || hour < end
 }
 
-const addMoment = async (chat: any, content: string, createdAt: number) => {
+const addMoment = async (chat: any, content: string, createdAt: number, media: 'text' | 'voice' = 'text') => {
   const { currentChatUserId } = useChatAuth()
   const key = currentChatUserId.value ? `moments_list_${currentChatUserId.value}` : 'moments_list'
   const moments = await momentStore.getItem<any[]>(key) || []
@@ -235,6 +236,7 @@ const addMoment = async (chat: any, content: string, createdAt: number) => {
     author: chat.name,
     avatar: chat.avatarUrl || '',
     content,
+    voice: media === 'voice' ? { text: content, seconds: Math.min(120, Math.max(1, Math.ceil(content.length / 4))), source: 'character' } : undefined,
     time: createdAt,
     visibility: '公开',
     likes: [],
@@ -330,8 +332,8 @@ export const runAutonomousCheck = async (
     messages.push({
       role: 'system',
       content: globalPromptSettings.language === 'en'
-        ? `[${characterName}'s autonomous activity]\nCurrent local time: ${formatIdentityDateTime(chat, now)}. About ${elapsedMinutes} minutes have passed since the last check. Trigger: ${reason}. ${catchup ? 'This is a complete local catch-up for the recorded closed-page window. Place plausible actions across the elapsed time without repetition.' : 'This is a normal check while the page is running.'}\nDecide whether ${characterName} genuinely wants to do anything now. Every returned action belongs to ${characterName}; this check does not imply that the user sent a new message. Proactive messages allowed: ${chat.autonomyAllowMessages ? 'yes' : 'no'}; Moments allowed: ${chat.autonomyAllowMoments ? 'yes' : 'no'}; status changes allowed: ${chat.enableImmersiveStatus && chat.autonomyAllowStatus ? 'yes' : 'no'}; friend request allowed: ${friendRequestAllowed ? 'yes' : 'no'}; own-phone activity allowed: ${chat.__characterPhoneBackgroundAllowed ? 'yes' : 'no'}. ${policyText} Follow ${characterName}'s persona, relationship, recent conversation, and any schedule or busyness disclosed by the user. Phone use is optional and should be ordinary rather than constant. Outside mandatory policies, silence is normal. Avoid mechanical greetings, time announcements, and explanations of these rules.\nReturn JSON only: {"summary":"one internal summary sentence","emotion":"current emotion","emotionIntensity":0,"emotionNeedsDelivery":false,"nextCheckMinutes":120,"actions":[{"type":"message|moment|status|friend_request|phone","content":"plain text without XML tags","status":"online|offline|busy|away","text":"status text","operation":"send_message|reply_contact|add_note|add_calendar_event|activity","appId":"phone app id","targetId":"contact or conversation id","atOffsetMinutes":0,"important":false}]}. actions may be empty unless a policy is due; at most ${maxActions}. nextCheckMinutes must be between ${minimum} and ${Math.max(720, minimum)}. During catch-up, atOffsetMinutes means how many minutes ago the action occurred and may not exceed ${elapsedMinutes}.`
-        : `【角色${characterName}的自主活动】\n当前当地时间：${formatIdentityDateTime(chat, now)}。距离上次判断约 ${elapsedMinutes} 分钟。触发原因：${reason}。${catchup ? '这是记录到的页面关闭时间段的完整本地补演，应在经过时间内合理分布动作且避免重复。' : '这是页面运行期间的正常判断。'}\n判断角色${characterName}此刻是否真心想做些什么。所有返回动作都属于角色${characterName}；本次检查不代表用户刚刚发来了新消息。允许主动消息：${chat.autonomyAllowMessages ? '是' : '否'}；允许朋友圈：${chat.autonomyAllowMoments ? '是' : '否'}；允许状态变化：${chat.enableImmersiveStatus && chat.autonomyAllowStatus ? '是' : '否'}；允许好友申请：${friendRequestAllowed ? '是' : '否'}；允许使用自己的手机：${chat.__characterPhoneBackgroundAllowed ? '是' : '否'}。${policyText}遵循角色${characterName}的人设、关系、最近聊天内容和用户透露的忙碌或作息；手机活动是可选的普通生活行为，不要每次都使用。除强制保障外，沉默是正常选择。避免机械问候、报时或解释规则。\n只返回 JSON：{"summary":"一句内部摘要","emotion":"当前情绪","emotionIntensity":0,"emotionNeedsDelivery":false,"nextCheckMinutes":120,"actions":[{"type":"message|moment|status|friend_request|phone","content":"不含标签的纯文本内容","status":"online|offline|busy|away","text":"状态文案","operation":"send_message|reply_contact|add_note|add_calendar_event|activity","appId":"手机APP ID","targetId":"联系人或会话ID","atOffsetMinutes":0,"important":false}]}。actions 除保障到期外可以为空；最多 ${maxActions} 个；nextCheckMinutes 为 ${minimum} 到 ${Math.max(720, minimum)}。补演时 atOffsetMinutes 表示动作发生在多少分钟前，不能超过 ${elapsedMinutes}。`
+        ? `[${characterName}'s autonomous activity]\nCurrent local time: ${formatIdentityDateTime(chat, now)}. About ${elapsedMinutes} minutes have passed since the last check. Trigger: ${reason}. ${catchup ? 'This is a complete local catch-up for the recorded closed-page window. Place plausible actions across the elapsed time without repetition.' : 'This is a normal check while the page is running.'}\nDecide whether ${characterName} genuinely wants to do anything now. Every returned action belongs to ${characterName}; this check does not imply that the user sent a new message. Proactive messages allowed: ${chat.autonomyAllowMessages ? 'yes' : 'no'}; Moments allowed: ${chat.autonomyAllowMoments ? 'yes' : 'no'}; status changes allowed: ${chat.enableImmersiveStatus && chat.autonomyAllowStatus ? 'yes' : 'no'}; friend request allowed: ${friendRequestAllowed ? 'yes' : 'no'}; own-phone activity allowed: ${chat.__characterPhoneBackgroundAllowed ? 'yes' : 'no'}. ${policyText} Follow ${characterName}'s persona, relationship, recent conversation, and any schedule or busyness disclosed by the user. A moment action may set media to voice when a voice post is genuinely more natural; otherwise use text. Phone use is optional and should be ordinary rather than constant. Outside mandatory policies, silence is normal. Avoid mechanical greetings, time announcements, and explanations of these rules.\nReturn JSON only: {"summary":"one internal summary sentence","emotion":"current emotion","emotionIntensity":0,"emotionNeedsDelivery":false,"nextCheckMinutes":120,"actions":[{"type":"message|moment|status|friend_request|phone","content":"plain text without XML tags","media":"text|voice","status":"online|offline|busy|away","text":"status text","operation":"send_message|reply_contact|add_note|add_calendar_event|activity","appId":"phone app id","targetId":"contact or conversation id","atOffsetMinutes":0,"important":false}]}. actions may be empty unless a policy is due; at most ${maxActions}. nextCheckMinutes must be between ${minimum} and ${Math.max(720, minimum)}. During catch-up, atOffsetMinutes means how many minutes ago the action occurred and may not exceed ${elapsedMinutes}.`
+        : `【角色${characterName}的自主活动】\n当前当地时间：${formatIdentityDateTime(chat, now)}。距离上次判断约 ${elapsedMinutes} 分钟。触发原因：${reason}。${catchup ? '这是记录到的页面关闭时间段的完整本地补演，应在经过时间内合理分布动作且避免重复。' : '这是页面运行期间的正常判断。'}\n判断角色${characterName}此刻是否真心想做些什么。所有返回动作都属于角色${characterName}；本次检查不代表用户刚刚发来了新消息。允许主动消息：${chat.autonomyAllowMessages ? '是' : '否'}；允许朋友圈：${chat.autonomyAllowMoments ? '是' : '否'}；允许状态变化：${chat.enableImmersiveStatus && chat.autonomyAllowStatus ? '是' : '否'}；允许好友申请：${friendRequestAllowed ? '是' : '否'}；允许使用自己的手机：${chat.__characterPhoneBackgroundAllowed ? '是' : '否'}。${policyText}遵循角色${characterName}的人设、关系、最近聊天内容和用户透露的忙碌或作息；朋友圈动作确实更适合语音时可把 media 设为 voice，否则使用 text，不要机械地总发语音。手机活动是可选的普通生活行为，不要每次都使用。除强制保障外，沉默是正常选择。避免机械问候、报时或解释规则。\n只返回 JSON：{"summary":"一句内部摘要","emotion":"当前情绪","emotionIntensity":0,"emotionNeedsDelivery":false,"nextCheckMinutes":120,"actions":[{"type":"message|moment|status|friend_request|phone","content":"不含标签的纯文本内容","media":"text|voice","status":"online|offline|busy|away","text":"状态文案","operation":"send_message|reply_contact|add_note|add_calendar_event|activity","appId":"手机APP ID","targetId":"联系人或会话ID","atOffsetMinutes":0,"important":false}]}。actions 除保障到期外可以为空；最多 ${maxActions} 个；nextCheckMinutes 为 ${minimum} 到 ${Math.max(720, minimum)}。补演时 atOffsetMinutes 表示动作发生在多少分钟前，不能超过 ${elapsedMinutes}。`
     })
     if (chat.__characterPhoneBackgroundAllowed) messages.push({ role: 'system', content: 'phone 动作还可以使用 operation="read_app" 主动打开并查看 appId 指定的 APP；targetId 可写 unread 或具体会话 ID。只有角色此刻自然想查看时才使用，查看后系统会把发现保存为角色已知事实。' })
     const result: any = await sendCapabilityMessage('chat-auxiliary', messages)
@@ -419,7 +421,7 @@ export const runAutonomousCheck = async (
         chat.autonomyLastMeaningfulActionAt = now
         executed++
       } else if (action.type === 'moment' && action.content?.trim()) {
-        await addMoment(chat, action.content.trim(), createdAt)
+        await addMoment(chat, action.content.trim(), createdAt, action.media === 'voice' ? 'voice' : 'text')
         addEvent(chat, { type: 'moment', createdAt, title: '发布了朋友圈', detail: action.content.trim(), catchup, trigger: reason })
         chat.autonomyLastMeaningfulActionAt = now
         executed++

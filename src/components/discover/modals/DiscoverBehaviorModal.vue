@@ -1,6 +1,8 @@
 /* WARNING: 本项目专属“粘人精”，严禁出现 Kiro、Krio、周棋洛等任何相关英文或拼音命名！ */
 <script setup lang="ts">
 import { ref, watch } from 'vue'
+import { useChatAuth } from '../../../composables/useChatAuth'
+import { defaultMomentPaymentSettings, getCharacterMomentPaymentOverride, loadMomentPaymentSettings, saveMomentPaymentSettings, type MomentPaymentOverride } from '../../../services/momentPayments'
 
 const props = defineProps<{
   visible: boolean
@@ -19,6 +21,18 @@ const behaviorSection = ref<'schedule' | 'interaction' | 'content'>('schedule')
 const showAudienceGroupPicker = ref(false)
 const selectedBehaviorChatId = ref<string | number | null>(null)
 const behaviorDraft = ref<any>({})
+const paymentOverrideDraft = ref<MomentPaymentOverride>('inherit')
+const globalPaymentSettings = ref(defaultMomentPaymentSettings())
+const { currentChatUserId } = useChatAuth()
+
+const loadPaymentSettings = () => { globalPaymentSettings.value = loadMomentPaymentSettings(currentChatUserId.value || 'guest') }
+watch(() => props.visible, visible => { if (visible) loadPaymentSettings() })
+watch(currentChatUserId, loadPaymentSettings)
+
+const toggleGlobalPayments = () => {
+  globalPaymentSettings.value.enabled = !globalPaymentSettings.value.enabled
+  saveMomentPaymentSettings(currentChatUserId.value || 'guest', globalPaymentSettings.value)
+}
 
 watch(() => behaviorDraft.value.audience, value => { 
   if (['部分可见', '不给谁看'].includes(value)) showAudienceGroupPicker.value = true 
@@ -27,6 +41,7 @@ watch(() => behaviorDraft.value.audience, value => {
 const openBehavior = (chat: any) => {
   selectedBehaviorChatId.value = chat.id
   behaviorDraft.value = JSON.parse(JSON.stringify(props.getMomentBehavior(chat)))
+  paymentOverrideDraft.value = getCharacterMomentPaymentOverride(chat)
   behaviorSection.value = 'schedule'
   showBehaviorEditor.value = true
 }
@@ -44,11 +59,15 @@ const saveBehavior = () => {
   const chat = props.availableCharacters.find((item: any) => item.id === selectedBehaviorChatId.value)
   if (!chat) return
   chat.momentBehavior = JSON.parse(JSON.stringify(behaviorDraft.value))
+  chat.momentPaymentOverride = paymentOverrideDraft.value
   
   const key = localStorage.getItem('clingy_legacy_owner') ? `clingy_custom_contacts_${localStorage.getItem('clingy_legacy_owner')}` : 'clingy_custom_contacts'
   const saved = JSON.parse(localStorage.getItem(key) || '[]')
   const target = saved.find((item: any) => item.id === chat.id)
-  if (target) target.momentBehavior = chat.momentBehavior
+  if (target) {
+    target.momentBehavior = chat.momentBehavior
+    target.momentPaymentOverride = chat.momentPaymentOverride
+  }
   localStorage.setItem(key, JSON.stringify(saved))
   
   emit('contacts-updated')
@@ -65,9 +84,13 @@ const saveBehavior = () => {
           <h3>选择要设置的角色</h3>
           <p class="behavior-picker-tip">默认由角色像真人一样自主决定；需要时也可为单个角色启用手动规则。</p>
         </div>
+        <button class="behavior-global-payment" @click="toggleGlobalPayments">
+          <span><strong>朋友圈收款互动</strong><small>所有角色的默认设置；角色独立设置优先</small></span>
+          <i :class="{ on: globalPaymentSettings.enabled }"><b></b></i>
+        </button>
         <div class="behavior-role-list">
           <button v-for="chat in availableCharacters" :key="chat.id" class="behavior-role-item" @click="openBehavior(chat)">
-            <span>{{ chat.name }}</span><span class="behavior-role-arrow">›</span>
+            <span>{{ chat.name }}</span><span class="behavior-role-state">{{ getCharacterMomentPaymentOverride(chat) === 'inherit' ? '跟随默认' : getCharacterMomentPaymentOverride(chat) === 'enabled' ? '独立开启' : '独立关闭' }}</span><span class="behavior-role-arrow">›</span>
           </button>
           <div v-if="!availableCharacters.length" class="empty-note">暂无可设置的角色</div>
         </div>
@@ -86,6 +109,14 @@ const saveBehavior = () => {
           <span></span>
         </header>
         <div class="behavior-form">
+          <div class="behavior-payment-override">
+            <div><b>收款码互动</b><small>独立设置优先于全局默认</small></div>
+            <div class="behavior-tristate">
+              <button :class="{ active: paymentOverrideDraft === 'inherit' }" @click="paymentOverrideDraft = 'inherit'">跟随</button>
+              <button :class="{ active: paymentOverrideDraft === 'enabled' }" @click="paymentOverrideDraft = 'enabled'">开启</button>
+              <button :class="{ active: paymentOverrideDraft === 'disabled' }" @click="paymentOverrideDraft = 'disabled'">关闭</button>
+            </div>
+          </div>
           <div class="behavior-row behavior-mode-row">
             <span><b>真人自主模式</b><small>由角色按人设、情境和关系自由决定，不使用下面的概率、冷却或预设文风</small></span>
             <label class="behavior-switch">
@@ -150,4 +181,5 @@ const saveBehavior = () => {
 
 <style scoped>
 @import '../../app_ChatDiscover.css';
+.behavior-global-payment{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:0 16px 10px;padding:11px 12px;border:1px solid var(--border-color,#e9e9e9);border-radius:10px;background:var(--sys-bg-secondary,#f5f6f8);color:var(--text-primary,#333);text-align:left}.behavior-global-payment>span{display:flex;min-width:0;flex:1;flex-direction:column;gap:3px}.behavior-global-payment strong{font-size:14px}.behavior-global-payment small{color:var(--text-secondary,#888);font-size:11px;line-height:1.35}.behavior-global-payment>i{position:relative;width:42px;height:25px;flex:none;border-radius:15px;background:#d6d9df}.behavior-global-payment>i b{position:absolute;top:3px;left:3px;width:19px;height:19px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.18);transition:.2s}.behavior-global-payment>i.on{background:#576b95}.behavior-global-payment>i.on b{transform:translateX(17px)}.behavior-role-item>span:first-child{overflow:hidden;min-width:0;flex:1;text-align:left;text-overflow:ellipsis;white-space:nowrap}.behavior-role-state{flex:none;color:var(--text-secondary,#888);font-size:11px}.behavior-payment-override{display:flex;flex-direction:column;gap:10px;padding:13px 0;border-bottom:1px solid var(--border-color,#eee)}.behavior-payment-override>div:first-child{display:flex;flex-direction:column;gap:3px}.behavior-payment-override b{font-size:14px}.behavior-payment-override small{color:var(--text-secondary,#888);font-size:11px}.behavior-tristate{display:grid;grid-template-columns:repeat(3,1fr);gap:4px;padding:3px;border-radius:8px;background:var(--sys-bg-secondary,#f3f4f6)}.behavior-tristate button{min-width:0;padding:7px 3px;border:0;border-radius:6px;background:transparent;color:var(--text-secondary,#777);font-size:12px}.behavior-tristate button.active{background:var(--sys-bg-primary,#fff);color:#576b95;box-shadow:0 1px 3px rgba(0,0,0,.08)}
 </style>

@@ -1,6 +1,7 @@
 /* WARNING: 本项目专属“粘人精”，严禁出现 Kiro、Krio、周棋洛等任何相关英文或拼音命名！ */
 import localforage from 'localforage'
 import type { ForumMediaItem, ForumSnapshot } from '../types/forum'
+import { appendServiceSms } from './smsService'
 
 export const FORUM_DB_NAME = 'nrt-forum'
 export const FORUM_DATA_STORE = 'forumData'
@@ -103,9 +104,27 @@ export const normalizeForumSnapshot = (raw: Partial<ForumSnapshot> | null | unde
 }
 
 export const loadForumSnapshot = async () => normalizeForumSnapshot(await dataStore.getItem<ForumSnapshot>(SNAPSHOT_KEY))
+const syncForumSms = (snapshot: ForumSnapshot) => {
+  if (typeof localStorage === 'undefined') return
+  const accountId = localStorage.getItem('clingy_chat_auth_state') || 'guest'
+  const checkpointKey = `clingy_sms_forum_checkpoint_v1_${accountId}`
+  let seen: string[] = []
+  try { seen = JSON.parse(localStorage.getItem(checkpointKey) || '[]') }
+  catch { seen = [] }
+  const relevant = snapshot.notifications.filter(item => !snapshot.settings.activeAccountId || item.accountId === snapshot.settings.activeAccountId)
+  if (localStorage.getItem(checkpointKey)) {
+    const known = new Set(seen)
+    relevant.filter(item => !known.has(item.id)).slice(-10).forEach(item => appendServiceSms(accountId, {
+      source: 'forum', threadId: 'forum-service', name: '论坛通知', number: '1069 0018 00',
+      text: `【论坛】${item.text}`, relatedId: `forum:${item.id}`, category: 'service', createdAt: item.createdAt
+    }))
+  }
+  localStorage.setItem(checkpointKey, JSON.stringify(relevant.slice(-500).map(item => item.id)))
+}
 export const saveForumSnapshot = async (snapshot: ForumSnapshot) => {
   snapshot.settings.updatedAt = Date.now()
   await dataStore.setItem(SNAPSHOT_KEY, JSON.parse(JSON.stringify(snapshot)))
+  syncForumSms(snapshot)
 }
 
 export const clearForumData = async () => {

@@ -14,6 +14,8 @@ export type ApiCapabilityId =
   | 'forum-content'
   | 'forum-interaction'
   | 'forum-dm'
+  | 'bookstore-writing'
+  | 'bookstore-community'
   | 'embedding'
 
 export type ApiCapabilityFallback = 'default-node' | 'default-if-compatible' | 'local-non-vector' | 'default-only'
@@ -43,6 +45,8 @@ export const apiCapabilityRegistry: Record<ApiCapabilityId, ApiCapabilityDefinit
   'forum-content': { id: 'forum-content', name: '论坛内容', description: '论坛帖子批次、随帖评论、NPC 和新圈子', group: 'forum', assignable: true, fallback: 'default-node', fallbackOnRequestError: true, supportsParameterOverrides: true },
   'forum-interaction': { id: 'forum-interaction', name: '论坛互动', description: '论坛评论回应和帖子互动', group: 'forum', assignable: true, fallback: 'default-node', fallbackOnRequestError: true, supportsParameterOverrides: true },
   'forum-dm': { id: 'forum-dm', name: '论坛私聊', description: '论坛私聊回复和好友决定', group: 'forum', assignable: true, fallback: 'default-node', fallbackOnRequestError: true, supportsParameterOverrides: true },
+  'bookstore-writing': { id: 'bookstore-writing', name: '书城创作', description: '小说大纲、章节正文、续写与作品审校', group: 'content', assignable: true, fallback: 'default-node', fallbackOnRequestError: false, supportsParameterOverrides: true },
+  'bookstore-community': { id: 'bookstore-community', name: '书城内容生态', description: '编辑意见、精选长评与少量创作活动内容', group: 'content', assignable: true, fallback: 'default-node', fallbackOnRequestError: true, supportsParameterOverrides: true },
   embedding: { id: 'embedding', name: '向量记忆', description: '长期记忆向量生成与检索', group: 'special', assignable: true, fallback: 'local-non-vector', fallbackOnRequestError: false, supportsParameterOverrides: false }
 }
 

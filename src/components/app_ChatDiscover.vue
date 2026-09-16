@@ -15,6 +15,12 @@ import { ensureRelationship } from '../composables/useChatRelationship'
 import { addMomentNotification, canViewMoment } from '../services/moments'
 import { getMomentBehavior } from '../services/moments'
 import { globalPromptSettings } from '../store'
+import ChatVoiceModal from './chat/modals/ChatVoiceModal.vue'
+import { playRecordedVoice, saveRecordedVoice } from '../services/browserMedia'
+import { useVoicePlayer } from '../composables/useVoicePlayer'
+import { useChatEmoji } from '../composables/useChatEmoji'
+import { selectRoleAvailableEmojis, selectUserSendableEmojis } from '../services/chatEmojiScope'
+import { consumePendingReceiptShare, isMomentPaymentEnabledForCharacter, loadMomentReceiptCodes, type MomentReceiptDraft } from '../services/momentPayments'
 
 const {
   currentChatUserId,
@@ -64,6 +70,20 @@ const activeMomentMenuId = ref<string | null>(null)
 const pendingDeleteMoment = ref<any | null>(null)
 const manualMoment = ref<any | null>(null)
 const manualViewLoading = ref(false)
+const pendingReceiptDraft = ref<MomentReceiptDraft | null>(null)
+const showCommentVoiceModal = ref(false)
+const showCommentEmojiPicker = ref(false)
+const commentMediaTarget = ref<{ momentId: string; target?: { id: string; author: string } } | null>(null)
+const { emojis, loadEmojis } = useChatEmoji()
+const userCommentEmojis = computed(() => selectUserSendableEmojis(emojis.value))
+const { playVoice } = useVoicePlayer()
+const isReceiptActive = (moment: any) => Boolean(moment?.receiptCode && loadMomentReceiptCodes(currentChatUserId.value || 'guest').some(code => code.id === moment.receiptCode.id && code.active))
+const openPendingReceiptComposer = () => {
+  const draft = consumePendingReceiptShare(currentChatUserId.value || 'guest')
+  if (!draft) return
+  pendingReceiptDraft.value = draft
+  showPublishView.value = true
+}
 
 const manualEligibleCharacters = computed(() => availableCharacters.value.filter((chat: any) => !manualMoment.value || canViewMoment(manualMoment.value, { id: chat.id, name: chat.name, groups: chat.groups, groupIds: chat.groupIds, isFriend: ensureRelationship(chat).friendship === 'friends' })))
 
@@ -85,7 +105,8 @@ watch(showDetailModal, (val) => {
 
 onMounted(() => {
   loadCustomContacts()
-  refreshData()
+  refreshData().then(openPendingReceiptComposer)
+  loadEmojis()
   window.addEventListener('storage', (e) => {
     if (e.key === getKey('app_chat_personas')) loadPersonas().then(() => loadSignature())
     if (e.key === getKey('app_chat_active_persona_index')) {
@@ -94,8 +115,12 @@ onMounted(() => {
     }
   })
   window.addEventListener('clingy:moments-updated', loadMoments)
+  window.addEventListener('clingy:open-receipt-share', openPendingReceiptComposer)
 })
-onUnmounted(() => window.removeEventListener('clingy:moments-updated', loadMoments))
+onUnmounted(() => {
+  window.removeEventListener('clingy:moments-updated', loadMoments)
+  window.removeEventListener('clingy:open-receipt-share', openPendingReceiptComposer)
+})
 
 const enterSelectionMode = () => { isSelectionMode.value = true; selectedIds.value = []; closeActionMenu() }
 const exitSelectionMode = () => { isSelectionMode.value = false; selectedIds.value = [] }
@@ -140,6 +165,76 @@ const submitComment = async () => {
   })
   await saveMoments()
   closeCommentBox()
+}
+
+const appendMediaComment = async (kind: 'voice' | 'emoji', payload: any) => {
+  const context = commentMediaTarget.value
+  if (!context) return
+  const moment = mockMoments.value.find(m => m.id === context.momentId)
+  if (!moment) return
+  moment.comments ||= []
+  moment.comments.push({
+    id: `${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+    author: currentActor.value.name,
+    authorId: currentActor.value.id,
+    content: kind === 'voice' ? (payload.text || '[语音回复]') : (payload.name || '[表情包]'),
+    kind,
+    voice: kind === 'voice' ? payload : undefined,
+    emojiId: kind === 'emoji' ? payload.id : undefined,
+    emojiName: kind === 'emoji' ? payload.name : undefined,
+    replyTo: context.target?.id || '',
+    replyToAuthor: context.target?.author || '',
+    likes: [],
+    createdAt: Date.now()
+  })
+  await saveMoments()
+  commentMediaTarget.value = null
+  closeCommentBox()
+}
+
+const openCommentMedia = (kind: 'voice' | 'emoji', moment: any, target: any = null) => {
+  commentMediaTarget.value = { momentId: moment.id, target: target ? { id: target.id, author: target.author } : undefined }
+  if (kind === 'voice') showCommentVoiceModal.value = true
+  else showCommentEmojiPicker.value = true
+}
+
+const handleCommentVoiceSend = async (data: { text: string; seconds: number; audioBlob?: Blob; mimeType?: string; isRealVoice?: boolean; transcriptStatus?: string }) => {
+  const audioId = data.audioBlob ? await saveRecordedVoice(data.audioBlob) : undefined
+  await appendMediaComment('voice', { ...data, audioId, source: 'user' })
+  showCommentVoiceModal.value = false
+}
+
+const selectCommentEmoji = async (emoji: any) => {
+  await appendMediaComment('emoji', emoji)
+  showCommentEmojiPicker.value = false
+}
+
+const resolveEmojiUrl = (comment: any) => {
+  const emoji = emojis.value.find(item => String(item.id) === String(comment.emojiId))
+  return emoji?.previewUrl || (typeof comment.emojiUrl === 'string' ? comment.emojiUrl : '')
+}
+
+const speakFallback = (text: string) => {
+  if (!text || !('speechSynthesis' in window)) return
+  window.speechSynthesis.cancel()
+  window.speechSynthesis.speak(new SpeechSynthesisUtterance(text))
+}
+
+const playMomentVoice = async (item: any) => {
+  const voice = item?.voice
+  if (!voice) return
+  if (voice.audioId) {
+    try { await playRecordedVoice(voice.audioId); return } catch (_) {}
+  }
+  const character = availableCharacters.value.find((chat: any) => String(chat.id) === String(item.authorId))
+  if (character && voice.text) {
+    try {
+      const numericId = Array.from(String(item.id || Date.now())).reduce((sum, char) => sum + char.charCodeAt(0), 0)
+      await playVoice(numericId, voice.text, character)
+      return
+    } catch (_) {}
+  }
+  speakFallback(voice.text || item.content || '')
 }
 
 const handleDetailCommentSubmit = async (momentId: string, content: string, target?: { id: string, author: string }) => {
@@ -199,10 +294,15 @@ const requestCharacterView = async (chat: any) => {
   manualViewLoading.value = true
   try {
     const moment = manualMoment.value
-    const comments = (moment.comments || []).map((c: any) => `[${c.id}]${c.author}:${c.content}`).join('；') || '无'
+    const comments = (moment.comments || []).map((c: any) => `[${c.id}]${c.author}:${c.kind === 'voice' ? `语音“${c.voice?.text || c.content}”` : c.kind === 'emoji' ? `表情包“${c.emojiName || c.content}”` : c.content}`).join('；') || '无'
+    const receiptHint = isReceiptActive(moment) && ensureRelationship(chat).friendship === 'friends' && isMomentPaymentEnabledForCharacter(currentChatUserId.value || 'guest', chat)
+      ? ` 这条动态附带有效的收款码${moment.receiptCode.amountCents ? `，指定金额 ${(moment.receiptCode.amountCents / 100).toFixed(2)} 元` : ''}${moment.receiptCode.remark ? `，备注“${moment.receiptCode.remark}”` : ''}。如果你真心愿意付款，可输出 <pay_moment id="${moment.id}" amount="金额" remark="付款留言" />；不愿付款时不要输出。`
+      : ''
+    const roleEmojiNames = selectRoleAvailableEmojis(emojis.value as any[], String(chat.id)).map((item: any) => item.name).filter(Boolean)
+    const emojiHint = roleEmojiNames.length ? ` 可用表情包：${roleEmojiNames.join('、')}。` : ' 当前没有可用表情包，不要输出表情包回复。'
     const systemPrompt = globalPromptSettings.language === 'en'
-      ? `You are ${chat.name}. Persona: ${chat.persona || 'Act according to the personality and relationship established in prior conversation'}. View this Moments post as a real person would. Based only on your personality, current feelings, relationship with the author, and the specific content, independently decide whether to only view, like, comment, reply to a comment, or combine relevant interactions. You do not need to interact merely to complete a task. Output only the Moments interaction tags you genuinely choose; do not output chat messages. Moment ID: ${moment.id}; author: ${moment.author}; content: ${moment.content}; comments: ${comments}`
-      : `你是${chat.name}。你的人设是：${chat.persona || '按照你在既有对话中形成的性格与关系行事'}。请像真人刷到动态一样，只依据你自己的性格、当下感受、与作者的关系和内容，自主决定只看、点赞、评论、回复评论或组合互动；不必为了完成任务而互动。只输出你确实想做的朋友圈互动标签，不要输出聊天消息。动态ID：${moment.id}；作者：${moment.author}；内容：${moment.content}；评论：${comments}`
+      ? `You are ${chat.name}. Persona: ${chat.persona || 'Act according to the personality and relationship established in prior conversation'}. View this Moments post as a real person would. Independently decide whether to only view, like, comment, reply, send a voice reply, use an available sticker, pay an attached receipt code, or combine relevant interactions. Voice replies use media="voice" and stickers use media="emoji" on <interact_moment>. You do not need to interact merely to complete a task. Output only tags you genuinely choose; do not output chat messages. Moment ID: ${moment.id}; author: ${moment.author}; content: ${moment.content}; comments: ${comments}.${receiptHint}`
+      : `你是${chat.name}。你的人设是：${chat.persona || '按照你在既有对话中形成的性格与关系行事'}。请像真人刷到动态一样，只依据你自己的性格、当下感受、与作者的关系和内容，自主决定只看、点赞、文字评论、语音回复、表情包回复、回复评论或组合互动；不必为了完成任务而互动。语音评论使用 media="voice"，表情包评论使用 media="emoji"。${emojiHint}只输出你确实想做的朋友圈互动标签，不要输出聊天消息。动态ID：${moment.id}；作者：${moment.author}；内容：${moment.content}；评论：${comments}。${receiptHint}`
     const request = [
       { role: 'system', content: systemPrompt },
       { role: 'user', content: globalPromptSettings.language === 'en' ? 'View this Moments post.' : '请看看这条朋友圈。' }
@@ -231,19 +331,20 @@ const requestCharacterView = async (chat: any) => {
 const markNotificationsRead = async () => { mockMoments.value.forEach(m => (m.notifications || []).forEach((n: any) => n.read = true)); await saveMoments() }
 const openNotificationMoment = async (notice: any) => { const moment = mockMoments.value.find(m => m.id === notice.momentId); if (!moment) return; const original = (moment.notifications || []).find((n: any) => n.id === notice.id); if (original) original.read = true; await saveMoments(); showNotifications.value = false; detailMoment.value = moment }
 
-const handlePublish = async (data: { text: string, images: {url: string, isBase64: boolean}[], visibility: string, groupIds?: string[], characterIds?: Array<string | number>, location?: string, mentions?: { id: string | number, name: string }[] }) => {
+const handlePublish = async (data: { text: string, images: {url: string, isBase64: boolean}[], visibility: string, groupIds?: string[], characterIds?: Array<string | number>, location?: string, mentions?: { id: string | number, name: string }[], voice?: any, receiptCode?: any }) => {
   const currentName = activePersona.value?.name || '我'
   const currentAvatar = activePersona.value?.avatar || ''
   const newMoment = {
     id: Date.now().toString(), author: currentName, avatar: currentAvatar, content: data.text,
     images: data.images.map(img => img.url), time: Date.now(), visibility: data.visibility,
     visibilityGroups: data.groupIds || [], location: data.location || '', mentions: data.mentions || [],
-    visibilityCharacterIds: data.characterIds || [],
+    visibilityCharacterIds: data.characterIds || [], voice: data.voice || undefined, receiptCode: data.receiptCode || undefined,
     isOwn: true, likes: [], comments: []
   }
   const firstUnpinned = mockMoments.value.findIndex(m => !m.pinned)
   mockMoments.value.splice(firstUnpinned < 0 ? mockMoments.value.length : firstUnpinned, 0, newMoment)
   showPublishView.value = false
+  pendingReceiptDraft.value = null
   try { await discoverStore.setItem(getKey('moments_list'), JSON.parse(JSON.stringify(mockMoments.value))) } catch(e) {}
 }
 
@@ -330,10 +431,15 @@ const handleSignSave = (text: string) => {
           <div class="moment-content-wrap">
             <div class="moment-author"><span v-if="moment.pinned" class="pinned-mark">置顶</span>{{ moment.author }}</div>
             <div class="moment-content">{{ moment.content }}</div>
+            <button v-if="moment.voice" class="moment-voice-bubble" @click.stop="playMomentVoice(moment)"><svg viewBox="0 0 24 24"><path d="m8 5 11 7-11 7z"/></svg><span>{{ moment.voice.seconds || 1 }}″</span><small>{{ moment.voice.text || '语音动态' }}</small></button>
             <div v-if="moment.location" class="moment-meta">⌖ {{ moment.location }}</div>
             <div v-if="moment.mentions?.length" class="moment-meta">@{{ moment.mentions.map((person: any) => person.name).join(' @') }}</div>
             <div class="moment-images" v-if="moment.images && moment.images.length">
               <img v-for="(img, idx) in moment.images" :key="idx" :src="img" class="moment-img" @click.stop="previewImage = img" />
+            </div>
+            <div v-if="moment.receiptCode" class="moment-receipt-card">
+              <img :src="moment.receiptCode.posterDataUrl" alt="朋友圈收款码" @click.stop="previewImage = moment.receiptCode.posterDataUrl" />
+              <div><strong>收款码</strong><span>{{ isReceiptActive(moment) ? (moment.receiptCode.amountCents ? `¥${(moment.receiptCode.amountCents / 100).toFixed(2)}` : '金额由好友填写') : '已失效' }}</span><small v-if="moment.receiptCode.remark">{{ moment.receiptCode.remark }}</small><small v-if="moment.receiptPayments?.length">已收到 {{ moment.receiptPayments.length }} 笔</small></div>
             </div>
             <div v-if="moment.isGeneratingImage" class="moment-image-status">正在生成配图…</div>
             <div v-else-if="moment.imageError" class="moment-image-status is-error">配图生成失败，已发布文字动态</div>
@@ -355,7 +461,7 @@ const handleSignSave = (text: string) => {
               <div class="moment-likes" v-if="moment.likes && moment.likes.length"><svg viewBox="0 0 24 24" width="12" height="12" stroke="#576b95" stroke-width="2" fill="none"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path></svg><span class="like-names">{{ moment.likes.join(', ') }}</span></div>
               <div class="moment-comments" v-if="moment.comments && moment.comments.length">
                 <div v-for="(comment, cIdx) in moment.comments" :key="comment.id || cIdx" class="comment-item">
-                  <div class="comment-main" @click.stop="openCommentBox(moment, comment)"><span class="comment-author">{{ comment.author }}</span><span v-if="comment.replyToAuthor" class="comment-reply">回复 {{ comment.replyToAuthor }}</span>:<span class="comment-text">{{ comment.content }}</span></div>
+                  <div class="comment-main" @click.stop="openCommentBox(moment, comment)"><span class="comment-author">{{ comment.author }}</span><span v-if="comment.replyToAuthor" class="comment-reply">回复 {{ comment.replyToAuthor }}</span>:<button v-if="comment.kind === 'voice'" class="inline-voice" @click.stop="playMomentVoice(comment)">▶ {{ comment.voice?.seconds || 1 }}″</button><img v-else-if="comment.kind === 'emoji' && resolveEmojiUrl(comment)" :src="resolveEmojiUrl(comment)" :alt="comment.emojiName || '表情包'" class="comment-emoji" /><span v-else class="comment-text">{{ comment.content }}</span></div>
                   <div class="comment-tools">
                     <button @click.stop="toggleCommentLike(comment)" :class="{ active: comment.likes?.includes(currentActor.name) }"><svg viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" stroke-width="2" fill="none"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path></svg><span v-if="comment.likes?.length">{{ comment.likes.length }}</span></button>
                     <button v-if="comment.authorId === currentActor.id || comment.author === currentActor.name" @click.stop="deleteComment(moment, comment)"><svg viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" stroke-width="2" fill="none"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6l-1 14H6L5 6m3 0V4h8v2"></path></svg></button>
@@ -366,6 +472,8 @@ const handleSignSave = (text: string) => {
             <div v-if="activeActionMomentId === moment.id" class="comment-composer" @click.stop>
               <span v-if="replyTarget" class="reply-hint">回复 {{ replyTarget.author }}</span>
               <input v-model="commentDraft" maxlength="200" :placeholder="replyTarget ? `回复 ${replyTarget.author}…` : '说点什么…'" @keyup.enter="submitComment" />
+              <button class="media-comment" title="语音回复" @click="openCommentMedia('voice', moment, replyTarget)">语音</button>
+              <button class="media-comment" title="表情包回复" @click="openCommentMedia('emoji', moment, replyTarget)">表情</button>
               <button :disabled="!commentDraft.trim()" @click="submitComment">发送</button>
               <button class="cancel-comment" @click="closeCommentBox">取消</button>
             </div>
@@ -384,9 +492,13 @@ const handleSignSave = (text: string) => {
         :moment="detailMoment"
         :formatTime="formatTime"
         :currentActor="currentActor"
+        :resolveEmojiUrl="resolveEmojiUrl"
+        :isReceiptActive="isReceiptActive"
         @preview="url => previewImage = url"
         @submit-comment="handleDetailCommentSubmit"
         @toggle-like="toggleCommentLike"
+        @play-voice="playMomentVoice"
+        @request-media="(kind, moment, target) => openCommentMedia(kind, moment, target)"
       />
 
       <!-- 图片预览 -->
@@ -396,7 +508,7 @@ const handleSignSave = (text: string) => {
       <div v-if="showCharacterPicker" class="moment-modal-overlay" @click.self="showCharacterPicker = false"><div class="moment-sheet"><h3>让谁看看这条</h3><button v-for="chat in manualEligibleCharacters" :key="chat.id" :disabled="manualViewLoading" @click="requestCharacterView(chat)">{{ chat.name }}</button><div v-if="!manualEligibleCharacters.length" class="empty-note">没有角色拥有这条动态的查看权限</div><button @click="showCharacterPicker = false">取消</button></div></div>
       
       <!-- 通知消息 -->
-      <div v-if="showNotifications" class="moment-modal-overlay" @click.self="showNotifications = false"><div class="moment-sheet notification-sheet"><h3>互动消息</h3><div v-if="!allNotifications.length" class="empty-note">还没有新互动</div><div v-for="notice in allNotifications" :key="notice.id" class="notice-item" :class="{ unread: !notice.read }" @click="openNotificationMoment(notice)"><b>{{ notice.actorName }}</b> {{ notice.type === 'like' ? '赞了你的动态' : notice.type === 'comment' ? `评论：${notice.content}` : notice.type === 'reply' ? `回复：${notice.content}` : notice.type === 'view' ? '查看了这条动态' : '赞了你的评论' }}<small>{{ formatTime(notice.createdAt) }}</small></div><button @click="markNotificationsRead">全部已读</button><button @click="showNotifications = false">关闭</button></div></div>
+      <div v-if="showNotifications" class="moment-modal-overlay" @click.self="showNotifications = false"><div class="moment-sheet notification-sheet"><h3>互动消息</h3><div v-if="!allNotifications.length" class="empty-note">还没有新互动</div><div v-for="notice in allNotifications" :key="notice.id" class="notice-item" :class="{ unread: !notice.read }" @click="openNotificationMoment(notice)"><b>{{ notice.actorName }}</b> {{ notice.type === 'like' ? '赞了你的动态' : notice.type === 'comment' ? `评论：${notice.content}` : notice.type === 'reply' ? `回复：${notice.content}` : notice.type === 'view' ? '查看了这条动态' : notice.type === 'payment' ? `通过收款码向你转账 ¥${notice.content.split('|')[0]}` : '赞了你的评论' }}<small>{{ formatTime(notice.createdAt) }}</small></div><button @click="markNotificationsRead">全部已读</button><button @click="showNotifications = false">关闭</button></div></div>
       
       <!-- 朋友圈行为设置弹窗 -->
       <DiscoverBehaviorModal
@@ -411,8 +523,10 @@ const handleSignSave = (text: string) => {
       <div v-if="pendingDeleteMoment" class="moment-modal-overlay" @click.self="pendingDeleteMoment = null"><div class="moment-sheet"><h3>删除朋友圈</h3><div class="empty-note">删除后无法恢复，确定继续吗？</div><button class="danger-text" @click="confirmDeleteMoment">删除</button><button @click="pendingDeleteMoment = null">取消</button></div></div>
       
       <Transition name="zoom-fade">
-        <DiscoverPublish v-if="showPublishView" @close="showPublishView = false" @publish="handlePublish" />
+        <DiscoverPublish v-if="showPublishView" :initial-receipt="pendingReceiptDraft" @close="showPublishView = false; pendingReceiptDraft = null" @publish="handlePublish" />
       </Transition>
+      <ChatVoiceModal :visible="showCommentVoiceModal" @close="showCommentVoiceModal = false; commentMediaTarget = null" @send="handleCommentVoiceSend" />
+      <div v-if="showCommentEmojiPicker" class="moment-modal-overlay" @click.self="showCommentEmojiPicker = false; commentMediaTarget = null"><div class="moment-sheet emoji-picker-sheet"><h3>选择表情包</h3><div v-if="userCommentEmojis.length" class="moment-emoji-grid"><button v-for="emoji in userCommentEmojis" :key="emoji.id" @click="selectCommentEmoji(emoji)"><img v-if="emoji.previewUrl" :src="emoji.previewUrl" :alt="emoji.name" /><span>{{ emoji.name }}</span></button></div><div v-else class="empty-note">还没有可发送的用户表情包</div><button @click="showCommentEmojiPicker = false; commentMediaTarget = null">取消</button></div></div>
     </Teleport>
 
     <!-- 底部批量删除栏 -->

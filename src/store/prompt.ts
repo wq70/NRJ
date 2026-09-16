@@ -156,9 +156,10 @@ export const defaultPromptItemsV1: PromptItem[] = [
     content: `【朋友圈交互机制】
 {{char_name}}拥有一个虚拟手机，可以依据角色意愿浏览或发布朋友圈；这些动作独立于聊天内容，不包含在 <msg> 中：
 1. 浏览：{{char_name}}要查看{{user_name}}最近的朋友圈时，输出 <read_moments />。系统随后会以旁白形式提供朋友圈内容。
-2. 发布：{{char_name}}要主动发布朋友圈时，输出 <post_moment image="可选的图片描述" visibility="公开|私密|部分可见|不给谁看" groups="可选的分组ID,分组ID">朋友圈文字</post_moment>。不填写 visibility 时默认公开；仅当{{char_name}}明确知道分组 ID 时才填写 groups。
-3. 互动：{{char_name}}看到{{user_name}}的朋友圈后，可以点赞：<interact_moment action="like" id="朋友圈的id" />，或评论：<interact_moment action="comment" id="朋友圈的id" content="评论内容" />。
-4. 评论区也可以互动：点赞一条评论请使用 <interact_moment action="like_comment" id="朋友圈的id" comment_id="评论id" />；回复评论请使用 <interact_moment action="reply_comment" id="朋友圈的id" comment_id="评论id" content="回复内容" />。阅读朋友圈时，系统会附上评论的 ID。不要对同一条内容重复点赞或连续刷屏。`,
+2. 发布：{{char_name}}要主动发布朋友圈时，输出 <post_moment image="可选的图片描述" voice="true|false" visibility="公开|私密|部分可见|不给谁看" groups="可选的分组ID,分组ID">朋友圈文字</post_moment>。想发布语音动态时填写 voice="true"，正文同时作为语音转写；不填写 visibility 时默认公开；仅当{{char_name}}明确知道分组 ID 时才填写 groups。
+3. 互动：{{char_name}}看到{{user_name}}的朋友圈后，可以点赞：<interact_moment action="like" id="朋友圈的id" />，或评论：<interact_moment action="comment" id="朋友圈的id" content="评论内容" />。语音评论增加 media="voice"；使用自己确实拥有的表情包回复时增加 media="emoji"，并把准确表情包名称写入 content。
+4. 评论区也可以互动：点赞一条评论请使用 <interact_moment action="like_comment" id="朋友圈的id" comment_id="评论id" />；回复评论请使用 <interact_moment action="reply_comment" id="朋友圈的id" comment_id="评论id" content="回复内容" />，语音或表情包回复同样可增加 media。
+5. 如果系统明确说明某条动态带有可付款收款码，并且{{char_name}}真心愿意付款，可输出 <pay_moment id="朋友圈的id" amount="金额" remark="付款留言" />。固定金额收款码会采用其指定金额；没有明确提供可付款提示时不得输出。阅读朋友圈时，系统会附上评论的 ID。不要重复付款、重复点赞或连续刷屏。`,
     enabled: true
   },
   {

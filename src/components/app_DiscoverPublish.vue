@@ -3,8 +3,12 @@
 import { ref, computed } from 'vue'
 import { useChatState } from '../composables/useChatState'
 import { useChatAuth } from '../composables/useChatAuth'
+import ChatVoiceModal from './chat/modals/ChatVoiceModal.vue'
+import { saveRecordedVoice } from '../services/browserMedia'
+import type { MomentReceiptDraft } from '../services/momentPayments'
 
 const emit = defineEmits(['close', 'publish'])
+const props = defineProps<{ initialReceipt?: MomentReceiptDraft | null }>()
 
 const { mockChats } = useChatState()
 const { currentChatUserId } = useChatAuth()
@@ -16,6 +20,9 @@ const groups = computed(() => {
 const text = ref('')
 const images = ref<{ id: string, dataUrl: string }[]>([])
 const fileInput = ref<HTMLInputElement | null>(null)
+const receiptDraft = ref<MomentReceiptDraft | null>(props.initialReceipt || null)
+const voiceDraft = ref<any | null>(null)
+const showVoiceModal = ref(false)
 
 // 谁可以看选项
 const visibilityOptions = ['公开', '好友可见', '私密', '部分可见', '不给谁看']
@@ -60,8 +67,24 @@ const handlePublish = () => {
     groupIds: ['部分可见', '不给谁看'].includes(currentVisibility.value) ? selectedGroupIds.value : [],
     characterIds: ['部分可见', '不给谁看'].includes(currentVisibility.value) ? selectedCharacterIds.value : [],
     location: location.value.trim(),
-    mentions: mentionableChats.value.filter((chat: any) => mentionedIds.value.includes(chat.id)).map((chat: any) => ({ id: chat.id, name: chat.name }))
+    mentions: mentionableChats.value.filter((chat: any) => mentionedIds.value.includes(chat.id)).map((chat: any) => ({ id: chat.id, name: chat.name })),
+    voice: voiceDraft.value,
+    receiptCode: receiptDraft.value ? { ...receiptDraft.value.code, posterDataUrl: receiptDraft.value.posterDataUrl } : undefined
   })
+}
+
+const handleVoiceSend = async (data: { text: string; seconds: number; audioBlob?: Blob; mimeType?: string; isRealVoice?: boolean; transcriptStatus?: string }) => {
+  const audioId = data.audioBlob ? await saveRecordedVoice(data.audioBlob) : undefined
+  voiceDraft.value = {
+    text: data.text,
+    seconds: data.seconds,
+    audioId,
+    mimeType: data.mimeType,
+    isRealVoice: data.isRealVoice === true,
+    transcriptStatus: data.transcriptStatus || (data.text ? 'completed' : 'none'),
+    source: 'user'
+  }
+  showVoiceModal.value = false
 }
 
 const saveLocation = () => {
@@ -174,8 +197,8 @@ const removeImage = (index: number) => {
       <div class="header-btn" @click="handleBack">取消</div>
       <div 
         class="header-btn publish-btn" 
-        :class="{ 'is-disabled': !text && images.length === 0 }" 
-        @click="(text || images.length > 0) ? handlePublish() : null"
+        :class="{ 'is-disabled': !text && images.length === 0 && !voiceDraft && !receiptDraft }"
+        @click="(text || images.length > 0 || voiceDraft || receiptDraft) ? handlePublish() : null"
       >
         发表
       </div>
@@ -188,6 +211,18 @@ const removeImage = (index: number) => {
         placeholder="这一刻的想法..." 
         rows="4"
       ></textarea>
+
+      <div v-if="receiptDraft" class="publish-receipt-preview">
+        <img :src="receiptDraft.posterDataUrl" alt="待发布的收款码" />
+        <div><strong>朋友圈收款码</strong><span>{{ receiptDraft.code.amountCents ? `指定金额 ¥${(receiptDraft.code.amountCents / 100).toFixed(2)}` : '好友可填写金额' }}</span><small v-if="receiptDraft.code.remark">{{ receiptDraft.code.remark }}</small></div>
+        <button type="button" aria-label="移除收款码" @click="receiptDraft = null">×</button>
+      </div>
+
+      <div v-if="voiceDraft" class="publish-voice-preview">
+        <button type="button" class="voice-preview-pill"><svg viewBox="0 0 24 24"><path d="m8 5 11 7-11 7z"/></svg><span>{{ voiceDraft.seconds }}″</span></button>
+        <span>{{ voiceDraft.text || '真实语音' }}</span>
+        <button type="button" class="remove-voice" @click="voiceDraft = null">移除</button>
+      </div>
       
       <div class="image-grid">
         <div class="image-item" v-for="(img, idx) in images" :key="img.id">
@@ -203,6 +238,11 @@ const removeImage = (index: number) => {
       <input type="file" ref="fileInput" multiple accept="image/*" style="display: none;" @change="onFileChange" />
       
       <div class="options-list">
+        <div class="option-item" @click="showVoiceModal = true">
+          <div class="option-icon"><svg viewBox="0 0 24 24" width="24" height="24" stroke="#333" stroke-width="1.2" fill="none"><rect x="9" y="2" width="6" height="13" rx="3"></rect><path d="M5 11a7 7 0 0 0 14 0M12 18v4M8 22h8"></path></svg></div>
+          <div class="option-content"><div class="option-title">语音</div><div class="option-value">{{ voiceDraft ? `${voiceDraft.seconds} 秒` : '添加语音动态' }}</div></div>
+          <svg viewBox="0 0 24 24" width="18" height="18" stroke="#ccc" stroke-width="1.5" fill="none"><polyline points="9 18 15 12 9 6"></polyline></svg>
+        </div>
         <!-- 所在位置 -->
         <div class="option-item" @click="locationDraft = location; showLocationModal = true">
           <div class="option-icon">
@@ -246,6 +286,8 @@ const removeImage = (index: number) => {
 
       </div>
     </div>
+
+    <ChatVoiceModal :visible="showVoiceModal" @close="showVoiceModal = false" @send="handleVoiceSend" />
 
     <!-- 选择图片来源 底部菜单 -->
     <div v-if="showImageSourceMenu" class="visibility-menu-overlay" @click="showImageSourceMenu = false">
@@ -407,6 +449,7 @@ const removeImage = (index: number) => {
 .publish-textarea::placeholder {
   color: #b2b2b2;
 }
+.publish-receipt-preview{display:flex;min-width:0;align-items:center;gap:12px;margin:12px 0;padding:10px;border:1px solid #ebebeb;border-radius:9px;background:#fafafa}.publish-receipt-preview img{width:66px;height:82px;flex:none;border-radius:6px;object-fit:cover}.publish-receipt-preview>div{display:flex;min-width:0;flex:1;flex-direction:column;gap:3px}.publish-receipt-preview strong{font-size:14px;color:#333}.publish-receipt-preview span,.publish-receipt-preview small{overflow:hidden;color:#888;font-size:12px;text-overflow:ellipsis;white-space:nowrap}.publish-receipt-preview>button{width:26px;height:26px;flex:none;border:0;border-radius:50%;background:#ececec;color:#888;font-size:18px}.publish-voice-preview{display:flex;min-width:0;align-items:center;gap:10px;margin:12px 0;padding:10px;border-radius:9px;background:#f6f7f8}.voice-preview-pill{display:flex;height:34px;flex:none;align-items:center;gap:6px;padding:0 12px;border:0;border-radius:17px;background:#576b95;color:#fff}.voice-preview-pill svg{width:14px;height:14px;fill:currentColor}.publish-voice-preview>span{overflow:hidden;min-width:0;flex:1;color:#777;font-size:12px;text-overflow:ellipsis;white-space:nowrap}.publish-voice-preview .remove-voice{flex:none;border:0;background:none;color:#576b95;font-size:12px}
 
 .image-grid {
   display: grid;

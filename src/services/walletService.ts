@@ -27,6 +27,10 @@ export interface WalletPayment {
   resolvedAt?: number
   fundingSource?: 'balance' | 'credit' | 'bank_card'
   fundingSourceId?: string
+  source?: 'chat' | 'moment_receipt'
+  sourceActorId?: string
+  sourceActorName?: string
+  sourceMomentId?: string
 }
 
 export interface WalletQuote {
@@ -205,7 +209,8 @@ const normalize = (raw: any, accountId: string, accountName = '我'): WalletStat
       id: payment.id, direction: payment.direction || (payment.senderKey === `user:${accountId}` ? 'outgoing' : 'incoming'),
       amountCents: cents(payment.amountCents), kind: payment.kind === 'red_packet' ? 'red_packet' : 'transfer',
       remark: payment.remark || '', status: payment.status || 'pending', createdAt: payment.createdAt || Date.now(), resolvedAt: payment.resolvedAt,
-      fundingSource: payment.fundingSource || 'balance', fundingSourceId: payment.fundingSourceId
+      fundingSource: payment.fundingSource || 'balance', fundingSourceId: payment.fundingSourceId,
+      source: payment.source, sourceActorId: payment.sourceActorId, sourceActorName: payment.sourceActorName, sourceMomentId: payment.sourceMomentId
     })) : [],
     quotes: Array.isArray(raw.quotes) && raw.quotes.length ? raw.quotes : base.quotes,
     positions: Array.isArray(raw.positions) ? raw.positions : [], orders: Array.isArray(raw.orders) ? raw.orders : [],
@@ -334,6 +339,47 @@ export const createIncomingWalletPayment = (accountId: string, amountCents: numb
   if (!amount) throw new Error('金额必须大于 0')
   const payment: WalletPayment = { id: uid('payment'), direction: 'incoming', amountCents: amount, kind, remark, status: 'pending', createdAt: Date.now() }
   state.payments.unshift(payment); saveWalletState(state); return payment
+}
+
+export const creditMomentReceiptPayment = (input: {
+  accountId: string
+  transactionId: string
+  amountCents: number
+  actorId: string | number
+  actorName: string
+  momentId: string
+  remark?: string
+}) => {
+  const state = loadWalletState(input.accountId)
+  const existing = state.payments.find(item => item.id === input.transactionId)
+  if (existing) return { created: false as const, payment: existing }
+  const amount = cents(input.amountCents)
+  if (!amount) throw new Error('金额必须大于 0')
+  const payment: WalletPayment = {
+    id: input.transactionId,
+    direction: 'incoming',
+    amountCents: amount,
+    kind: 'transfer',
+    remark: input.remark || '朋友圈收款码',
+    status: 'claimed',
+    createdAt: Date.now(),
+    resolvedAt: Date.now(),
+    source: 'moment_receipt',
+    sourceActorId: String(input.actorId),
+    sourceActorName: input.actorName,
+    sourceMomentId: input.momentId
+  }
+  state.cashCents += amount
+  state.payments.unshift(payment)
+  pushLedger(state, {
+    category: 'moment_receipt',
+    title: `收到${input.actorName}的朋友圈转账`,
+    amountCents: amount,
+    relatedId: payment.id,
+    note: payment.remark
+  })
+  saveWalletState(state)
+  return { created: true as const, payment }
 }
 
 // 兼容聊天发送层：只允许用户方向创建冻结款，不创建任何角色账户。

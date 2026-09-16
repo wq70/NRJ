@@ -1,5 +1,6 @@
 /* WARNING: 本项目专属“粘人精”，严禁出现 Kiro、Krio、周棋洛等任何相关英文或拼音命名！ */
 import { chatSettings } from '../store'
+import { appendServiceSms, getCharacterSmsNumber } from '../services/smsService'
 
 // declined: 用户主动拒接；timeout: 响铃到自动挂断都没人接；blocked: 手机没响（免打扰或用户不在房间）
 export type MissedCallKind = 'declined' | 'timeout' | 'blocked'
@@ -105,6 +106,18 @@ export const appendMissedIncomingCall = (
     missed: true,
     content: reason ? `未接来电。对方拨打的原因：${reason}` : '未接来电。',
     rawMessages: []
+  })
+
+  const accountId = localStorage.getItem('clingy_chat_auth_state') || 'guest'
+  appendServiceSms(accountId, {
+    source: 'calls',
+    threadId: `missed-call:${String(chat.characterEntityId || chat.id || charName)}`,
+    name: charName,
+    number: getCharacterSmsNumber(accountId, String(chat.characterEntityId || chat.id || charName)),
+    text: `【未接来电】${charName}于${new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}呼叫你，${label}${reason ? `。备注：${reason}` : '。'}`,
+    relatedId: `missed-call:${baseId}`,
+    category: 'service',
+    createdAt: baseId
   })
 }
 

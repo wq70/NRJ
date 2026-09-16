@@ -13,8 +13,13 @@ import { canViewMoment, canPerformMomentAction, recordMomentAction, addMomentNot
 import { applySocialProfilePatch, ensureSocialProfile, persistSocialProfile } from '../services/characterSocialProfile'
 import { getCharacterDirectoryEntry, isDirectoryOwner, saveCharacterDirectoryProfile } from '../services/characterDirectory'
 import { deleteCharacterMoment, listMomentsByAuthor, updateCharacterMoment } from '../services/momentRepository'
-import { createWalletPayment } from '../services/walletService'
+import { createWalletPayment, creditMomentReceiptPayment, formatWalletMoney } from '../services/walletService'
 import { resumeConversationTime } from '../services/conversationTime'
+import { appendWalletSms } from '../services/smsService'
+import { isMomentPaymentEnabledForCharacter, loadMomentPaymentSettings, loadMomentReceiptCodes } from '../services/momentPayments'
+import { showNotification } from './chatState/notifications'
+import { useChatEmoji } from './useChatEmoji'
+import { findRoleEmojiByResponse } from '../services/chatEmojiScope'
 
 // 初始化 discover_moments
 const discoverStore = localforage.createInstance({
@@ -213,6 +218,7 @@ export async function processMomentTags(content: string, selectedChat: any): Pro
   let aiContext = ''
   let handledMomentAction = false
   const account = useChatAuth().currentAccount.value
+  const walletAccountId = useChatAuth().currentChatUserId.value || 'guest'
   const userSocialProfile = account ? loadUserSocialProfile(account) : null
   const chatRelationship = ensureRelationship(selectedChat)
   const profileViewer = {
@@ -323,6 +329,11 @@ export async function processMomentTags(content: string, selectedChat: any): Pro
 
         for (let m of visibleMoments) {
           aiContext += `[动态ID：${m.id}] ${m.author}：${m.content}\n`
+          if (m.voice) aiContext += `(附带语音动态，${m.voice.seconds || 1}秒，转写：${m.voice.text || '无转写'})\n`
+          if (m.receiptCode) {
+            const mayPay = profileViewer.isFriend && isMomentPaymentEnabledForCharacter(walletAccountId, selectedChat)
+            aiContext += `(附带${mayPay ? '可付款的' : ''}朋友圈收款码${m.receiptCode.amountCents ? `，指定金额${formatWalletMoney(m.receiptCode.amountCents)}元` : '，金额由付款者决定'}${m.receiptCode.remark ? `，备注：${m.receiptCode.remark}` : ''}${mayPay ? `；真心愿意付款时可用 <pay_moment id="${m.id}" amount="金额" remark="付款留言" />，不愿付款时不要使用` : '；当前设置不允许你付款'})\n`
+          }
           if (m.images && m.images.length) {
             let imageInfos = []
             for (let i = 0; i < m.images.length; i++) {
@@ -373,11 +384,12 @@ export async function processMomentTags(content: string, selectedChat: any): Pro
           }
           if (m.comments?.length) {
             m.comments.forEach((c: any) => {
-              aiContext += `[评论ID：${c.id || 'legacy'}] ${c.author}：${c.content}\n`
+              const commentText = c.kind === 'voice' ? `语音“${c.voice?.text || c.content}”` : c.kind === 'emoji' ? `表情包“${c.emojiName || c.content}”` : c.content
+              aiContext += `[评论ID：${c.id || 'legacy'}] ${c.author}：${commentText}\n`
             })
           }
         }
-        aiContext += `${charName}可以使用 <interact_moment action="like|comment" id="动态ID" content="评论内容" /> 来进行点赞或评论；也可对评论用 like_comment 或 reply_comment 标签互动，或者直接在聊天中讨论此事。】`
+        aiContext += `${charName}可以使用 <interact_moment action="like|comment" id="动态ID" content="评论内容" /> 来点赞或文字评论；语音评论增加 media="voice"，表情包评论增加 media="emoji" 且 content 必须填写可用表情包的准确名称；也可对评论用 like_comment 或 reply_comment 标签互动并同样携带 media，或者直接在聊天中讨论此事。】`
       } else {
         const charName = selectedChat.name || '角色'
         aiContext = `【系统旁白：${charName}打开了朋友圈，但最近没有任何新动态。】`
@@ -394,6 +406,7 @@ export async function processMomentTags(content: string, selectedChat: any): Pro
     const attrs = postMatch[1] || ''
     const attrValue = (name: string) => attrs.match(new RegExp(`\\s${name}="([^"]*)"`))?.[1] || ''
     const imgDesc = attrValue('image')
+    const voiceMode = attrValue('voice')
     const visibility = attrValue('visibility')
     const visibilityGroups = attrValue('groups').split(',').map(v => v.trim()).filter(Boolean)
     const textContent = postMatch[2].trim()
@@ -414,6 +427,11 @@ export async function processMomentTags(content: string, selectedChat: any): Pro
         authorId: selectedChat.id,
         avatar: selectedChat.avatarUrl || selectedChat.avatar || '',
         content: textContent,
+        voice: voiceMode === 'true' || voiceMode === '1' ? {
+          text: textContent,
+          seconds: Math.min(120, Math.max(1, Math.ceil(textContent.length / 4))),
+          source: 'character'
+        } : undefined,
         images: [], // 文字图或占位
         time: Date.now(),
         visibility: ['公开', '私密', '部分可见', '不给谁看'].includes(visibility) ? visibility : (getMomentBehavior(selectedChat).mode === 'custom' ? getMomentBehavior(selectedChat).audience : '公开'),
@@ -463,16 +481,75 @@ export async function processMomentTags(content: string, selectedChat: any): Pro
   }
   newContent = newContent.replace(postRegex, '')
 
-  // 处理点赞动态、评论、点赞评论和回复评论。
-  // comment_id 固定放在 content 前，避免内容包含空格时的脆弱解析。
-  const interactRegex = /<interact_moment\s+action="([^"]+)"\s+id="([^"]+)"(?:\s+comment_id="([^"]*)")?(?:\s+content="([^"]*)")?\s*\/>/g
+  // 朋友圈收款码为即时到账；固定金额优先于角色输出金额，交易 ID 保证同一角色不会重复付款。
+  const payMomentRegex = /<pay_moment\b([^>]*)\s*\/>/g
+  let payMatch: RegExpExecArray | null
+  while ((payMatch = payMomentRegex.exec(newContent)) !== null) {
+    handledMomentAction = true
+    const attrs = payMatch[1] || ''
+    const attrValue = (name: string) => attrs.match(new RegExp(`(?:^|\\s)${name}="([^"]*)"`))?.[1] || ''
+    const momentId = attrValue('id')
+    const requestedAmount = Number(attrValue('amount'))
+    const remark = attrValue('remark').trim().slice(0, 40)
+    try {
+      if (chatRelationship.friendship !== 'friends' || !isMomentPaymentEnabledForCharacter(walletAccountId, selectedChat)) continue
+      const moments = await discoverStore.getItem<any[]>(getMomentStorageKey()) || []
+      const target = moments.find(moment => String(moment.id) === String(momentId))
+      if (!target?.isOwn || !target.receiptCode) continue
+      const persistedCode = loadMomentReceiptCodes(walletAccountId).find(code => code.id === target.receiptCode.id)
+      if (!persistedCode?.active) continue
+      const amountCents = Number(target.receiptCode.amountCents) > 0
+        ? Math.round(Number(target.receiptCode.amountCents))
+        : Math.round(requestedAmount * 100)
+      if (!Number.isFinite(amountCents) || amountCents < 1 || amountCents > 9999999) continue
+      target.receiptPayments ||= []
+      if (target.receiptPayments.some((payment: any) => String(payment.actorId) === String(selectedChat.id) && String(payment.receiptId) === String(target.receiptCode.id))) continue
+      const transactionId = `momentpay_${target.receiptCode.id}_${String(selectedChat.id)}`
+      const result = creditMomentReceiptPayment({
+        accountId: walletAccountId,
+        transactionId,
+        amountCents,
+        actorId: selectedChat.id,
+        actorName: selectedChat.name || '好友',
+        momentId: String(target.id),
+        remark: remark || target.receiptCode.remark || '朋友圈收款码'
+      })
+      if (!result.created) continue
+      const paymentRecord = {
+        id: transactionId,
+        receiptId: target.receiptCode.id,
+        actorId: selectedChat.id,
+        actorName: selectedChat.name || '好友',
+        amountCents,
+        remark: result.payment.remark,
+        createdAt: result.payment.createdAt
+      }
+      target.receiptPayments.push(paymentRecord)
+      addMomentNotification(target, { id: selectedChat.id, name: selectedChat.name || '好友' }, 'payment', `${formatWalletMoney(amountCents)}|${result.payment.remark}`)
+      await discoverStore.setItem(getMomentStorageKey(), moments)
+      window.dispatchEvent(new CustomEvent('clingy:moments-updated'))
+      const paymentSettings = loadMomentPaymentSettings(walletAccountId)
+      const smsText = `【钱包服务】你于${new Date(result.payment.createdAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}收到${selectedChat.name || '好友'}转账 ¥${formatWalletMoney(amountCents)}，备注：${result.payment.remark || '朋友圈收款码'}。款项已存入钱包余额。来源：朋友圈收款码。`
+      if (paymentSettings.smsNotification) appendWalletSms(walletAccountId, { text: smsText, relatedId: transactionId, createdAt: result.payment.createdAt, source: 'moments' })
+      if (paymentSettings.inAppNotification && chatSettings.enableGlobalNotification !== false) showNotification('钱包服务', null, '钱', `${selectedChat.name || '好友'}通过朋友圈向你转账 ¥${formatWalletMoney(amountCents)}`, { deliveryId: transactionId, important: true })
+    } catch (error) {
+      console.error('[朋友圈收款] 到账失败', error)
+    }
+  }
+  newContent = newContent.replace(payMomentRegex, '')
+
+  // 处理点赞动态、评论、点赞评论和回复评论；通用属性解析兼容旧标签并允许语音/表情包媒体。
+  const interactRegex = /<interact_moment\b([^>]*)\s*\/>/g
   let interactMatch
   while ((interactMatch = interactRegex.exec(newContent)) !== null) {
     handledMomentAction = true
-    const action = interactMatch[1]
-    const mId = interactMatch[2]
-    const commentId = interactMatch[3]
-    const commentContent = interactMatch[4]
+    const attrs = interactMatch[1] || ''
+    const attrValue = (name: string) => attrs.match(new RegExp(`(?:^|\\s)${name}="([^"]*)"`))?.[1] || ''
+    const action = attrValue('action')
+    const mId = attrValue('id')
+    const commentId = attrValue('comment_id')
+    const commentContent = attrValue('content')
+    const media = attrValue('media')
     try {
       const moments = await discoverStore.getItem<any[]>(getMomentStorageKey()) || []
       const target = moments.find(m => m.id === mId)
@@ -484,17 +561,28 @@ export async function processMomentTags(content: string, selectedChat: any): Pro
         const mayViewUserMoment = !targetsUser || Boolean(userSocialProfile && canViewUserProfileSection(userSocialProfile, 'moments', profileViewer))
         const mayLikeUserMoment = !targetsUser || Boolean(userSocialProfile?.allowMomentLikes && characterOverride?.allowMomentLikes !== false)
         const mayCommentUserMoment = !targetsUser || Boolean(userSocialProfile?.allowMomentComments && characterOverride?.allowMomentComments !== false)
+        let mediaFields: Record<string, any> = {}
+        if (media === 'voice' && commentContent) {
+          mediaFields = { kind: 'voice', voice: { text: commentContent, seconds: Math.min(120, Math.max(1, Math.ceil(commentContent.length / 4))), source: 'character' } }
+        } else if (media === 'emoji' && commentContent) {
+          const emojiState = useChatEmoji()
+          await emojiState.loadEmojis()
+          const emoji = findRoleEmojiByResponse(emojiState.emojis.value as any[], String(selectedChat.id), { name: commentContent })
+          if (!emoji) continue
+          mediaFields = { kind: 'emoji', emojiId: emoji.id, emojiName: emoji.name }
+        }
         if (!mayViewUserMoment) continue
         if (action === 'like' && mayLikeUserMoment && (forced || canPerformMomentAction(selectedChat, 'like')) && !target.likes.includes(selectedChat.name || '对方')) {
           target.likes.push(selectedChat.name || '对方')
           recordMomentAction(selectedChat, 'like')
           if (target.isOwn) addMomentNotification(target, { id: selectedChat.id, name: selectedChat.name || '对方' }, 'like')
-        } else if (action === 'comment' && mayCommentUserMoment && commentContent && !target.comments.some((c: any) => c.authorId === selectedChat.id && c.content === commentContent) && (forced || canPerformMomentAction(selectedChat, 'comment'))) {
+        } else if (action === 'comment' && mayCommentUserMoment && commentContent && !target.comments.some((c: any) => c.authorId === selectedChat.id && c.content === commentContent && (c.kind || '') === (mediaFields.kind || '')) && (forced || canPerformMomentAction(selectedChat, 'comment'))) {
           target.comments.push({
             id: `${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
             author: selectedChat.name || '对方',
             authorId: selectedChat.id,
             content: commentContent,
+            ...mediaFields,
             likes: [],
             createdAt: Date.now()
           })
@@ -510,13 +598,14 @@ export async function processMomentTags(content: string, selectedChat: any): Pro
           }
         } else if (action === 'reply_comment' && mayCommentUserMoment && commentId && commentContent && (forced || canPerformMomentAction(selectedChat, 'comment'))) {
           const parent = target.comments.find((c: any) => c.id === commentId)
-          const alreadyReplied = target.comments.some((c: any) => c.authorId === selectedChat.id && c.replyTo === commentId && c.content === commentContent)
+          const alreadyReplied = target.comments.some((c: any) => c.authorId === selectedChat.id && c.replyTo === commentId && c.content === commentContent && (c.kind || '') === (mediaFields.kind || ''))
           if (!parent || alreadyReplied) continue
           target.comments.push({
             id: `${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
             author: selectedChat.name || '对方',
             authorId: selectedChat.id,
             content: commentContent,
+            ...mediaFields,
             replyTo: commentId,
             replyToAuthor: parent?.author || '',
             likes: [],

@@ -75,6 +75,7 @@ export const BACKUP_CATALOG: BackupCatalogItem[] = [
   { id: 'character-phones', group: '聊天内容', name: '角色手机', description: '角色设备、锁屏、APP、联系人会话、活动事件与联动设置', stores: [{ dbName: 'nrt-app', storeName: 'characterPhones' }] },
   { id: 'chat-voices', group: '聊天内容', name: '聊天语音与元数据', description: '语音消息及其播放信息', stores: [{ dbName: 'nrt-app', storeName: 'chatVoices' }, { dbName: 'nrt-app', storeName: 'chatVoiceMeta' }] },
   { id: 'chat-wallpapers', group: '聊天内容', name: '聊天壁纸', description: '会话专属背景', stores: [{ dbName: 'nrt-app', storeName: 'chatWallpapers' }] },
+  { id: 'delivery-box', group: '投递内容', name: '投递箱与附件', description: '投递记录、文字、链接和本机附件', localKeys: ['clingy_delivery_settings_v1'], stores: [{ dbName: 'nrt-app', storeName: 'deliveryItems' }, { dbName: 'nrt-app', storeName: 'deliveryFiles' }] },
   { id: 'worldbooks', group: '世界书与记忆', name: '世界书正文与分组', description: '世界书内容和结构', localKeys: ['worldbooks'] },
   { id: 'worldbook-covers', group: '世界书与记忆', name: '世界书封面', description: '世界书封面图片', stores: [{ dbName: 'nrt-app', storeName: 'worldbook-covers' }] },
   { id: 'memory-covers', group: '世界书与记忆', name: '聊天记忆封面', description: '记忆卡封面', stores: [{ dbName: 'nrt-app', storeName: 'memoryCovers' }] },

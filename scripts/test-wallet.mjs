@@ -130,4 +130,22 @@ stored.credit.transactions = [{ id: 'credit-1', title: '测试', amountCents: 10
 wallet.repayWalletCredit(stored, 500)
 assert.equal(stored.credit.usedCents, 500)
 
+const beforeMomentReceipt = stored.cashCents
+wallet.saveWalletState(stored)
+const momentReceipt = wallet.creditMomentReceiptPayment({
+  accountId: 'user-1', transactionId: 'momentpay-code-role', amountCents: 1888,
+  actorId: 'role-1', actorName: '好友角色', momentId: 'moment-1', remark: '请你喝奶茶'
+})
+assert.equal(momentReceipt.created, true, '朋友圈收款码转账应即时创建到账记录')
+stored = wallet.loadWalletState('user-1')
+assert.equal(stored.cashCents, beforeMomentReceipt + 1888, '朋友圈收款码转账应即时增加用户余额')
+assert.equal(stored.payments[0].source, 'moment_receipt', '朋友圈收款记录应保留来源')
+assert.equal(stored.payments[0].sourceActorName, '好友角色', '朋友圈收款记录应保留付款角色')
+const duplicateMomentReceipt = wallet.creditMomentReceiptPayment({
+  accountId: 'user-1', transactionId: 'momentpay-code-role', amountCents: 1888,
+  actorId: 'role-1', actorName: '好友角色', momentId: 'moment-1', remark: '重复调用'
+})
+assert.equal(duplicateMomentReceipt.created, false, '同一朋友圈交易 ID 不得重复到账')
+assert.equal(wallet.loadWalletState('user-1').cashCents, beforeMomentReceipt + 1888, '重复到账调用不得再次增加余额')
+
 console.log('wallet service tests passed')

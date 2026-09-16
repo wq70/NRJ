@@ -130,7 +130,12 @@ export function useChatSummary(selectedChat: any, saveCustomContacts: () => void
     }
 
     const slicedMsgs = msgs.slice(startCount - 1, endCount)
-    const validMsgs = slicedMsgs.filter((m: any) => isMemoryMessage(m) && !m.isRecalled && !m.isUndelivered)
+    const validMsgs = slicedMsgs.filter((m: any) => (
+      isMemoryMessage(m)
+      && !m.isRecalled
+      && !m.isUndelivered
+      && !(m.deliveryData && m.excludeFromGeneralMemory)
+    ))
 
     if (validMsgs.length === 0) {
       showToast('选定区间内没有有效的聊天记录')

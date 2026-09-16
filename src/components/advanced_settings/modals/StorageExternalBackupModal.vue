@@ -2,6 +2,7 @@
 import { computed, ref, watch } from 'vue'
 import { BACKUP_CATALOG, useDataBackup, type BackupModule } from '../../../composables/useDataBackup'
 import { useGitHubBackup, type GitHubBackupConfig, type GitHubBackupEntry } from '../../../composables/useGitHubBackup'
+import { downloadWebFile, prepareWebFile, releasePreparedWebFile } from '../../../services/webFileSave'
 
 const props = defineProps<{ show: boolean; showConfirm: any; destination: 'github' | 'email' }>()
 const emit = defineEmits<{ (e: 'close'): void }>()
@@ -40,7 +41,7 @@ const toggleItem = (id: string) => { const index = selected.value.indexOf(id); i
 const toggleGroup = (items: string[]) => { const all = items.every(id => selected.value.includes(id)); selected.value = all ? selected.value.filter(id => !items.includes(id)) : Array.from(new Set([...selected.value, ...items])) }
 const backupModules = () => selected.value.length === 0 ? ['__full__'] : selected.value
 const backupName = () => `粘人精备份-${new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)}.nrtbackup`
-const downloadFallback = (file: File) => { const url = URL.createObjectURL(file); const link = document.createElement('a'); link.href = url; link.download = file.name; document.body.appendChild(link); link.click(); link.remove(); URL.revokeObjectURL(url) }
+const downloadFallback = (file: File) => { const prepared = prepareWebFile(file, file.name, file.type); downloadWebFile(prepared); releasePreparedWebFile(prepared) }
 
 const persistConfig = () => {
   if (props.destination === 'github') localStorage.setItem('github_backup_config', JSON.stringify(config.value))

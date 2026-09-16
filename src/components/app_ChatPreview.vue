@@ -236,6 +236,13 @@ const openChatFromOutside = async (contactId: string | number) => {
   return true
 }
 
+const openDiscoverFromOutside = async () => {
+  await loadCustomContacts()
+  activeTab.value = '发现'
+  currentView.value = 'discover'
+  return true
+}
+
 const handleVoiceCallStateChange = (state: VoiceCallState) => {
   voiceCallState.value = state
   emit('voice-call-state-change', state)
@@ -244,7 +251,8 @@ const handleVoiceCallStateChange = (state: VoiceCallState) => {
 defineExpose({
   restoreVoiceCallFromOutside: restoreGlobalVoiceCall,
   endVoiceCallFromOutside: endGlobalVoiceCall,
-  openChatFromOutside
+  openChatFromOutside,
+  openDiscoverFromOutside
 })
 
 // 新建联系人状态
