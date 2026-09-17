@@ -10,6 +10,7 @@ import AppChatPreview from './components/app_ChatPreview.vue'
 import AppDelivery from './components/app_Delivery.vue'
 import AppSMS from './components/app_SMS.vue'
 import AppWallet from './components/app_Wallet.vue'
+import AppCoupleSpace from './components/app_CoupleSpace.vue'
 import AppWorldBook from './components/app_WorldBook.vue'
 import AppAdvancedSettings from './components/app_AdvancedSettings.vue'
 import AppVoiceAccess from './components/app_VoiceAccess.vue'
@@ -24,8 +25,17 @@ import AppForum from './components/app_Forum.vue'
 import AppMCP from './components/app_MCP.vue'
 import AppKeepAlive from './components/app_KeepAlive.vue'
 import AppBookStore from './components/app_BookStore.vue'
+import AppMall from './components/app_Mall.vue'
+import AppTakeout from './components/app_Takeout.vue'
 import McpConfirmationHost from './components/mcp/McpConfirmationHost.vue'
 import AppVideoHall from './components/app_VideoHall.vue'
+import AppLive from './components/app_Live.vue'
+import AppWatchTogether from './components/app_WatchTogether.vue'
+import AppTimebox from './components/app_Timebox.vue'
+import AppFate from './components/app_Fate.vue'
+import AppBubble from './components/app_Bubble.vue'
+import AppTextGame from './components/app_TextGame.vue'
+import AppGame from './components/app_Game.vue'
 import LockScreen from './components/LockScreen.vue'
 import AppWatermarkOverlay from './components/AppWatermarkOverlay.vue'
 import { globalSettings, appStats, flushAppStatsStorage } from './store'
@@ -68,6 +78,8 @@ const activeApp = ref<string | null>(null)
 const desktopRef = ref<{ installWidget: (widgetType: WidgetType, widthUnits: number, heightUnits: number) => Promise<void> } | null>(null)
 const isLocked = ref(globalSettings.enableLockScreen)
 const hasOpenedChatApp = ref(false)
+const hasOpenedLiveApp = ref(false)
+const returnToLiveAfterBridge = ref(false)
 const chatAppRef = ref<any>(null)
 
 const openMomentsFromWallet = async () => {
@@ -316,8 +328,12 @@ const containerStyle = computed(() => {
 
 const handleOpenApp = (appId: string) => {
   if (availableAppIds.has(appId)) {
+    returnToLiveAfterBridge.value = false
     if (appId === 'chat') {
       hasOpenedChatApp.value = true
+    }
+    if (appId === 'live') {
+      hasOpenedLiveApp.value = true
     }
     activeApp.value = appId
   } else {
@@ -328,6 +344,27 @@ const handleOpenApp = (appId: string) => {
       developmentNotice.value = ''
     }, 2200)
   }
+}
+
+const openAppFromLive = (appId: string) => {
+  if (!availableAppIds.has(appId)) return
+  returnToLiveAfterBridge.value = true
+  if (appId === 'chat') hasOpenedChatApp.value = true
+  activeApp.value = appId
+}
+
+const closeLinkedApp = () => {
+  if (returnToLiveAfterBridge.value) {
+    returnToLiveAfterBridge.value = false
+    activeApp.value = 'live'
+    return
+  }
+  activeApp.value = null
+}
+
+const closeLiveApp = () => {
+  returnToLiveAfterBridge.value = false
+  activeApp.value = null
 }
 
 const handlePhoneVoiceCallStateChange = (state: VoiceCallState) => {
@@ -343,6 +380,17 @@ const openGeneratedCharacterChat = async (contactId: string) => {
   activeApp.value = 'chat'
   await nextTick()
   await chatAppRef.value?.openChatFromOutside?.(contactId)
+}
+
+const openMallCharacterChat = async (contactId: string | number) => {
+  hasOpenedChatApp.value = true
+  activeApp.value = 'chat'
+  await nextTick()
+  await chatAppRef.value?.openChatFromOutside?.(contactId)
+}
+
+const openMallFromTakeout = () => {
+  activeApp.value = 'mall'
 }
 
 const openChatNotification = async (notice: any) => {
@@ -517,7 +565,7 @@ watch([activeApp, isLocked], ([appId, locked]) => {
         :is-active="activeApp === 'chat' && !isLocked"
         ref="chatAppRef"
         data-font-app="chat"
-        @close="activeApp = null" 
+        @close="closeLinkedApp"
         @voice-call-state-change="handlePhoneVoiceCallStateChange"
       />
     </Transition>
@@ -539,7 +587,7 @@ watch([activeApp, isLocked], ([appId, locked]) => {
       <AppWallet 
         v-if="activeApp === 'wallet'" 
         data-font-app="wallet"
-        @close="activeApp = null" 
+        @close="closeLinkedApp"
         @open-moments="openMomentsFromWallet"
       />
     </Transition>
@@ -561,14 +609,14 @@ watch([activeApp, isLocked], ([appId, locked]) => {
       <AppVoiceAccess 
         v-if="activeApp === 'voice_access'" 
         data-font-app="voice_access"
-        @close="activeApp = null" 
+        @close="closeLinkedApp"
       />
     </Transition>
     <Transition name="app-fade">
       <AppImageAccess 
         v-if="activeApp === 'image_access'" 
         data-font-app="image_access"
-        @close="activeApp = null" 
+        @close="closeLinkedApp"
       />
     </Transition>
     <Transition name="app-fade">
@@ -614,14 +662,14 @@ watch([activeApp, isLocked], ([appId, locked]) => {
       <AppMusic
         v-if="activeApp === 'music'"
         data-font-app="music"
-        @close="activeApp = null"
+        @close="closeLinkedApp"
       />
     </Transition>
     <Transition name="app-fade">
       <AppForum
         v-if="activeApp === 'forum'"
         data-font-app="forum"
-        @close="activeApp = null"
+        @close="closeLinkedApp"
       />
     </Transition>
     <Transition name="app-fade">
@@ -639,6 +687,13 @@ watch([activeApp, isLocked], ([appId, locked]) => {
       />
     </Transition>
     <Transition name="app-fade">
+      <AppCoupleSpace
+        v-if="activeApp === 'couple_space'"
+        data-font-app="couple_space"
+        @close="closeLinkedApp"
+      />
+    </Transition>
+    <Transition name="app-fade">
       <AppBookStore
         v-if="activeApp === 'book_store'"
         data-font-app="book_store"
@@ -647,10 +702,78 @@ watch([activeApp, isLocked], ([appId, locked]) => {
       />
     </Transition>
     <Transition name="app-fade">
+      <AppMall
+        v-if="activeApp === 'mall'"
+        data-font-app="mall"
+        @close="activeApp = null"
+        @open-chat="openMallCharacterChat"
+      />
+    </Transition>
+    <Transition name="app-fade">
+      <AppTakeout
+        v-if="activeApp === 'takeout'"
+        data-font-app="takeout"
+        @close="activeApp = null"
+        @open-mall="openMallFromTakeout"
+      />
+    </Transition>
+    <Transition name="app-fade">
+      <AppWatchTogether
+        v-if="activeApp === 'watch_together'"
+        data-font-app="watch_together"
+        @close="activeApp = null"
+      />
+    </Transition>
+    <Transition name="app-fade">
+      <AppTimebox
+        v-if="activeApp === 'timebox'"
+        data-font-app="timebox"
+        @close="activeApp = null"
+      />
+    </Transition>
+    <Transition name="app-fade">
+      <AppFate
+        v-if="activeApp === 'fate'"
+        data-font-app="fate"
+        @close="activeApp = null"
+      />
+    </Transition>
+    <Transition name="app-fade">
+      <AppBubble
+        v-if="activeApp === 'bubble'"
+        data-font-app="bubble"
+        @close="activeApp = null"
+      />
+    </Transition>
+    <Transition name="app-fade">
+      <AppTextGame
+        v-if="activeApp === 'text_game'"
+        data-font-app="text_game"
+        @close="activeApp = null"
+        @open-api="activeApp = 'api_settings'"
+      />
+    </Transition>
+    <Transition name="app-fade">
+      <AppGame
+        v-if="activeApp === 'game'"
+        data-font-app="game"
+        @close="activeApp = null"
+      />
+    </Transition>
+    <Transition name="app-fade">
       <AppVideoHall
         v-if="activeApp === 'video_hall'"
         data-font-app="video_hall"
-        @close="activeApp = null"
+        @close="closeLinkedApp"
+      />
+    </Transition>
+    <Transition name="app-fade">
+      <AppLive
+        v-if="hasOpenedLiveApp"
+        v-show="activeApp === 'live'"
+        data-font-app="live"
+        @close="closeLiveApp"
+        @open-app="openAppFromLive"
       />
     </Transition>
 

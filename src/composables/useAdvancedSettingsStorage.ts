@@ -176,6 +176,10 @@ const knownStores = [
     { name: 'nrt-forum', storeName: 'forumData', label: '论坛数据', category: 'chat_data' },
     { name: 'nrt-forum', storeName: 'forumMedia', label: '论坛媒体', category: 'chat_images' },
     { name: 'nrt-forum', storeName: 'forumMediaMeta', label: '论坛媒体索引', category: 'chat_data' },
+      { name: 'nrt-live', storeName: 'liveState', label: '直播设置与记录', category: 'chat_data' },
+      { name: 'nrt-live', storeName: 'liveAssets', label: '直播本机媒体', category: 'chat_images' },
+      { name: 'nrt-app', storeName: 'watchTogether', label: '共赏设置与记录', category: 'others' },
+      { name: 'nrt-app', storeName: 'watchTogetherBlobs', label: '共赏本机媒体', category: 'offline_cache' },
       { name: 'nrt-app', storeName: 'chatEmojis', label: '聊天表情包', category: 'chat_emojis' },
       { name: 'nrt-app', storeName: 'chatImages', label: '聊天配图', category: 'chat_images' },
       { name: 'nrt-app', storeName: 'chatFileBlobs', label: '角色真实文件', category: 'chat_data' },
@@ -667,7 +671,7 @@ const knownStores = [
           await caches.delete(name)
         }
       }
-  const knownDBs = ['nrt-app', 'nrt-forum', 'app_vibe_storage', 'app_novelai_history', 'app_gpt_image_references', 'app_gpt_image_history', 'nrt-backup-manager']
+  const knownDBs = ['nrt-app', 'nrt-forum', 'nrt-live', 'app_vibe_storage', 'app_novelai_history', 'app_gpt_image_references', 'app_gpt_image_history', 'nrt-backup-manager']
       let databaseNames = knownDBs
       if (indexedDB.databases) {
         try {

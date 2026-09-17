@@ -43,6 +43,8 @@ export interface MatchedListenerContactInput {
   persona: string
   avatarUrl?: string
   interactionSummary?: string
+  sourceTitle?: string
+  avatarKeyPrefix?: string
 }
 
 const cleanId = (value: unknown) => String(value || '').trim().replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 20)
@@ -361,7 +363,7 @@ export const createMatchedListenerContact = (input: MatchedListenerContactInput)
       ownerAccountId: accountId,
       name: input.name.trim(),
       persona: input.persona,
-      avatarKey: `listen_avatar_${input.entityId.replace(/[^a-zA-Z0-9]/g, '').slice(-12)}`,
+      avatarKey: `${input.avatarKeyPrefix || 'listen_avatar'}_${input.entityId.replace(/[^a-zA-Z0-9]/g, '').slice(-12)}`,
       socialProfile,
       socialCircle: [],
       socialCircleSettings: normalizeSocialCircleSettings(null),
@@ -390,7 +392,7 @@ export const createMatchedListenerContact = (input: MatchedListenerContactInput)
   candidate.relationship.events.unshift({
     id: `listen_friend_${Date.now()}`,
     type: 'friendship_restored',
-    title: '通过一起听成为好友',
+    title: input.sourceTitle || '通过一起听成为好友',
     detail: input.interactionSummary || '',
     createdAt: Date.now(),
     memoryRelevant: true

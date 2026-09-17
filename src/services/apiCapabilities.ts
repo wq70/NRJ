@@ -16,6 +16,9 @@ export type ApiCapabilityId =
   | 'forum-dm'
   | 'bookstore-writing'
   | 'bookstore-community'
+  | 'text-game-writing'
+  | 'live-host'
+  | 'game-host'
   | 'embedding'
 
 export type ApiCapabilityFallback = 'default-node' | 'default-if-compatible' | 'local-non-vector' | 'default-only'
@@ -47,6 +50,9 @@ export const apiCapabilityRegistry: Record<ApiCapabilityId, ApiCapabilityDefinit
   'forum-dm': { id: 'forum-dm', name: '论坛私聊', description: '论坛私聊回复和好友决定', group: 'forum', assignable: true, fallback: 'default-node', fallbackOnRequestError: true, supportsParameterOverrides: true },
   'bookstore-writing': { id: 'bookstore-writing', name: '书城创作', description: '小说大纲、章节正文、续写与作品审校', group: 'content', assignable: true, fallback: 'default-node', fallbackOnRequestError: false, supportsParameterOverrides: true },
   'bookstore-community': { id: 'bookstore-community', name: '书城内容生态', description: '编辑意见、精选长评与少量创作活动内容', group: 'content', assignable: true, fallback: 'default-node', fallbackOnRequestError: true, supportsParameterOverrides: true },
+  'text-game-writing': { id: 'text-game-writing', name: '文游创作', description: '互动剧情大纲、场景、选项与剧本草稿', group: 'content', assignable: true, fallback: 'default-node', fallbackOnRequestError: false, supportsParameterOverrides: true },
+  'live-host': { id: 'live-host', name: '直播主持', description: '直播间内由用户主动开启的角色主持与互动回应', group: 'content', assignable: true, fallback: 'default-node', fallbackOnRequestError: false, supportsParameterOverrides: true },
+  'game-host': { id: 'game-host', name: '游戏大厅', description: 'AI陌生玩家、角色桌游发言与推理行动', group: 'content', assignable: true, fallback: 'default-node', fallbackOnRequestError: false, supportsParameterOverrides: true },
   embedding: { id: 'embedding', name: '向量记忆', description: '长期记忆向量生成与检索', group: 'special', assignable: true, fallback: 'local-non-vector', fallbackOnRequestError: false, supportsParameterOverrides: false }
 }
 

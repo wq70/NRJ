@@ -298,6 +298,33 @@ export const adjustWalletBalance = (state: WalletState, amountCents: number, tit
   return pushLedger(state, { category, title, amountCents: amount, note })
 }
 
+// 商城只处理剧情资产。真实平台商品永远不会调用这两个函数。
+export const chargeWalletForMallOrder = (accountId: string, orderId: string, amountCents: number, note = '') => {
+  const state = loadWalletState(accountId)
+  const existing = state.ledger.find(entry => entry.category === 'mall_purchase' && entry.relatedId === orderId)
+  if (existing) return existing
+  const amount = cents(amountCents)
+  if (!amount) throw new Error('订单金额必须大于 0')
+  if (state.cashCents < amount) throw new Error('剧情钱包余额不足')
+  state.cashCents -= amount
+  const entry = pushLedger(state, { category: 'mall_purchase', title: '剧情商城消费', amountCents: -amount, relatedId: orderId, note })
+  saveWalletState(state)
+  return entry
+}
+
+export const refundWalletMallOrder = (accountId: string, orderId: string, amountCents: number, note = '') => {
+  const state = loadWalletState(accountId)
+  const charged = state.ledger.some(entry => entry.category === 'mall_purchase' && entry.relatedId === orderId)
+  if (!charged) throw new Error('没有找到对应的商城扣款')
+  const existing = state.ledger.find(entry => entry.category === 'mall_refund' && entry.relatedId === orderId)
+  if (existing) return existing
+  const amount = cents(amountCents)
+  state.cashCents += amount
+  const entry = pushLedger(state, { category: 'mall_refund', title: '剧情商城退款', amountCents: amount, relatedId: orderId, note })
+  saveWalletState(state)
+  return entry
+}
+
 export const createOutgoingWalletPayment = (accountId: string, amountCents: number, kind: 'transfer' | 'red_packet', remark = '', fundingSource: 'balance' | 'credit' | 'bank_card' = 'balance', fundingSourceId?: string) => {
   const state = loadWalletState(accountId); const amount = cents(amountCents)
   if (!amount) throw new Error('金额必须大于 0')

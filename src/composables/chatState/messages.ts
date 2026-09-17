@@ -23,6 +23,7 @@ import { buildChatModelRulesPrompt } from '../../services/modelCommunication'
 import { formatIdentityDateTime, getConversationAdjustedTimestamp } from '../../services/conversationTime'
 import { buildCharacterPhoneContext } from '../../services/characterPhone'
 import { buildSmsChatContext } from '../../services/smsService'
+import { effectiveMallChatPermissions, loadMallSnapshot } from '../../services/mallService'
 
 // 将 Blob 转为 Base64
 const blobToBase64 = (blob: Blob): Promise<string> => {
@@ -190,6 +191,7 @@ export const buildChatMessages = async (
     allowEmbedding: options.allowExternalMemoryLookup !== false
   })
   const { currentChatUserId } = useChatAuth()
+  const mallChatAllowed = effectiveMallChatPermissions(loadMallSnapshot(currentChatUserId.value || 'guest'), String(chat.characterEntityId || chat.id || '')).enabled
   const groupMemoryBridge = await buildGroupToSingleBridgeContext(
     readGroupChats(currentChatUserId.value),
     String(chat.characterEntityId || chat.id || ''),
@@ -281,6 +283,7 @@ export const buildChatMessages = async (
     }
 
     for (const msg of historyToKeep) {
+      if (msg.source === 'mall' && !mallChatAllowed) continue
       let formattedContent = msg.content
       let isSystemNotice = false
       

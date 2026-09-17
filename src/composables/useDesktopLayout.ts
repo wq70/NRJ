@@ -26,6 +26,8 @@ export const DEFAULT_WIDGET_IDS = { moment: 'widget-moment-default', dualAvatar:
 const THIRD_PAGE_APP_IDS = new Set(['widget_beautify', 'character_workshop', 'persona_workshop', 'bubble_dressup', 'character_phone', 'watch_together', 'timebox', 'mcp'])
 const FOURTH_PAGE_APP_ORDER = ['mall', 'fate', 'book_store', 'bubble', 'text_game', 'keep_alive', 'appearance_wardrobe', 'game']
 const FOURTH_PAGE_APP_IDS = new Set(FOURTH_PAGE_APP_ORDER)
+const FIFTH_PAGE_APP_ORDER = ['takeout']
+const FIFTH_PAGE_APP_IDS = new Set(FIFTH_PAGE_APP_ORDER)
 
 const state = reactive<DesktopLayoutState>({ version: 2, dock: [], pages: [], hiddenAppIds: [] })
 let initialized = false
@@ -77,7 +79,7 @@ const packEntries = (entries: DesktopEntry[], pinned?: { entry: DesktopEntry; co
 const fillPage = (entries: DesktopEntry[]) => packEntries(entries) ?? []
 
 const createDefaultLayout = (appIds: string[]): DesktopLayoutState => {
-  const primary = appIds.filter(id => !THIRD_PAGE_APP_IDS.has(id) && !FOURTH_PAGE_APP_IDS.has(id))
+  const primary = appIds.filter(id => !THIRD_PAGE_APP_IDS.has(id) && !FOURTH_PAGE_APP_IDS.has(id) && !FIFTH_PAGE_APP_IDS.has(id))
   const dock = primary.slice(0, DOCK_CAPACITY).map(id => ({ type: 'app', id }) as DesktopAppEntry)
   const moment: DesktopWidgetEntry = { type: 'widget', id: DEFAULT_WIDGET_IDS.moment, widgetType: 'moment-card', widthUnits: 4, heightUnits: 2 }
   const dual: DesktopWidgetEntry = { type: 'widget', id: DEFAULT_WIDGET_IDS.dualAvatar, widgetType: 'dual-avatar', widthUnits: 2, heightUnits: 2 }
@@ -87,7 +89,8 @@ const createDefaultLayout = (appIds: string[]): DesktopLayoutState => {
   const pageTwo = appIds.filter(id => THIRD_PAGE_APP_IDS.has(id)).map(id => ({ type: 'app', id }) as DesktopAppEntry)
   const availableIds = new Set(appIds)
   const pageThree = FOURTH_PAGE_APP_ORDER.filter(id => availableIds.has(id)).map(id => ({ type: 'app', id }) as DesktopAppEntry)
-  return { version: 2, dock, pages: [firstEntries, fillPage(pageOne), fillPage(pageTwo), fillPage(pageThree)].map(entries => ({ id: pageId(), entries })), hiddenAppIds: [] }
+  const pageFour = FIFTH_PAGE_APP_ORDER.filter(id => availableIds.has(id)).map(id => ({ type: 'app', id }) as DesktopAppEntry)
+  return { version: 2, dock, pages: [firstEntries, fillPage(pageOne), fillPage(pageTwo), fillPage(pageThree), fillPage(pageFour)].map(entries => ({ id: pageId(), entries })), hiddenAppIds: [] }
 }
 const persistNow = () => {
   if (saveTimer) clearTimeout(saveTimer)
@@ -124,7 +127,7 @@ const normalizeBaseEntries = (entries: unknown, validIds: Set<string>, hidden: S
 const appendMissingApps = (layout: DesktopLayoutState, appIds: string[], used: Set<string>, hidden: Set<string>) => {
   for (const id of appIds) {
     if (used.has(id) || hidden.has(id)) continue
-    const preferred = FOURTH_PAGE_APP_IDS.has(id) ? 3 : THIRD_PAGE_APP_IDS.has(id) ? 2 : 1
+    const preferred = FIFTH_PAGE_APP_IDS.has(id) ? 4 : FOURTH_PAGE_APP_IDS.has(id) ? 3 : THIRD_PAGE_APP_IDS.has(id) ? 2 : 1
     while (layout.pages.length <= preferred) layout.pages.push({ id: pageId(), entries: [] })
     const entry: DesktopAppEntry = { type: 'app', id }
     let target = layout.pages[preferred], position = findFirstPosition(target.entries, entry)

@@ -26,6 +26,13 @@ import {
   englishOfflineFormatRules
 } from '../../services/promptRuntimeEnglish'
 import { buildCharacterAssetPrompt } from '../../services/characterCapabilities'
+import { buildCoupleChatContext } from '../../services/coupleSpace'
+import { buildWatchTogetherChatContext } from '../../services/watchTogetherRepository'
+import { buildMallChatContext } from '../../services/mallService'
+import { buildTextGameChatContext } from '../../services/textGameChatContext'
+import { buildGameHallChatContext } from '../../services/gameHallChatBridge'
+import { buildFateChatContext } from '../../services/fateChatBridge'
+import { buildBubbleChatContext } from '../../services/bubbleStudio'
 
 export const buildSystemPrompt = (
   chat: any,
@@ -185,6 +192,10 @@ ${usesNaturalPromptV2
     }
   }
   const presenceContext = chat.enableImmersiveStatus ? buildPresenceContext(chat, usesEnglishPrompt) : ''
+  const textGameContext = buildTextGameChatContext(chat, usesEnglishPrompt)
+  const gameHallContext = buildGameHallChatContext(chat, account?.id || 'guest', usesEnglishPrompt)
+  const fateContext = buildFateChatContext(chat, usesEnglishPrompt)
+  const bubbleContext = buildBubbleChatContext(String(chat.characterEntityId || chat.id || ''), usesEnglishPrompt)
 
   // 占位符替换字典
   const placeholders: Record<string, string> = {
@@ -354,8 +365,8 @@ ${usesNaturalPromptV2
   if (activePromptItems.length === 0) {
     const fallbackAssetPrompt = !callMode && !offlineMeetMode ? buildCharacterAssetPrompt(chat, runtimeMode, assetQuery) : ''
     return usesEnglishPrompt
-      ? `The current character is ${charName}; the current user is ${userName}.${memoryBookContext}${presenceContext}${fallbackAssetPrompt}${transferStateGuard}${englishDialogueLanguageGuard}`
-      : `当前角色是${charName}，用户是${userName}。${memoryBookContext}${presenceContext}${fallbackAssetPrompt}${transferStateGuard}`
+      ? `The current character is ${charName}; the current user is ${userName}.${memoryBookContext}${textGameContext}${gameHallContext}${fateContext}${bubbleContext}${presenceContext}${fallbackAssetPrompt}${transferStateGuard}${englishDialogueLanguageGuard}`
+      : `当前角色是${charName}，用户是${userName}。${memoryBookContext}${textGameContext}${gameHallContext}${fateContext}${bubbleContext}${presenceContext}${fallbackAssetPrompt}${transferStateGuard}`
   }
 
   // 拼接 UI 上所有的有效条目，并解析占位符
@@ -493,5 +504,15 @@ ${usesNaturalPromptV2
     ? (usesEnglishPrompt ? `\n\n[Shared listen-together memories]\n${sharedMusicMemory}` : `\n\n【共享的一起听记忆】\n${sharedMusicMemory}`)
     : ''
   pushContextTrace(trace, { id: 'memory:together-listen-shared', category: 'memory', group: '一起听', label: '共享的一起听记忆', text: sharedMusicMemoryContext, reason: sharedMusicMemoryContext ? '用户已选择与普通单聊互通' : '没有共享的一起听记忆' })
-  return resolvedPrompts.join('\n\n') + memoryBookContext + sharedMusicMemoryContext + presenceContext + finalVoiceRules + assetPrompt + relationshipRules + offlinePrompt + transferStateGuard + buildSocialProfilePrompt(chat, usesEnglishPrompt) + buildSocialCirclePrompt(chat, usesEnglishPrompt) + userSocialContext + friendRequestRule + togetherListenInviteRule + (usesEnglishPrompt ? englishDialogueLanguageGuard : '')
+  const coupleSpaceContext = buildCoupleChatContext(chat, usesEnglishPrompt)
+  pushContextTrace(trace, { id: 'runtime:couple-space', category: 'memory', group: '情侣空间', label: '情侣空间授权上下文', text: coupleSpaceContext, reason: coupleSpaceContext ? '用户已明确开启当前角色的聊天桥接' : '情侣空间聊天桥接关闭或没有有效空间' })
+  const watchTogetherContext = buildWatchTogetherChatContext(chat, account?.id || '', usesEnglishPrompt)
+  pushContextTrace(trace, { id: 'memory:watch-together', category: 'memory', group: '共赏空间', label: '共赏空间授权记忆', text: watchTogetherContext, reason: watchTogetherContext ? '用户同时开启了共赏空间与普通聊天读取' : '共赏记忆桥接关闭或没有当前角色的记忆' })
+  const mallContext = buildMallChatContext(account?.id || 'guest', String(chat.characterEntityId || chat.id), usesEnglishPrompt)
+  pushContextTrace(trace, { id: 'memory:mall', category: 'memory', group: '商城', label: '商城授权上下文', text: mallContext, reason: mallContext ? '商城总开关、角色开关与最近事件读取均已开启' : '商城聊天桥接关闭或没有已授权事件' })
+  pushContextTrace(trace, { id: 'memory:fate', category: 'memory', group: '缘分', label: '缘分授权参考', text: fateContext, reason: fateContext ? '缘分总开关、聊天读取开关与当前结果授权均已开启' : '缘分聊天影响关闭或没有当前角色的已授权结果' })
+  pushContextTrace(trace, { id: 'memory:text-game', category: 'memory', group: '文游', label: '文游授权上下文', text: textGameContext, reason: textGameContext ? '作品总开关及至少一个细分读取项已开启' : '文游聊天影响关闭、没有勾选读取项或当前角色未加入作品' })
+  pushContextTrace(trace, { id: 'memory:game-hall', category: 'memory', group: '游戏大厅', label: '游戏大厅授权记忆', text: gameHallContext, reason: gameHallContext ? '游戏联动总开关、细分字段及本局授权均已开启' : '游戏聊天联动关闭、没有勾选读取项或本局未授权' })
+  pushContextTrace(trace, { id: 'memory:bubble', category: 'memory', group: '泡泡', label: '泡泡授权上下文', text: bubbleContext, reason: bubbleContext ? '泡泡总开关及至少一个细分共享项已开启' : '泡泡聊天影响关闭或没有勾选共享项' })
+  return resolvedPrompts.join('\n\n') + memoryBookContext + sharedMusicMemoryContext + coupleSpaceContext + watchTogetherContext + mallContext + textGameContext + gameHallContext + fateContext + bubbleContext + presenceContext + finalVoiceRules + assetPrompt + relationshipRules + offlinePrompt + transferStateGuard + buildSocialProfilePrompt(chat, usesEnglishPrompt) + buildSocialCirclePrompt(chat, usesEnglishPrompt) + userSocialContext + friendRequestRule + togetherListenInviteRule + (usesEnglishPrompt ? englishDialogueLanguageGuard : '')
 }
