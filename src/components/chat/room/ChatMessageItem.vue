@@ -37,6 +37,7 @@ const props = defineProps<{
   voicePlayingId: number | null
   isVoiceSynthesizing: boolean
   resolveSender?: (message: any) => any
+  isReplyVariantPreview?: boolean
 }>()
 
 const emit = defineEmits([
@@ -193,7 +194,7 @@ const groupBadge = (memberId: string) => {
     </div>
   </div>
 
-  <div class="message-row" :class="[msg.type, { 'is-multi-select': selectionMode !== null, 'is-marked': msg.isMarked }]" :style="msg.costTime ? { marginBottom: '4px' } : {}" @click="['left','right','system','narration'].includes(msg.type) ? emit('click-message', msg.id) : null">
+  <div class="message-row" :class="[msg.type, { 'is-multi-select': selectionMode !== null, 'is-marked': msg.isMarked, 'reply-variant-preview-message': isReplyVariantPreview }]" :style="msg.costTime ? { marginBottom: '4px' } : {}" @click="['left','right','system','narration'].includes(msg.type) ? emit('click-message', msg.id) : null">
     
     <!-- 闪烁的小星星动画 -->
     <transition name="star-pop">
@@ -256,9 +257,10 @@ const groupBadge = (memberId: string) => {
       </template>
       <template v-else>
         <div class="msg-avatar-col" v-if="shouldShowAvatar(msg)">
-          <div class="msg-avatar" role="button" tabindex="0" aria-label="查看角色主页" :style="[
-            messageSender?.avatarUrl ? { backgroundImage: `url(${messageSender.avatarUrl})`, backgroundSize: 'cover', backgroundPosition: 'center', color: 'transparent' } : {}
-          ]" @click.stop="selectionMode === null && emit('open-character-profile', msg.senderId)" @keydown.enter.stop="selectionMode === null && emit('open-character-profile', msg.senderId)" @keydown.space.prevent.stop="selectionMode === null && emit('open-character-profile', msg.senderId)">{{ messageSender?.avatarText || '伴' }}</div>
+          <div class="msg-avatar" role="button" tabindex="0" aria-label="查看角色主页" @click.stop="selectionMode === null && emit('open-character-profile', msg.senderId)" @keydown.enter.stop="selectionMode === null && emit('open-character-profile', msg.senderId)" @keydown.space.prevent.stop="selectionMode === null && emit('open-character-profile', msg.senderId)">
+            <img v-if="messageSender?.avatarUrl" :src="messageSender.avatarUrl" class="msg-avatar-img" alt="头像" />
+            <span v-else>{{ messageSender?.avatarText || '伴' }}</span>
+          </div>
           <div v-if="shouldShowTime && chatSettings.timeDisplayPosition === 'avatar_bottom'" class="msg-time-inline">
             {{ formatMsgTime(msg.timestamp || msg.id) }}
           </div>
@@ -268,6 +270,7 @@ const groupBadge = (memberId: string) => {
             <span v-if="shouldShowName(msg)" class="msg-name-text">@{{ messageSender?.name }}</span>
             <GroupMemberBadge
               v-if="selectedChat?.chatType === 'group' && shouldShowName(msg)"
+              class="chat-msg-badge left"
               :badge-type="groupBadge(String(msg.senderId)).badgeType"
               :level="groupBadge(String(msg.senderId)).level"
               :level-title="groupBadge(String(msg.senderId)).levelTitle"
@@ -371,33 +374,41 @@ const groupBadge = (memberId: string) => {
             </div>
           </template>
 
-          <div style="display: flex; align-items: flex-end; max-width: 100%; min-width: 0;">
-            <div v-if="!msg.fileData && !msg.videoData && !msg.imageData && !msg.voiceData && !msg.transferData && !groupFinanceInteraction && !msg.isEmoji && !msg.callData" class="bubble bubble-left" data-chat-bubble="other" @touchstart="emit('touch-start', msg.id)" @touchend="emit('touch-end')" @touchmove="emit('touch-move', $event)" @contextmenu.prevent>
-              <img v-for="item in bubbleOrnaments('other')" :key="item.id" class="bubble-ornament" :src="bubbleAssetUrls[item.assetId]" :alt="item.name" :style="ornamentStyle(item)">
-              <!-- 同气泡模式下的思考过程 -->
-              <div v-if="showThinkingContent && chatSettings.cotInSameBubble" class="thinking-block">
-                <details>
-                  <summary class="thinking-summary magazine-slogan">{{ msg.thinkingSource === 'prompt' ? '分析文本' : '思考摘要' }}</summary>
-                  <div class="thinking-content">{{ msg.thinking }}</div>
-                </details>
+          <div class="msg-bubble-layout-row left">
+            <div class="msg-bubble-wrapper left">
+              <div v-if="!msg.fileData && !msg.videoData && !msg.imageData && !msg.voiceData && !msg.transferData && !groupFinanceInteraction && !msg.isEmoji && !msg.callData" class="bubble bubble-left" data-chat-bubble="other" @touchstart="emit('touch-start', msg.id)" @touchend="emit('touch-end')" @touchmove="emit('touch-move', $event)" @contextmenu.prevent>
+                <img v-for="item in bubbleOrnaments('other')" :key="item.id" class="bubble-ornament" :src="bubbleAssetUrls[item.assetId]" :alt="item.name" :style="ornamentStyle(item)">
+                <!-- 同气泡模式下的思考过程 -->
+                <div v-if="showThinkingContent && chatSettings.cotInSameBubble" class="thinking-block">
+                  <details>
+                    <summary class="thinking-summary magazine-slogan">{{ msg.thinkingSource === 'prompt' ? '分析文本' : '思考摘要' }}</summary>
+                    <div class="thinking-content">{{ msg.thinking }}</div>
+                  </details>
+                </div>
+                <div v-if="msg.quote" class="msg-quote-block" data-bubble-part="quote">
+                  <div class="msg-quote-sender">{{ msg.quote.sender }}</div>
+                  <div class="msg-quote-content">{{ msg.quote.content }}</div>
+                </div>
+                <div v-if="showOriginal" class="message-content">{{ msg.content }}</div>
+                <div
+                  v-if="canToggleTranslation"
+                  class="translation-toggle"
+                  role="button"
+                  tabindex="0"
+                  @click.stop="toggleTranslation"
+                  @keydown.enter.stop="toggleTranslation"
+                  @keydown.space.prevent.stop="toggleTranslation"
+                >{{ translationExpanded ? '收起翻译' : '翻译' }}</div>
+                <div v-if="showTranslation" class="message-translation" data-bubble-part="translation">{{ msg.translation }}</div>
+                <div v-if="shouldShowTime && chatSettings.timeDisplayPosition === 'bubble_inner'" class="msg-time-bubble-inner left">
+                  {{ formatMsgTime(msg.timestamp || msg.id) }}
+                </div>
               </div>
-              <div v-if="msg.quote" class="msg-quote-block" data-bubble-part="quote">
-                <div class="msg-quote-sender">{{ msg.quote.sender }}</div>
-                <div class="msg-quote-content">{{ msg.quote.content }}</div>
+              <div v-if="shouldShowTime && chatSettings.timeDisplayPosition === 'bubble_bottom'" class="msg-time-bubble-bottom left">
+                {{ formatMsgTime(msg.timestamp || msg.id) }}
               </div>
-              <div v-if="showOriginal" class="message-content">{{ msg.content }}</div>
-              <div
-                v-if="canToggleTranslation"
-                class="translation-toggle"
-                role="button"
-                tabindex="0"
-                @click.stop="toggleTranslation"
-                @keydown.enter.stop="toggleTranslation"
-                @keydown.space.prevent.stop="toggleTranslation"
-              >{{ translationExpanded ? '收起翻译' : '翻译' }}</div>
-              <div v-if="showTranslation" class="message-translation" data-bubble-part="translation">{{ msg.translation }}</div>
             </div>
-          <div v-if="shouldShowTime && chatSettings.timeDisplayPosition === 'bubble_outer'" class="msg-time-inline-outer left">
+            <div v-if="shouldShowTime && chatSettings.timeDisplayPosition === 'bubble_outer'" class="msg-time-inline-outer left">
               {{ formatMsgTime(msg.timestamp || msg.id) }}
             </div>
           </div>
@@ -421,6 +432,7 @@ const groupBadge = (memberId: string) => {
           <div v-if="shouldShowName(msg) || (shouldShowTime && chatSettings.timeDisplayPosition === 'name_side')" class="msg-name" style="justify-content: flex-end;">
             <GroupMemberBadge
               v-if="selectedChat?.chatType === 'group' && shouldShowName(msg)"
+              class="chat-msg-badge right"
               :badge-type="groupBadge('user').badgeType"
               :level="groupBadge('user').level"
               :level-title="groupBadge('user').levelTitle"
@@ -517,17 +529,25 @@ const groupBadge = (memberId: string) => {
           </template>
 
           <!-- 普通消息气泡 -->
-          <div style="display: flex; align-items: flex-end; justify-content: flex-end; max-width: 100%; min-width: 0;">
-          <div v-if="shouldShowTime && chatSettings.timeDisplayPosition === 'bubble_outer'" class="msg-time-inline-outer right">
+          <div class="msg-bubble-layout-row right">
+            <div v-if="shouldShowTime && chatSettings.timeDisplayPosition === 'bubble_outer'" class="msg-time-inline-outer right">
               {{ formatMsgTime(msg.timestamp || msg.id) }}
             </div>
-            <div v-if="!msg.fileData && !msg.videoData && !msg.imageData && !msg.voiceData && !msg.transferData && !groupFinanceInteraction && !msg.isEmoji && !msg.callData" class="bubble bubble-right" data-chat-bubble="self" @touchstart="emit('touch-start', msg.id)" @touchend="emit('touch-end')" @touchmove="emit('touch-move', $event)" @contextmenu.prevent>
-              <img v-for="item in bubbleOrnaments('self')" :key="item.id" class="bubble-ornament" :src="bubbleAssetUrls[item.assetId]" :alt="item.name" :style="ornamentStyle(item)">
-              <div v-if="msg.quote" class="msg-quote-block" data-bubble-part="quote">
-                <div class="msg-quote-sender">{{ msg.quote.sender }}</div>
-                <div class="msg-quote-content">{{ msg.quote.content }}</div>
+            <div class="msg-bubble-wrapper right">
+              <div v-if="!msg.fileData && !msg.videoData && !msg.imageData && !msg.voiceData && !msg.transferData && !groupFinanceInteraction && !msg.isEmoji && !msg.callData" class="bubble bubble-right" data-chat-bubble="self" @touchstart="emit('touch-start', msg.id)" @touchend="emit('touch-end')" @touchmove="emit('touch-move', $event)" @contextmenu.prevent>
+                <img v-for="item in bubbleOrnaments('self')" :key="item.id" class="bubble-ornament" :src="bubbleAssetUrls[item.assetId]" :alt="item.name" :style="ornamentStyle(item)">
+                <div v-if="msg.quote" class="msg-quote-block" data-bubble-part="quote">
+                  <div class="msg-quote-sender">{{ msg.quote.sender }}</div>
+                  <div class="msg-quote-content">{{ msg.quote.content }}</div>
+                </div>
+                <div class="message-content">{{ msg.content }}</div>
+                <div v-if="shouldShowTime && chatSettings.timeDisplayPosition === 'bubble_inner'" class="msg-time-bubble-inner right">
+                  {{ formatMsgTime(msg.timestamp || msg.id) }}
+                </div>
               </div>
-              <div class="message-content">{{ msg.content }}</div>
+              <div v-if="shouldShowTime && chatSettings.timeDisplayPosition === 'bubble_bottom'" class="msg-time-bubble-bottom right">
+                {{ formatMsgTime(msg.timestamp || msg.id) }}
+              </div>
             </div>
           </div>
           <div v-if="msg.isUndelivered" class="undelivered-label">未送达 · 对方不可见</div>
@@ -536,9 +556,10 @@ const groupBadge = (memberId: string) => {
 
         </div>
         <div class="msg-avatar-col" v-if="shouldShowAvatar(msg)">
-          <div class="msg-avatar" :style="[
-            myProfile.avatarUrl ? { backgroundImage: `url(${myProfile.avatarUrl})`, backgroundSize: 'cover', backgroundPosition: 'center', color: 'transparent' } : {}
-          ]">{{ myProfile.avatarUrl ? '' : (myProfile.name.charAt(0) || '我') }}</div>
+          <div class="msg-avatar">
+            <img v-if="myProfile.avatarUrl" :src="myProfile.avatarUrl" class="msg-avatar-img" alt="我的头像" />
+            <span v-else>{{ myProfile.name.charAt(0) || '我' }}</span>
+          </div>
           <div v-if="shouldShowTime && chatSettings.timeDisplayPosition === 'avatar_bottom'" class="msg-time-inline">
             {{ formatMsgTime(msg.timestamp || msg.id) }}
           </div>
@@ -559,6 +580,31 @@ const groupBadge = (memberId: string) => {
 @import '../ChatRoomView.css';
 
 .bubble-ornament{position:absolute;display:block;max-width:none;object-fit:contain;user-select:none;-webkit-user-drag:none}
+
+.message-row {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+.msg-avatar {
+  overflow: hidden;
+  user-select: none;
+}
+
+.msg-avatar-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: inherit;
+  display: block;
+}
+
+.bubble {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
 
 .translation-toggle {
   width: fit-content;
@@ -647,6 +693,14 @@ const groupBadge = (memberId: string) => {
   100% { transform: rotate(360deg); } 
 }
 
+.chat-msg-badge.right {
+  margin-right: 6px;
+}
+
+.chat-msg-badge.left {
+  margin-left: 6px;
+}
+
 .msg-avatar-col {
   display: flex;
   flex-direction: column;
@@ -686,6 +740,55 @@ const groupBadge = (memberId: string) => {
 }
 .msg-time-inline-outer.right {
   margin-right: 6px;
+}
+
+.msg-bubble-layout-row {
+  display: flex;
+  align-items: flex-end;
+  max-width: 100%;
+  min-width: 0;
+}
+.msg-bubble-layout-row.right {
+  justify-content: flex-end;
+}
+
+.msg-bubble-wrapper {
+  display: flex;
+  flex-direction: column;
+  max-width: 100%;
+  min-width: 0;
+}
+.msg-bubble-wrapper.right {
+  align-items: flex-end;
+}
+.msg-bubble-wrapper.left {
+  align-items: flex-start;
+}
+
+.msg-time-bubble-bottom {
+  font-size: 10px;
+  color: var(--text-tertiary);
+  margin-top: 3px;
+  padding: 0 4px;
+  white-space: nowrap;
+  line-height: 1.2;
+}
+
+.msg-time-bubble-inner {
+  font-size: 10px;
+  margin-top: 4px;
+  display: flex;
+  line-height: 1.2;
+  user-select: none;
+  opacity: 0.75;
+}
+.msg-time-bubble-inner.left {
+  justify-content: flex-end;
+  color: inherit;
+}
+.msg-time-bubble-inner.right {
+  justify-content: flex-end;
+  color: inherit;
 }
 
 .thinking-standalone-wrapper {

@@ -2,7 +2,10 @@
 <script setup lang="ts">
 import { ref, computed, onBeforeUnmount, watch } from 'vue'
 import ChatSocialCircleEditModal, { type SocialContactItem } from './ChatSocialCircleEditModal.vue'
+import DualAestheticWidget from '../../DualAestheticWidget.vue'
+import { useMusicPlayer } from '../../../composables/useMusicPlayer'
 import { generateSocialCircleDraft, normalizeSocialCircleSettings, type SocialCircleSettings } from '../../../services/socialGraph'
+import { generateSocialThemeSong, socialThemeContext, socialThemeTrackKey } from '../../../services/socialThemeMusic'
 import { syncSocialCircleToDirectory } from '../../../services/characterDirectory'
 import { removeSocialAvatarIfUnused, resolveSocialAvatarSource, saveSocialAvatarAsset } from '../../../services/socialAvatar'
 
@@ -22,11 +25,21 @@ const editingContact = ref<SocialContactItem | null>(null)
 const searchQuery = ref('')
 const generating = ref(false)
 const generationError = ref('')
+const themeGenerating = ref(false)
+const themeError = ref('')
+let themeRequestId = 0
 const avatarSources = ref<Record<string, string>>({})
 let avatarLoadToken = 0
 const avatarObjectUrls = new Set<string>()
+const musicPlayer = useMusicPlayer()
 
 const settings = computed<SocialCircleSettings>(() => normalizeSocialCircleSettings(props.selectedChat))
+const themeSong = computed(() => settings.value.themeSong)
+const themeStale = computed(() => Boolean(themeSong.value && props.selectedChat && themeSong.value.contextKey !== socialThemeContext(props.selectedChat)))
+const selectedThemeOption = computed(() => themeSong.value?.options[themeSong.value.selectedIndex] || null)
+const themeIsPlayingTrack = computed(() => Boolean(selectedThemeOption.value && musicPlayer.currentTrack.value &&
+  selectedThemeOption.value.track.sourceId === musicPlayer.currentTrack.value.sourceId &&
+  selectedThemeOption.value.track.sourceTrackId === musicPlayer.currentTrack.value.sourceTrackId))
 const persist = () => {
   if (!props.selectedChat) return
   settings.value.updatedAt = Date.now()
@@ -58,6 +71,16 @@ const stats = computed(() => {
     work: list.filter((i) => i.category === 'work').length,
     other: list.filter((i) => i.category === 'other').length
   }
+})
+
+const topFourAvatars = computed(() => {
+  const result: string[] = []
+  for (const item of socialList.value) {
+    const src = avatarSources.value[item.id] || item.avatarUrl || ''
+    if (src) result.push(src)
+    if (result.length >= 4) break
+  }
+  return result
 })
 
 const filteredList = computed(() => {
@@ -127,6 +150,12 @@ watch(
   { immediate: true }
 )
 
+watch(() => props.selectedChat?.id, () => {
+  themeRequestId += 1
+  themeGenerating.value = false
+  themeError.value = ''
+})
+
 onBeforeUnmount(() => {
   avatarLoadToken += 1
   revokeAvatarObjectUrls()
@@ -183,6 +212,75 @@ const generatePresets = async () => {
     generating.value = false
   }
 }
+
+const generateTheme = async (excludeCurrent = false) => {
+  const chat = props.selectedChat
+  if (!chat || themeGenerating.value || settings.value.themeSong?.pinned || !settings.value.enabled || !settings.value.themeMusicEnabled) return
+  const chatId = chat.id
+  const contextKey = socialThemeContext(chat)
+  const requestId = ++themeRequestId
+  themeGenerating.value = true
+  themeError.value = ''
+  try {
+    const excluded = excludeCurrent ? (settings.value.themeSong?.options || []).map(item => socialThemeTrackKey(item.track)) : []
+    const result = await generateSocialThemeSong(chat, excluded)
+    if (requestId !== themeRequestId || props.selectedChat?.id !== chatId || !settings.value.enabled || !settings.value.themeMusicEnabled || socialThemeContext(chat) !== contextKey) return
+    settings.value.themeSong = result
+    persist()
+  } catch (error: any) {
+    if (requestId === themeRequestId && props.selectedChat?.id === chatId) themeError.value = error?.message || '选曲失败，请稍后重试'
+  } finally {
+    if (requestId === themeRequestId) themeGenerating.value = false
+  }
+}
+
+const toggleTheme = () => {
+  persist()
+  if (settings.value.themeMusicEnabled && !settings.value.themeSong) void generateTheme()
+  if (!settings.value.themeMusicEnabled) {
+    themeRequestId += 1
+    themeGenerating.value = false
+    themeError.value = ''
+  }
+}
+
+const changeTheme = () => {
+  const song = themeSong.value
+  if (!song || song.pinned || themeGenerating.value) return
+  if (song.selectedIndex + 1 < song.options.length) {
+    song.selectedIndex += 1
+    song.pinned = false
+    persist()
+  } else {
+    void generateTheme(true)
+  }
+}
+
+const toggleThemePinned = () => {
+  if (!themeSong.value) return
+  themeSong.value.pinned = !themeSong.value.pinned
+  persist()
+}
+
+const playTheme = () => {
+  if (selectedThemeOption.value) void musicPlayer.playTrack(selectedThemeOption.value.track)
+}
+
+const useCurrentAsTheme = () => {
+  const track = musicPlayer.currentTrack.value
+  if (!track || !props.selectedChat) return
+  themeRequestId += 1
+  themeGenerating.value = false
+  settings.value.themeSong = {
+    options: [{ track: { ...track, sourceCandidates: undefined }, reason: '你手动选定的主题曲' }],
+    selectedIndex: 0,
+    contextKey: socialThemeContext(props.selectedChat),
+    pinned: true,
+    generatedAt: Date.now()
+  }
+  themeError.value = ''
+  persist()
+}
 </script>
 
 <template>
@@ -210,70 +308,142 @@ const generatePresets = async () => {
 
       <!-- 主体内页（纯白极简风格） -->
       <div class="journal-page-body">
-        <!-- 扉页：主角相片与生活手记卡 -->
-        <div class="journal-hero-card">
-          <div class="hero-content-row">
-            <!-- 头像相框 -->
-            <div class="polaroid-frame">
-              <div class="polaroid-photo">
-                <img
-                  v-if="selectedChat?.avatarUrl"
-                  :src="selectedChat.avatarUrl"
-                  class="polaroid-img"
-                />
-                <span v-else class="polaroid-text">{{ selectedChat?.avatarText || '伴' }}</span>
-              </div>
-              <div class="polaroid-caption">{{ selectedChat?.name || '生活圈' }}</div>
+        <!-- 扉页：1:1 纯白随身听双联卡片（无背景纯白精致） -->
+        <div class="journal-hero-aesthetic-wrap">
+          <DualAestheticWidget
+            :standalone="true"
+            :owner-chat="selectedChat"
+            :sub-avatars="topFourAvatars"
+            :theme-song="selectedThemeOption?.track || null"
+          />
+
+          <div v-if="settings.enabled && settings.themeMusicEnabled" class="theme-music-strip">
+            <div class="theme-music-copy">
+              <strong>{{ themeGenerating ? '正在寻找适配的歌…' : selectedThemeOption ? '人脉主题曲' : '尚未选出主题曲' }}</strong>
+              <span v-if="selectedThemeOption">{{ selectedThemeOption.track.title }} · {{ selectedThemeOption.track.artist }}</span>
+              <span v-if="selectedThemeOption?.reason" class="theme-music-reason">{{ selectedThemeOption.reason }}</span>
+              <span v-if="selectedThemeOption && musicPlayer.currentTrack.value && !themeIsPlayingTrack" class="theme-music-note">当前播放的是其他歌曲</span>
+              <span v-if="themeIsPlayingTrack && musicPlayer.playbackError.value" class="theme-music-error">{{ musicPlayer.playbackError.value }}</span>
+              <span v-if="themeStale && !themeSong?.pinned" class="theme-music-note">人设或人脉已变化，可重新匹配</span>
+              <span v-if="themeError" class="theme-music-error">{{ themeError }}</span>
             </div>
-
-            <!-- 右侧手记小语与统计 -->
-            <div class="hero-notes-wrap">
-              <div class="hero-quote">
-                “ 记录身边的羁绊与交集，让生活故事更真实丰满。”
-              </div>
-
-              <div class="stamp-stats-group">
-                <div class="stamp-stat-item">
-                  <span class="stat-num">{{ stats.total }}</span>
-                  <span class="stat-lbl">全部</span>
-                </div>
-                <div class="stamp-stat-item family">
-                  <span class="stat-num">{{ stats.family }}</span>
-                  <span class="stat-lbl">亲人</span>
-                </div>
-                <div class="stamp-stat-item friend">
-                  <span class="stat-num">{{ stats.friend }}</span>
-                  <span class="stat-lbl">好友</span>
-                </div>
-                <div class="stamp-stat-item work">
-                  <span class="stat-num">{{ stats.work }}</span>
-                  <span class="stat-lbl">工作</span>
-                </div>
-              </div>
+            <div class="theme-music-actions">
+              <button v-if="selectedThemeOption && !themeIsPlayingTrack" type="button" @click="playTheme">播放主题曲</button>
+              <button v-if="!selectedThemeOption && musicPlayer.currentTrack.value" type="button" @click="useCurrentAsTheme">设当前歌</button>
+              <button v-if="selectedThemeOption" type="button" :disabled="themeGenerating || themeSong?.pinned" @click="changeTheme">换一首</button>
+              <button v-if="selectedThemeOption" type="button" :disabled="themeGenerating" @click="toggleThemePinned">{{ themeSong?.pinned ? '已固定' : '固定' }}</button>
+              <button v-if="!selectedThemeOption || themeStale" type="button" :disabled="themeGenerating || themeSong?.pinned" @click="generateTheme()">{{ selectedThemeOption ? '重新匹配' : '匹配歌曲' }}</button>
             </div>
           </div>
 
-          <!-- 快速载入预设提示栏 -->
-          <div v-if="socialList.length === 0" class="hero-empty-preset-bar">
-            <span>还没有记录人脉便签？</span>
-            <button class="hero-preset-btn" :disabled="generating" @click="generatePresets">
-              {{ generating ? '正在生成…' : 'AI 生成人脉' }}
+          <!-- 统计与空状态生成条 -->
+          <div class="hero-sub-stats-bar">
+            <div class="hero-stats-chips">
+              <span class="stats-chip">全部 <b>{{ stats.total }}</b></span>
+              <span class="stats-chip">亲人 <b>{{ stats.family }}</b></span>
+              <span class="stats-chip">好友 <b>{{ stats.friend }}</b></span>
+              <span class="stats-chip">工作 <b>{{ stats.work }}</b></span>
+            </div>
+            <button v-if="socialList.length === 0" class="hero-ai-gen-link" :disabled="generating" @click="generatePresets">
+              {{ generating ? '生成中…' : '一键生成人脉' }}
             </button>
           </div>
         </div>
 
-        <section class="social-control-card">
-          <div class="control-master-row"><div><strong>启用角色人脉圈</strong><span>接入角色认知、主页、好友申请与朋友圈</span></div><label class="journal-switch"><input v-model="settings.enabled" type="checkbox" @change="persist"><span></span></label></div>
-          <div class="control-grid" :class="{ disabled: !settings.enabled }">
-            <label><input v-model="settings.awarenessEnabled" type="checkbox" :disabled="!settings.enabled" @change="persist"><span>角色知道自己的人脉</span></label>
-            <label><input v-model="settings.allowMentionInChat" type="checkbox" :disabled="!settings.enabled" @change="persist"><span>聊天中自然提及</span></label>
-            <label><input v-model="settings.allowViewMoments" type="checkbox" :disabled="!settings.enabled" @change="persist"><span>查看人脉朋友圈</span></label>
-            <label><input v-model="settings.allowInteractMoments" type="checkbox" :disabled="!settings.enabled" @change="persist"><span>点赞和评论</span></label>
-            <label><input v-model="settings.allowPublishAboutCircle" type="checkbox" :disabled="!settings.enabled" @change="persist"><span>发布涉及人脉的动态</span></label>
-            <label><input v-model="settings.allowIncomingRequests" type="checkbox" :disabled="!settings.enabled" @change="persist"><span>人脉可主动申请用户</span></label>
+        <!-- 角色人脉圈核心控制区（去卡片化平铺布局，融入整体页面） -->
+        <section class="social-settings-section">
+          <!-- 核心开关项 -->
+          <div class="section-master-bar">
+            <div class="master-info">
+              <div class="master-title-line">
+                <span class="master-status-indicator" :class="{ active: settings.enabled }"></span>
+                <span class="master-title">启用角色人脉圈</span>
+                <span class="master-badge">{{ settings.enabled ? '已激活' : '已停用' }}</span>
+              </div>
+              <span class="master-desc">角色认知、主页好友与朋友圈动态联动</span>
+            </div>
+            <label class="journal-switch">
+              <input v-model="settings.enabled" type="checkbox" @change="persist">
+              <span></span>
+            </label>
           </div>
-          <div class="management-selector" :class="{ disabled: !settings.enabled }"><span>关系变化管理</span><div><button v-for="mode in [{id:'readonly',label:'只读'},{id:'confirm',label:'需确认'},{id:'autonomous',label:'自主'}]" :key="mode.id" type="button" :disabled="!settings.enabled" :class="{ active: settings.managementMode === mode.id }" @click="settings.managementMode = mode.id as any; persist()">{{ mode.label }}</button></div></div>
-          <div class="generation-row"><div><strong>按人设补充人脉</strong><span>只生成一层，已有同名人物自动跳过</span></div><div class="count-stepper"><button type="button" :disabled="settings.generationCount <= 2" @click="settings.generationCount--; persist()">−</button><b>{{ settings.generationCount }} 人</b><button type="button" :disabled="settings.generationCount >= 10" @click="settings.generationCount++; persist()">＋</button></div><button class="generate-more-btn" type="button" :disabled="generating" @click="generatePresets">{{ generating ? '生成中…' : '生成' }}</button></div>
+
+          <!-- 功能微胶囊选项矩阵 -->
+          <div class="control-capsules-grid" :class="{ disabled: !settings.enabled }">
+            <label class="capsule-toggle" :class="{ active: settings.awarenessEnabled && settings.enabled }">
+              <input v-model="settings.awarenessEnabled" type="checkbox" :disabled="!settings.enabled" @change="persist">
+              <span class="capsule-dot"></span>
+              <span class="capsule-text">知晓人脉关系</span>
+            </label>
+            <label class="capsule-toggle" :class="{ active: settings.allowMentionInChat && settings.enabled }">
+              <input v-model="settings.allowMentionInChat" type="checkbox" :disabled="!settings.enabled" @change="persist">
+              <span class="capsule-dot"></span>
+              <span class="capsule-text">对话自然提及</span>
+            </label>
+            <label class="capsule-toggle" :class="{ active: settings.allowViewMoments && settings.enabled }">
+              <input v-model="settings.allowViewMoments" type="checkbox" :disabled="!settings.enabled" @change="persist">
+              <span class="capsule-dot"></span>
+              <span class="capsule-text">浏览人脉动态</span>
+            </label>
+            <label class="capsule-toggle" :class="{ active: settings.allowInteractMoments && settings.enabled }">
+              <input v-model="settings.allowInteractMoments" type="checkbox" :disabled="!settings.enabled" @change="persist">
+              <span class="capsule-dot"></span>
+              <span class="capsule-text">动态点赞评论</span>
+            </label>
+            <label class="capsule-toggle" :class="{ active: settings.allowPublishAboutCircle && settings.enabled }">
+              <input v-model="settings.allowPublishAboutCircle" type="checkbox" :disabled="!settings.enabled" @change="persist">
+              <span class="capsule-dot"></span>
+              <span class="capsule-text">发布人脉圈事</span>
+            </label>
+            <label class="capsule-toggle" :class="{ active: settings.allowIncomingRequests && settings.enabled }">
+              <input v-model="settings.allowIncomingRequests" type="checkbox" :disabled="!settings.enabled" @change="persist">
+              <span class="capsule-dot"></span>
+              <span class="capsule-text">人脉主动加友</span>
+            </label>
+            <label class="capsule-toggle theme-capsule" :class="{ active: settings.themeMusicEnabled && settings.enabled }" title="结合角色与当前人脉，挑选适配的可播放歌曲">
+              <input v-model="settings.themeMusicEnabled" type="checkbox" :disabled="!settings.enabled" @change="toggleTheme">
+              <span class="capsule-dot"></span>
+              <span class="capsule-text">AI人脉主题曲</span>
+            </label>
+          </div>
+
+          <!-- 精致配置行：关系管理与自动补充（分两行排版，空间充足不挤压） -->
+          <div class="sub-config-strip" :class="{ disabled: !settings.enabled }">
+            <div class="config-row">
+              <span class="cell-label">关系变动策略</span>
+              <div class="segment-tabs">
+                <button
+                  v-for="mode in [{id:'readonly',label:'只读'},{id:'confirm',label:'需确认'},{id:'autonomous',label:'自主'}]"
+                  :key="mode.id"
+                  type="button"
+                  :disabled="!settings.enabled"
+                  :class="{ active: settings.managementMode === mode.id }"
+                  @click="settings.managementMode = mode.id as any; persist()"
+                >
+                  {{ mode.label }}
+                </button>
+              </div>
+            </div>
+
+            <div class="config-divider"></div>
+
+            <div class="config-row">
+              <div class="stepper-bundle">
+                <span class="cell-label">按人设补全</span>
+                <div class="count-stepper">
+                  <button type="button" :disabled="settings.generationCount <= 2" @click="settings.generationCount--; persist()">−</button>
+                  <b>{{ settings.generationCount }}人</b>
+                  <button type="button" :disabled="settings.generationCount >= 10" @click="settings.generationCount++; persist()">＋</button>
+                </div>
+              </div>
+              <button class="generate-pill-btn" type="button" :disabled="generating" @click="generatePresets">
+                <svg v-if="!generating" viewBox="0 0 24 24" width="12" height="12" stroke="currentColor" stroke-width="2.4" fill="none">
+                  <path d="M12 3v3m0 12v3M3 12h3m12 0h3M5.636 5.636l2.122 2.122m8.484 8.484l2.122 2.122M5.636 18.364l2.122-2.122m8.484-8.484l2.122-2.122" />
+                </svg>
+                <span>{{ generating ? '生成中…' : '生成' }}</span>
+              </button>
+            </div>
+          </div>
           <p v-if="generationError" class="generation-error">{{ generationError }}</p>
         </section>
 
@@ -359,25 +529,23 @@ const generatePresets = async () => {
             :class="item.category"
             @click="openEditModal(item)"
           >
-            <!-- 关系徽章 -->
-            <div class="memo-seal-badge" :class="item.category">
-              {{ item.relation || '羁绊' }}
+            <!-- 左侧：小头像 -->
+            <div class="memo-avatar-polaroid">
+              <img v-if="avatarSources[item.id] || item.avatarUrl" :src="avatarSources[item.id] || item.avatarUrl" class="memo-avatar-img" />
+              <div v-else class="memo-avatar-letter">
+                {{ item.name ? item.name.slice(0, 1) : '友' }}
+              </div>
             </div>
 
-            <!-- 便签主体内容 -->
-            <div class="memo-card-inner">
-              <!-- 左侧：小头像 -->
-              <div class="memo-avatar-polaroid">
-                <img v-if="avatarSources[item.id] || item.avatarUrl" :src="avatarSources[item.id] || item.avatarUrl" class="memo-avatar-img" />
-                <div v-else class="memo-avatar-letter">
-                  {{ item.name ? item.name.slice(0, 1) : '友' }}
-                </div>
-              </div>
-
-              <!-- 右侧：文字与性格 -->
-              <div class="memo-text-content">
-                <div class="memo-title-row">
+            <!-- 右侧：文字主体内容 -->
+            <div class="memo-text-content">
+              <!-- 第一行：姓名 + 关系标签 + 分类标签 + 右侧操作按钮 -->
+              <div class="memo-header-row">
+                <div class="memo-title-group">
                   <span class="memo-contact-name">{{ item.name }}</span>
+                  <span v-if="item.relation" class="memo-relation-badge">
+                    {{ item.relation }}
+                  </span>
                   <span class="memo-cat-pill" :class="item.category">
                     {{
                       item.category === 'family'
@@ -391,49 +559,49 @@ const generatePresets = async () => {
                   </span>
                 </div>
 
-                <!-- 人物性格 -->
-                <div class="memo-persona-text">
-                  “{{ item.persona || '暂无性格描述...' }}”
-                </div>
-
-                <!-- 底部状态与频次标签 -->
-                <div class="memo-footer-row">
-                  <div
-                    class="memo-stamp-status"
-                    :class="{ active: item.enableMoments }"
-                  >
-                    <span class="stamp-dot"></span>
-                   <span>{{ item.enableMoments ? '朋友圈动态联通' : '朋友圈静默' }}</span>
-                  </div>
-
-                  <span v-if="item.enableMoments" class="memo-freq-tag">
-                    {{
-                      item.interactionFrequency === 'high'
-                        ? '高频互动'
-                        : item.interactionFrequency === 'low'
-                        ? '低频围观'
-                        : '标准互动'
-                    }}
-                  </span>
-                  <span class="memo-privacy-tag">{{ item.privacy === 'public' ? '公开主页' : item.privacy === 'limited' ? '好友可见' : item.privacy === 'private' ? '私密用户' : '隐藏人物' }}</span>
+                <!-- 右侧操作按钮 -->
+                <div class="memo-action-pins" @click.stop>
+                  <button class="pin-btn edit" title="编辑便签" @click="openEditModal(item)">
+                    <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2" fill="none">
+                      <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+                      <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+                    </svg>
+                  </button>
+                  <button class="pin-btn delete" title="删除便签" @click="handleDeleteContact(item.id)">
+                    <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2" fill="none">
+                      <polyline points="3 6 5 6 21 6" />
+                      <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                    </svg>
+                  </button>
                 </div>
               </div>
-            </div>
 
-            <!-- 右侧悬浮操作按钮 -->
-            <div class="memo-action-pins" @click.stop>
-              <button class="pin-btn edit" title="编辑便签" @click="openEditModal(item)">
-                <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2" fill="none">
-                  <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
-                  <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
-                </svg>
-              </button>
-              <button class="pin-btn delete" title="删除便签" @click="handleDeleteContact(item.id)">
-                <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2" fill="none">
-                  <polyline points="3 6 5 6 21 6" />
-                  <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
-                </svg>
-              </button>
+              <!-- 人物性格 -->
+              <div class="memo-persona-text">
+                “{{ item.persona || '暂无性格描述...' }}”
+              </div>
+
+              <!-- 底部状态与频次标签 -->
+              <div class="memo-footer-row">
+                <div
+                  class="memo-stamp-status"
+                  :class="{ active: item.enableMoments }"
+                >
+                  <span class="stamp-dot"></span>
+                  <span>{{ item.enableMoments ? '参与朋友圈' : '不发朋友圈' }}</span>
+                </div>
+
+                <span v-if="item.enableMoments" class="memo-freq-tag">
+                  {{
+                    item.interactionFrequency === 'high'
+                      ? '经常互动'
+                      : item.interactionFrequency === 'low'
+                      ? '很少互动'
+                      : '偶尔互动'
+                  }}
+                </span>
+                <span class="memo-privacy-tag">{{ item.privacy === 'public' ? '公开主页' : item.privacy === 'limited' ? '好友可见' : item.privacy === 'private' ? '私密用户' : '隐藏人物' }}</span>
+              </div>
             </div>
           </div>
         </div>
@@ -451,13 +619,463 @@ const generatePresets = async () => {
 </template>
 
 <style scoped>
-.social-control-card{display:flex;flex-direction:column;gap:13px;padding:14px;border:1px solid #ececec;border-radius:14px;background:#fff}.control-master-row,.generation-row{display:flex;align-items:center;gap:12px}.control-master-row>div,.generation-row>div:first-child{display:flex;min-width:0;flex:1;flex-direction:column;gap:3px}.control-master-row strong,.generation-row strong{font-size:13px;color:#202020}.control-master-row span,.generation-row span{font-size:10px;color:#8b8b8b}.journal-switch{position:relative;width:42px;height:24px;flex:0 0 auto}.journal-switch input{position:absolute;opacity:0;pointer-events:none}.journal-switch span{position:absolute;inset:0;border-radius:12px;background:#d7d7d7;transition:.18s}.journal-switch span:after{content:"";position:absolute;left:3px;top:3px;width:18px;height:18px;border-radius:50%;background:#fff;box-shadow:0 1px 4px rgba(0,0,0,.18);transition:.18s}.journal-switch input:checked+span{background:#252525}.journal-switch input:checked+span:after{transform:translateX(18px)}.control-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px}.control-grid.disabled{opacity:.45}.control-grid label{display:flex;align-items:center;gap:7px;padding:9px;border-radius:9px;background:#f7f7f8;color:#555;font-size:10px;cursor:pointer}.control-grid input{appearance:none;width:15px;height:15px;border:1px solid #c8c8c8;border-radius:5px;background:#fff}.control-grid input:checked{border-color:#242424;background:#242424;box-shadow:inset 0 0 0 3px #fff}.count-stepper{display:flex!important;flex:0 0 auto!important;flex-direction:row!important;align-items:center;gap:4px!important}.count-stepper button,.generate-more-btn{border:1px solid #e2e2e2;background:#f7f7f8;color:#333;border-radius:8px;cursor:pointer}.count-stepper button{width:25px;height:25px}.count-stepper b{min-width:38px;font-size:10px;text-align:center}.generate-more-btn{height:29px;padding:0 11px;background:#222;color:#fff;border-color:#222;font-size:11px}.count-stepper button:disabled,.generate-more-btn:disabled,.hero-preset-btn:disabled{opacity:.45;cursor:not-allowed}.generation-error{margin:0;padding:8px 10px;border-radius:8px;background:#fff1f0;color:#b64b47;font-size:10px}.memo-privacy-tag{padding:2px 6px;border-radius:999px;background:#f1f1f2;color:#777;font-size:8px;white-space:nowrap}
-.management-selector{display:flex;align-items:center;justify-content:space-between;gap:12px}.management-selector>span{font-size:11px;color:#666}.management-selector>div{display:flex;padding:3px;border-radius:9px;background:#f4f4f5}.management-selector button{height:25px;padding:0 9px;border:0;border-radius:7px;background:transparent;color:#777;font-size:10px;cursor:pointer}.management-selector button.active{background:#fff;color:#222;box-shadow:0 1px 4px rgba(0,0,0,.08);font-weight:650}.management-selector.disabled{opacity:.45}
+/* 纯白精致小组件展示区（彻底去包裹化、平铺通透） */
+.journal-hero-aesthetic-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 2px 0 6px;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.hero-sub-stats-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 2px 0;
+  border-top: 1px solid #f1f5f9;
+}
+
+.hero-stats-chips {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.stats-chip {
+  padding: 3px 8px;
+  border-radius: 6px;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  font-size: 11px;
+  color: #64748b;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.stats-chip b {
+  color: #0f172a;
+  font-weight: 600;
+}
+
+.hero-ai-gen-link {
+  background: #0f172a;
+  color: #ffffff;
+  border: none;
+  border-radius: 6px;
+  padding: 4px 9px;
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.hero-ai-gen-link:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.theme-music-strip {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 7px 2px 3px;
+  color: #475569;
+  font-size: 10.5px;
+}
+
+.theme-music-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+}
+
+.theme-music-copy strong,
+.theme-music-copy span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.theme-music-copy strong {
+  color: #334155;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.theme-music-reason,
+.theme-music-note {
+  color: #64748b;
+}
+
+.theme-music-error {
+  color: #b45353;
+}
+
+.theme-music-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 4px;
+  flex: 0 0 auto;
+  max-width: 49%;
+}
+
+.theme-music-actions button {
+  border: 1px solid #dbe4ef;
+  border-radius: 6px;
+  background: #fff;
+  color: #475569;
+  padding: 3px 5px;
+  font: inherit;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.theme-music-actions button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* 去卡片化控制区：无外框、无突兀圆角，纯净融合 */
+.social-settings-section {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 4px 0 6px;
+  background: transparent;
+}
+
+.section-master-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-bottom: 2px;
+}
+
+.master-info {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.master-title-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.master-status-indicator {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #cbd5e1;
+  transition: all 0.2s ease;
+}
+
+.master-status-indicator.active {
+  background: #10b981;
+  box-shadow: 0 0 6px rgba(16, 185, 129, 0.4);
+}
+
+.master-title {
+  font-size: 14.5px;
+  font-weight: 600;
+  color: #0f172a;
+  letter-spacing: -0.2px;
+}
+
+.master-badge {
+  font-size: 10px;
+  font-weight: 500;
+  color: #64748b;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: #f1f5f9;
+  border: 1px solid #e2e8f0;
+}
+
+.master-desc {
+  font-size: 11px;
+  color: #64748b;
+  letter-spacing: 0.1px;
+}
+
+.journal-switch {
+  position: relative;
+  width: 42px;
+  height: 23px;
+  flex: 0 0 auto;
+}
+
+.journal-switch input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.journal-switch span {
+  position: absolute;
+  inset: 0;
+  border-radius: 999px;
+  background: #e2e8f0;
+  transition: 0.2s ease;
+}
+
+.journal-switch span:after {
+  content: "";
+  position: absolute;
+  left: 2.5px;
+  top: 2.5px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #ffffff;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.15);
+  transition: 0.2s ease;
+}
+
+.journal-switch input:checked + span {
+  background: #475569;
+}
+
+.journal-switch input:checked + span:after {
+  transform: translateX(19px);
+}
+
+/* 精致轻盈微胶囊网格 */
+.control-capsules-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
+  transition: opacity 0.2s ease;
+}
+
+.control-capsules-grid.disabled {
+  opacity: 0.4;
+  pointer-events: none;
+}
+
+.capsule-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: #ffffff;
+  border: 1px solid #edf0f2;
+  color: #475569;
+  font-size: 11.5px;
+  font-weight: 500;
+  cursor: pointer;
+  user-select: none;
+  transition: all 0.15s ease;
+}
+
+.capsule-toggle:hover {
+  border-color: #cbd5e1;
+  background: #f8fafc;
+}
+
+.capsule-toggle.active {
+  border-color: #cbd5e1;
+  background: #f8fafc;
+  color: #0f172a;
+}
+
+.capsule-toggle input {
+  display: none;
+}
+
+.capsule-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #e2e8f0;
+  flex-shrink: 0;
+  transition: all 0.18s ease;
+}
+
+.capsule-toggle.active .capsule-dot {
+  background: #64748b;
+  box-shadow: 0 0 0 2px rgba(100, 116, 139, 0.18);
+}
+
+.capsule-text {
+  letter-spacing: 0.1px;
+}
+
+.theme-capsule,
+.theme-capsule .capsule-text {
+  min-width: 0;
+}
+
+.theme-capsule .capsule-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 底部配置通透行（改用两行排列） */
+.sub-config-strip {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  padding: 10px 12px;
+  background: #f8fafc;
+  border: 1px solid #edf0f2;
+  border-radius: 12px;
+  transition: opacity 0.2s ease;
+}
+
+.sub-config-strip.disabled {
+  opacity: 0.4;
+  pointer-events: none;
+}
+
+.config-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+}
+
+.config-divider {
+  width: 100%;
+  height: 1px;
+  background: #edf0f2;
+}
+
+.cell-label {
+  font-size: 11.5px;
+  color: #64748b;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.segment-tabs {
+  display: flex;
+  padding: 2px;
+  border-radius: 7px;
+  background: #e2e8f0;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+.segment-tabs button {
+  height: 25px;
+  padding: 0 10px;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  color: #64748b;
+  font-size: 11px;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.segment-tabs button.active {
+  background: #ffffff;
+  color: #0f172a;
+  font-weight: 600;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+}
+
+.stepper-bundle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.count-stepper {
+  display: flex;
+  align-items: center;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 7px;
+  padding: 1px 3px;
+  height: 25px;
+  box-sizing: border-box;
+}
+
+.count-stepper button {
+  width: 20px;
+  height: 21px;
+  border: none;
+  background: transparent;
+  color: #475569;
+  cursor: pointer;
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+}
+
+.count-stepper button:hover:not(:disabled) {
+  background: #f1f5f9;
+  color: #0f172a;
+}
+
+.count-stepper b {
+  min-width: 28px;
+  font-size: 11.5px;
+  color: #0f172a;
+  text-align: center;
+  font-weight: 600;
+}
+
+.generate-pill-btn {
+  height: 25px;
+  padding: 0 11px;
+  background: #0f172a;
+  color: #ffffff;
+  border: none;
+  border-radius: 7px;
+  font-size: 11px;
+  font-weight: 500;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background 0.15s ease;
+}
+
+.generate-pill-btn:hover:not(:disabled) {
+  background: #334155;
+}
+
+.generate-pill-btn:disabled,
+.count-stepper button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.generation-error {
+  margin: 0;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: #fef2f2;
+  border: 1px solid #fee2e2;
+  color: #dc2626;
+  font-size: 11px;
+}
+
 /* 遮罩 */
 .journal-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.45);
+  background: rgba(15, 23, 42, 0.45);
   backdrop-filter: blur(8px);
   z-index: 10040;
   display: flex;
@@ -471,12 +1089,12 @@ const generatePresets = async () => {
   max-width: 480px;
   height: 90vh;
   background: #ffffff;
-  border: 1px solid #eaeaea;
+  border: 1px solid #e2e8f0;
   border-radius: 20px;
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.12);
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.08);
   position: relative;
 }
 
@@ -497,14 +1115,14 @@ const generatePresets = async () => {
   align-items: center;
   justify-content: space-between;
   background: #ffffff;
-  border-bottom: 1px solid #f0f0f0;
+  border-bottom: 1px solid #f1f5f9;
   flex-shrink: 0;
 }
 
 .journal-nav-btn {
-  background: #f5f5f7;
-  border: 1px solid #ebebeb;
-  color: #333333;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  color: #334155;
   width: 32px;
   height: 32px;
   border-radius: 50%;
@@ -516,8 +1134,8 @@ const generatePresets = async () => {
 }
 
 .journal-nav-btn:hover {
-  background: #e8e8ed;
-  color: #000000;
+  border-color: #cbd5e1;
+  color: #0f172a;
 }
 
 .journal-header-title {
@@ -529,19 +1147,19 @@ const generatePresets = async () => {
 .main-title {
   font-size: 15px;
   font-weight: 600;
-  color: #1a1a1a;
+  color: #0f172a;
   letter-spacing: 0.5px;
 }
 
 .sub-title {
   font-size: 8.5px;
-  color: #999999;
+  color: #94a3b8;
   letter-spacing: 1.2px;
-  font-weight: 500;
+  font-weight: 600;
 }
 
 .journal-add-btn {
-  background: #1a1a1a;
+  background: #0f172a;
   border: none;
   color: #ffffff;
   height: 30px;
@@ -557,7 +1175,7 @@ const generatePresets = async () => {
 }
 
 .journal-add-btn:hover {
-  background: #333333;
+  background: #1e293b;
 }
 
 /* 页面主体（纯白） */
@@ -571,143 +1189,6 @@ const generatePresets = async () => {
   background-color: #ffffff;
 }
 
-/* 主角卡片 */
-.journal-hero-card {
-  background: #fafafa;
-  border: 1px solid #eeeeee;
-  border-radius: 14px;
-  padding: 14px;
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.hero-content-row {
-  display: flex;
-  gap: 14px;
-  align-items: center;
-}
-
-/* 照片框 */
-.polaroid-frame {
-  width: 72px;
-  background: #ffffff;
-  padding: 4px;
-  border: 1px solid #e5e5e5;
-  border-radius: 8px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
-  flex-shrink: 0;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-}
-
-.polaroid-photo {
-  width: 100%;
-  height: 60px;
-  background: #f0f0f0;
-  border-radius: 6px;
-  overflow: hidden;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.polaroid-img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
-.polaroid-text {
-  font-size: 18px;
-  font-weight: 600;
-  color: #666666;
-}
-
-.polaroid-caption {
-  font-size: 10.5px;
-  color: #555555;
-  font-weight: 500;
-  margin-top: 4px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  max-width: 64px;
-  text-align: center;
-}
-
-/* 手记与统计 */
-.hero-notes-wrap {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.hero-quote {
-  font-size: 12px;
-  color: #666666;
-  line-height: 1.5;
-}
-
-.stamp-stats-group {
-  display: flex;
-  gap: 6px;
-  flex-wrap: wrap;
-}
-
-.stamp-stat-item {
-  background: #ffffff;
-  border: 1px solid #e5e5e5;
-  border-radius: 6px;
-  padding: 3px 8px;
-  display: flex;
-  align-items: baseline;
-  gap: 4px;
-}
-
-.stat-num {
-  font-size: 13px;
-  font-weight: 600;
-  color: #1a1a1a;
-}
-
-.stat-lbl {
-  font-size: 10.5px;
-  color: #888888;
-}
-
-.hero-empty-preset-bar {
-  background: #ffffff;
-  border: 1px solid #e5e5e5;
-  border-radius: 8px;
-  padding: 6px 10px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  font-size: 11.5px;
-  color: #666666;
-}
-
-.hero-preset-btn {
-  background: #f0f0f0;
-  color: #333333;
-  border: 1px solid #dcdcdc;
-  border-radius: 6px;
-  padding: 3px 8px;
-  font-size: 11px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.15s ease;
-}
-
-.hero-preset-btn:hover {
-  background: #e4e4e4;
-}
-
 /* 搜索与选项卡 */
 .journal-controls-section {
   display: flex;
@@ -719,12 +1200,19 @@ const generatePresets = async () => {
   display: flex;
   align-items: center;
   gap: 8px;
-  background: #f7f7f8;
-  border: 1px solid #e8e8e8;
-  border-radius: 10px;
+  background: #f8fafc;
+  border: 1px solid #edf0f2;
+  border-radius: 11px;
   height: 36px;
   padding: 0 12px;
-  color: #888888;
+  color: #94a3b8;
+  transition: all 0.18s ease;
+}
+
+.journal-search-input-wrap:focus-within {
+  border-color: #cbd5e1;
+  background: #ffffff;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.03);
 }
 
 .journal-search-input {
@@ -733,11 +1221,11 @@ const generatePresets = async () => {
   border: none;
   outline: none;
   font-size: 13px;
-  color: #1a1a1a;
+  color: #0f172a;
 }
 
 .journal-search-input::placeholder {
-  color: #aaaaaa;
+  color: #94a3b8;
 }
 
 /* 纯白风格标签切换 */
@@ -747,7 +1235,6 @@ const generatePresets = async () => {
   overflow-x: auto;
   padding-bottom: 2px;
   scrollbar-width: none;
-  -ms-overflow-style: none;
 }
 
 .journal-index-tabs::-webkit-scrollbar {
@@ -756,27 +1243,27 @@ const generatePresets = async () => {
 
 .index-tab {
   flex-shrink: 0;
-  height: 30px;
-  padding: 0 12px;
+  height: 28px;
+  padding: 0 11px;
   border-radius: 8px;
-  border: 1px solid #e8e8e8;
+  border: 1px solid #edf0f2;
   background: #ffffff;
-  color: #666666;
-  font-size: 12px;
+  color: #64748b;
+  font-size: 11.5px;
   font-weight: 500;
   cursor: pointer;
   transition: all 0.15s ease;
 }
 
 .index-tab:hover {
-  background: #f9f9f9;
-  color: #333333;
+  border-color: #cbd5e1;
+  color: #0f172a;
 }
 
 .index-tab.active {
-  background: #1a1a1a;
+  background: #0f172a;
   color: #ffffff;
-  border-color: #1a1a1a;
+  border-color: #0f172a;
   font-weight: 600;
 }
 
@@ -784,14 +1271,14 @@ const generatePresets = async () => {
 .journal-notes-list {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 10px;
 }
 
 .journal-empty-box {
   background: #ffffff;
-  border: 1px dashed #dedede;
-  border-radius: 14px;
-  padding: 40px 16px;
+  border: 1px dashed #cbd5e1;
+  border-radius: 12px;
+  padding: 36px 16px;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -801,7 +1288,7 @@ const generatePresets = async () => {
 }
 
 .empty-icon-box {
-  color: #bbbbbb;
+  color: #94a3b8;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -809,12 +1296,12 @@ const generatePresets = async () => {
 
 .empty-text-desc {
   font-size: 12.5px;
-  color: #888888;
+  color: #64748b;
 }
 
 .empty-btn-create {
   margin-top: 4px;
-  background: #1a1a1a;
+  background: #0f172a;
   color: #ffffff;
   border: none;
   border-radius: 8px;
@@ -823,60 +1310,41 @@ const generatePresets = async () => {
   cursor: pointer;
 }
 
-.empty-btn-create:hover {
-  background: #333333;
-}
-
-/* 便签卡片（纯白极简） */
+/* 便签卡片：精致卡片风，左头像右内容，紧凑通透 */
 .journal-memo-card {
   background: #ffffff;
-  border: 1px solid #eaeaea;
-  border-radius: 12px;
-  padding: 14px;
-  position: relative;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.03);
-  cursor: pointer;
-  transition: all 0.15s ease;
-}
-
-.journal-memo-card:hover {
-  border-color: #d4d4d4;
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.06);
-}
-
-/* 关系徽章 */
-.memo-seal-badge {
-  position: absolute;
-  top: 12px;
-  right: 36px;
-  font-size: 10.5px;
-  font-weight: 500;
-  padding: 2px 8px;
-  border-radius: 6px;
-  background: #f5f5f7;
-  color: #555555;
-  border: 1px solid #e5e5e5;
-}
-
-/* 便签主体 */
-.memo-card-inner {
+  border: 1px solid #f1f5f9;
+  border-radius: 14px;
+  padding: 12px 12px;
   display: flex;
   gap: 12px;
   align-items: flex-start;
+  position: relative;
+  box-shadow: 0 2px 6px rgba(15, 23, 42, 0.03);
+  cursor: pointer;
+  transition: all 0.18s ease;
 }
 
-/* 便签内头像 */
+.journal-memo-card:hover {
+  border-color: #e2e8f0;
+  background: #fafbfc;
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.05);
+}
+
+/* 便签内头像：纯正圆形 */
 .memo-avatar-polaroid {
   width: 44px;
   height: 44px;
-  background: #f7f7f7;
-  border: 1px solid #ebebeb;
-  border-radius: 8px;
+  background: #ffffff;
+  border: 1.5px solid #e2e8f0;
+  border-radius: 50%;
   overflow: hidden;
   flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: center;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.04);
+  margin-top: 2px;
 }
 
 .memo-avatar-img {
@@ -893,31 +1361,53 @@ const generatePresets = async () => {
   justify-content: center;
   font-size: 16px;
   font-weight: 600;
-  color: #555555;
+  color: #475569;
+  background: #f1f5f9;
 }
 
-/* 文字手记 */
+/* 文字手记与内容区 */
 .memo-text-content {
   flex: 1;
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 5px;
+  gap: 6px;
 }
 
-.memo-title-row {
+/* 第一行：左侧姓名、关系、分类，右侧操作按钮 */
+.memo-header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.memo-title-group {
   display: flex;
   align-items: center;
   gap: 6px;
+  min-width: 0;
+  flex-wrap: wrap;
 }
 
 .memo-contact-name {
   font-size: 14px;
   font-weight: 600;
-  color: #1a1a1a;
+  color: #0f172a;
   white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+}
+
+/* 关系称谓标签：精致小胶囊 */
+.memo-relation-badge {
+  font-size: 10.5px;
+  font-weight: 500;
+  padding: 1px 7px;
+  border-radius: 5px;
+  background: #f1f5f9;
+  color: #334155;
+  border: 1px solid #e2e8f0;
+  white-space: nowrap;
+  letter-spacing: -0.1px;
 }
 
 .memo-cat-pill {
@@ -925,25 +1415,88 @@ const generatePresets = async () => {
   padding: 1px 6px;
   border-radius: 4px;
   font-weight: 500;
-  background: #f2f2f2;
-  color: #666666;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  color: #64748b;
+  flex-shrink: 0;
+  white-space: nowrap;
 }
 
+.memo-cat-pill.family {
+  background: #fff7ed;
+  border-color: #ffedd5;
+  color: #ea580c;
+}
+
+.memo-cat-pill.friend {
+  background: #eff6ff;
+  border-color: #dbeafe;
+  color: #2563eb;
+}
+
+.memo-cat-pill.work {
+  background: #f0fdf4;
+  border-color: #dcfce7;
+  color: #16a34a;
+}
+
+.memo-cat-pill.other {
+  background: #f8fafc;
+  border-color: #e2e8f0;
+  color: #64748b;
+}
+
+/* 右上角操作按钮区 */
+.memo-action-pins {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+.pin-btn {
+  background: transparent;
+  border: none;
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #94a3b8;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.pin-btn:hover {
+  background: #f1f5f9;
+  color: #0f172a;
+}
+
+.pin-btn.delete:hover {
+  color: #ef4444;
+  background: #fef2f2;
+}
+
+/* 人物性格描述 */
 .memo-persona-text {
   font-size: 12px;
-  color: #555555;
+  color: #475569;
   line-height: 1.5;
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
+  word-break: break-all;
 }
 
+/* 底部状态与频次标签 */
 .memo-footer-row {
   display: flex;
   align-items: center;
-  gap: 10px;
-  margin-top: 4px;
+  gap: 8px;
+  margin-top: 1px;
+  flex-wrap: wrap;
 }
 
 .memo-stamp-status {
@@ -951,7 +1504,7 @@ const generatePresets = async () => {
   align-items: center;
   gap: 4px;
   font-size: 10.5px;
-  color: #888888;
+  color: #94a3b8;
 }
 
 .memo-stamp-status.active {
@@ -959,48 +1512,24 @@ const generatePresets = async () => {
 }
 
 .stamp-dot {
-  width: 5px;
-  height: 5px;
+  width: 5.5px;
+  height: 5.5px;
   border-radius: 50%;
   background: currentColor;
 }
 
 .memo-freq-tag {
   font-size: 10.5px;
-  color: #888888;
+  color: #64748b;
 }
 
-/* 操作按钮 */
-.memo-action-pins {
-  position: absolute;
-  right: 8px;
-  top: 10px;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.pin-btn {
-  background: transparent;
-  border: none;
-  width: 24px;
-  height: 24px;
-  border-radius: 6px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: #999999;
-  cursor: pointer;
-  transition: all 0.15s ease;
-}
-
-.pin-btn:hover {
-  background: #f0f0f0;
-  color: #333333;
-}
-
-.pin-btn.delete:hover {
-  color: #ef4444;
-  background: #fee2e2;
+.memo-privacy-tag {
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  color: #64748b;
+  font-size: 9.5px;
+  white-space: nowrap;
 }
 </style>

@@ -19,7 +19,7 @@ export const chatSettings = reactive({
   avatarDisplayStyle: savedChatSettings.avatarDisplayStyle ?? 'all', // 'all' | 'first' | 'last'
   nameDisplayStyle: savedChatSettings.nameDisplayStyle ?? 'all', // 'all' | 'user_only' | 'character_only' | 'none'
   timeDisplayStyle: savedChatSettings.timeDisplayStyle ?? 'none', // 'none' | 'hm' | 'hms'
-  timeDisplayPosition: savedChatSettings.timeDisplayPosition ?? 'avatar_bottom', // 'avatar_bottom' | 'bubble_outer' | 'name_side'
+  timeDisplayPosition: savedChatSettings.timeDisplayPosition ?? 'avatar_bottom', // 'avatar_bottom' | 'bubble_outer' | 'name_side' | 'bubble_bottom' | 'bubble_inner'
   showSystemNarration: savedChatSettings.showSystemNarration ?? false, // 显示仅供模型衔接上下文的系统内部旁白
   autoTranscribeVoice: savedChatSettings.autoTranscribeVoice ?? true, // 语音自动转文字
   enableRealMedia: savedChatSettings.enableRealMedia ?? false, // 浏览器真实音视频总开关
@@ -54,7 +54,8 @@ export const chatSettings = reactive({
   keepReplyVariantsOnRegenerate: savedChatSettings.keepReplyVariantsOnRegenerate ?? false, // 重新生成时保留旧回复版本
   innerThoughtLimit: savedChatSettings.innerThoughtLimit ?? 50, // 心声存储上限
   enableCharMomentImages: savedChatSettings.enableCharMomentImages ?? false, // 允许角色朋友圈消耗图像额度
-  momentReadCount: savedChatSettings.momentReadCount ?? 5 // 角色每次获取朋友圈的最大条数
+  momentReadCount: savedChatSettings.momentReadCount ?? 5, // 角色每次获取朋友圈的最大条数
+  chatUiScale: savedChatSettings.chatUiScale ?? 0 // 0表示跟随全局外观设置，非0（如0.85）表示独立聊天缩放
 })
 
 watch(chatSettings, (newVal) => {

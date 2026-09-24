@@ -720,7 +720,7 @@ const resetSummaryPromptToDefault = () => {
   z-index: 40;
   display: flex;
   flex-direction: column;
-  background: #fff;
+  background: #ffffff;
 }
 
 .summary-header {
@@ -728,7 +728,8 @@ const resetSummaryPromptToDefault = () => {
   align-items: center;
   padding: 12px 16px;
   padding-top: calc(env(safe-area-inset-top, 20px) + 12px);
-  background: #fff;
+  background: #ffffff;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.05);
   flex-shrink: 0;
 }
 
@@ -805,9 +806,10 @@ const resetSummaryPromptToDefault = () => {
 }
 
 .glass-panel {
-  background: #f9f9f9;
-  border-radius: 12px;
-  border: none;
+  background: #ffffff;
+  border-radius: 14px;
+  border: 1px solid rgba(0, 0, 0, 0.05);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.015);
   margin-bottom: 20px;
   overflow: hidden;
   width: 100%;
@@ -948,7 +950,8 @@ const resetSummaryPromptToDefault = () => {
 
 .automation-result.off {
   color: var(--text-secondary, #666);
-  background: #f1f1f2;
+  background: #fcfcfc;
+  border: 1px solid rgba(0, 0, 0, 0.04);
 }
 
 .automation-result small {

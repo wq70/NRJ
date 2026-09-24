@@ -404,6 +404,7 @@ const handleImportComplete = async (personas: any[]) => {
           v-for="chat in pinnedChats"
           :key="chat.id"
           class="pinned-contact"
+          :class="{ 'has-unread': chat.unread > 0 }"
           :id="`chat-item-${chat.id}`"
           @mousedown="startLongPress($event, chat)"
           @touchstart="startLongPress($event, chat)"
@@ -413,9 +414,12 @@ const handleImportComplete = async (personas: any[]) => {
           @touchmove="clearLongPress"
           @click="handleChatClick(chat)"
         >
+          <span class="pinned-top-badge">Top</span>
+          <div v-if="chat.unread > 0" class="pinned-speech-bubble" :title="chat.preview || '发来新消息'">
+            <span class="pinned-bubble-text">{{ chat.preview || '发来新消息' }}</span>
+          </div>
           <div class="pinned-avatar-ring">
             <div class="pinned-avatar" :style="chat.avatarUrl ? { backgroundImage: `url(${chat.avatarUrl})`, backgroundSize: 'cover', backgroundPosition: 'center', color: 'transparent' } : {}">{{ chat.avatarText || '群' }}</div>
-            <div v-if="chat.unread > 0" class="pinned-unread-dot">{{ chat.unread > 99 ? '99+' : chat.unread }}</div>
           </div>
           <div class="pinned-name">{{ chat.name }}</div>
         </div>

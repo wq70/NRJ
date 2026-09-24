@@ -121,20 +121,33 @@ onUnmounted(() => window.removeEventListener('clingy:character-directory-updated
 
       <div v-show="!searchQuery" class="contacts-actions">
         <div class="contact-action-item" role="button" tabindex="0" @click="emit('open-friend-requests')" @keyup.enter="emit('open-friend-requests')">
-          <div class="action-icon-wrap" style="background: var(--sys-bg-primary);">
-            <svg viewBox="0 0 24 24" width="20" height="20" stroke="#555555" stroke-width="2" fill="none"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="8.5" cy="7" r="4"></circle></svg>
+          <div class="action-icon-wrap">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="#2c3437" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+              <circle cx="8.5" cy="7" r="4" />
+              <line x1="20" y1="8" x2="20" y2="14" />
+              <line x1="23" y1="11" x2="17" y2="11" />
+            </svg>
           </div>
           <span class="action-text">新的朋友</span>
         </div>
         <div class="contact-action-item" role="button" tabindex="0" @click="emit('open-group-requests')" @keyup.enter="emit('open-group-requests')">
-          <div class="action-icon-wrap" style="background: var(--sys-bg-primary);">
-            <svg viewBox="0 0 24 24" width="20" height="20" stroke="#555555" stroke-width="2" fill="none"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
+          <div class="action-icon-wrap">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="#2c3437" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+              <circle cx="9" cy="7" r="4" />
+              <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
+              <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+            </svg>
           </div>
           <span class="action-text">群聊申请</span>
         </div>
         <div class="contact-action-item">
-          <div class="action-icon-wrap" style="background: var(--sys-bg-primary);">
-            <svg viewBox="0 0 24 24" width="20" height="20" stroke="#555555" stroke-width="2" fill="none"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"></path><line x1="7" y1="7" x2="7.01" y2="7"></line></svg>
+          <div class="action-icon-wrap">
+            <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="#2c3437" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12.586 2.586A2 2 0 0 0 11.172 2H4a2 2 0 0 0-2 2v7.172a2 2 0 0 0 .586 1.414l8.828 8.828a2 2 0 0 0 2.828 0l7.172-7.172a2 2 0 0 0 0-2.828L12.586 2.586z" />
+              <circle cx="7.5" cy="7.5" r="1.5" fill="#2c3437" stroke="none" />
+            </svg>
           </div>
           <span class="action-text">标签</span>
         </div>
@@ -181,7 +194,8 @@ onUnmounted(() => window.removeEventListener('clingy:character-directory-updated
 /* ================= 联系人视图 (Contacts) ================= */
 .contacts-main { flex: 1; overflow-y: auto; overflow-x: hidden; display: flex; flex-direction: column; }
 .contacts-search { padding: 12px 20px; background: var(--sys-bg-secondary); }
-.search-bar-cool { height: 36px; border-radius: 8px; background: var(--sys-bg-primary); display: flex; align-items: center; padding: 0 12px; gap: 8px; }
+.search-bar-cool { height: 38px; border-radius: 10px; background: #ffffff; display: flex; align-items: center; padding: 0 12px; gap: 8px; border: 1px solid rgba(0, 0, 0, 0.08); box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02); transition: border-color 0.2s, box-shadow 0.2s; }
+.search-bar-cool:focus-within { border-color: rgba(0, 0, 0, 0.18); box-shadow: 0 2px 6px rgba(0, 0, 0, 0.04); }
 .search-bar-cool .search-icon { color: var(--text-tertiary); }
 .search-bar-cool .search-input { flex: 1; background: transparent; border: none; outline: none; font-size: 14px; color: var(--text-primary); }
 .search-bar-cool .search-input::placeholder { color: var(--text-tertiary); }
@@ -200,8 +214,9 @@ onUnmounted(() => window.removeEventListener('clingy:character-directory-updated
 .contacts-empty { padding:40px 20px; color:var(--text-tertiary); font-size:13px; text-align:center; }
 
 .contacts-actions { padding: 8px 20px 12px; display: flex; flex-direction: column; gap: 16px; border-bottom: 1px solid var(--border-color, #f0f0f0); }
-.contact-action-item { display: flex; align-items: center; gap: 16px; cursor: pointer; }
-.action-icon-wrap { width: 44px; height: 44px; border-radius: 50%; display: flex; align-items: center; justify-content: center; flex-shrink: 0; border: 1px solid #e0e0e0; box-shadow: inset 0 2px 4px rgba(255,255,255,0.8), 0 2px 6px rgba(0,0,0,0.02); }
+.contact-action-item { display: flex; align-items: center; gap: 16px; cursor: pointer; user-select: none; }
+.contact-action-item:active .action-icon-wrap { transform: scale(0.95); }
+.action-icon-wrap { width: 42px; height: 42px; border-radius: 50%; background: #ffffff; display: flex; align-items: center; justify-content: center; flex-shrink: 0; border: 1px solid rgba(0, 0, 0, 0.08); box-shadow: 0 1px 4px rgba(0, 0, 0, 0.04); transition: transform 0.15s ease, box-shadow 0.15s ease; }
 .action-text { font-size: 15px; font-weight: 500; color: #1a1a1a; }
 
 .contacts-list { display: flex; flex-direction: column; }

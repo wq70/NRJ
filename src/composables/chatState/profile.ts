@@ -22,6 +22,9 @@ export const loadMyProfile = async () => {
         myProfile.value.clockMode = extra.clockMode === 'custom' || extra.clockMode === 'timezone' || extra.clockMode === 'system' ? extra.clockMode : (extra.timezone ? 'timezone' : 'system')
         myProfile.value.clockAnchorRealAt = Number(extra.clockAnchorRealAt || Date.now())
         myProfile.value.clockAnchorTimeAt = Number(extra.clockAnchorTimeAt || Date.now())
+        if (extra.statusText !== undefined) {
+          myProfile.value.statusText = extra.statusText || ''
+        }
       } catch(e) {}
     } else {
       myProfile.value.remark = ''
@@ -34,7 +37,7 @@ export const loadMyProfile = async () => {
 }
 
 export const saveMyProfile = () => {
-  const { currentChatUserId, updateAccount } = useChatAuth()
+  const { currentChatUserId, updateAccount, currentAccount } = useChatAuth()
   if (currentChatUserId.value) {
     updateAccount(currentChatUserId.value, {
       realName: myProfile.value.name,
@@ -47,7 +50,24 @@ export const saveMyProfile = () => {
       timezone: myProfile.value.timezone,
       clockMode: myProfile.value.clockMode,
       clockAnchorRealAt: myProfile.value.clockAnchorRealAt,
-      clockAnchorTimeAt: myProfile.value.clockAnchorTimeAt
+      clockAnchorTimeAt: myProfile.value.clockAnchorTimeAt,
+      statusText: myProfile.value.statusText || ''
     }))
+
+    // 同步社交主页配置
+    if (currentAccount.value) {
+      try {
+        const socialKey = `clingy_user_social_profile_${currentChatUserId.value}`
+        const rawSocial = localStorage.getItem(socialKey)
+        if (rawSocial) {
+          const parsed = JSON.parse(rawSocial)
+          parsed.statusText = myProfile.value.statusText || ''
+          parsed.statusCreatedAt = myProfile.value.statusText ? Date.now() : 0
+          parsed.updatedAt = Date.now()
+          localStorage.setItem(socialKey, JSON.stringify(parsed))
+          window.dispatchEvent(new CustomEvent('clingy:user-profile-updated', { detail: { accountId: currentChatUserId.value } }))
+        }
+      } catch (e) {}
+    }
   }
 }

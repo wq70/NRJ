@@ -3,7 +3,7 @@ import { reactive, readonly } from 'vue'
 
 export const DESKTOP_COLUMNS = 4
 export const DESKTOP_ROWS = 4
-export type WidgetType = 'dual-avatar' | 'moment-card' | 'custom-image' | 'folder-widget' | 'dual-frame' | 'circle-avatar-widget' | 'rectangle-image' | 'profile-card-widget' | 'about-us-widget'
+export type WidgetType = 'dual-avatar' | 'moment-card' | 'custom-image' | 'folder-widget' | 'dual-frame' | 'circle-avatar-widget' | 'rectangle-image' | 'profile-card-widget' | 'about-us-widget' | 'dual-aesthetic'
 
 export interface DesktopAppEntry { type: 'app'; id: string }
 export interface DesktopFolderEntry { type: 'folder'; id: string; name: string; appIds: string[] }
@@ -118,7 +118,7 @@ const normalizeBaseEntries = (entries: unknown, validIds: Set<string>, hidden: S
       appIds.forEach(id => usedApps.add(id))
       if (appIds.length === 1) result.push({ type: 'app', id: appIds[0] })
       if (appIds.length > 1) result.push({ type: 'folder', id: candidate.id, name: typeof candidate.name === 'string' && candidate.name.trim() ? candidate.name.trim().slice(0, 12) : '文件夹', appIds })
-    } else if (allowWidgets && candidate.type === 'widget' && typeof candidate.id === 'string' && ['dual-avatar', 'moment-card', 'custom-image', 'folder-widget', 'dual-frame', 'circle-avatar-widget', 'rectangle-image', 'profile-card-widget', 'about-us-widget'].includes(String(candidate.widgetType))) {
+    } else if (allowWidgets && candidate.type === 'widget' && typeof candidate.id === 'string' && ['dual-avatar', 'moment-card', 'custom-image', 'folder-widget', 'dual-frame', 'circle-avatar-widget', 'rectangle-image', 'profile-card-widget', 'about-us-widget', 'dual-aesthetic'].includes(String(candidate.widgetType))) {
       result.push({ type: 'widget', id: candidate.id, widgetType: candidate.widgetType as WidgetType, widthUnits: Math.max(1, Math.min(4, Number(candidate.widthUnits) || 1)), heightUnits: Math.max(1, Math.min(4, Number(candidate.heightUnits) || 1)) })
     }
   }

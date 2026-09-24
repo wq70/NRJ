@@ -47,7 +47,7 @@
 /* 壁纸与毛玻璃样式 */
 .chat-list-view {
   position: relative;
-  background-color: var(--sys-bg-secondary); /* 默认背景色，改为纯白匹配顶栏 */
+  background-color: #ffffff; /* 默认背景色，纯白 */
 }
 .chat-list-view.has-sidebar {
   display: flex;
@@ -548,7 +548,9 @@
   width: 32px;
   height: 32px;
   border-radius: 50%;
-  background: var(--sys-bg-primary);
+  background: #ffffff;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.04);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -558,7 +560,7 @@
   flex-shrink: 0;
 }
 .group-tab-add:hover {
-  background: var(--sys-bg-primary);
+  background: #ffffff;
 }
 
 .group-action-wrapper {
@@ -974,7 +976,7 @@
 
 /* Personal digital garden chat home */
 .chat-list-view {
-  background: #fbfbfc;
+  background: #ffffff;
   color: #202329;
 }
 
@@ -1168,7 +1170,9 @@
   width: 30px;
   height: 30px;
   margin-left: 8px;
-  background: #f0f2f5;
+  background: #ffffff;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.04);
   color: #5f6670;
 }
 
@@ -1212,7 +1216,7 @@
 .chat-list-view .garden-hero {
   min-height: 134px;
   padding: calc(env(safe-area-inset-top, 20px) + 18px) 0 4px;
-  background: #fbfbfc;
+  background: #ffffff;
   border-bottom: 0;
   overflow: visible;
 }
@@ -1231,7 +1235,7 @@
   background: #f7f8fa;
   border: 1px solid #dfe4eb;
   box-shadow:
-    0 0 0 9px #fbfbfc,
+    0 0 0 9px #ffffff,
     0 14px 28px rgba(56, 64, 78, 0.08);
   display: flex;
   align-items: center;
@@ -1271,7 +1275,7 @@
   line-height: 17px;
   text-align: center;
   font-weight: 600;
-  box-shadow: 0 0 0 2px #fbfbfc;
+  box-shadow: 0 0 0 2px #ffffff;
 }
 
 .chat-list-view .garden-panel {
@@ -1427,7 +1431,7 @@
   height: 58px;
   padding: 0 16px;
   padding-top: env(safe-area-inset-top, 20px);
-  background: #fbfbfc;
+  background: #ffffff;
   border-bottom: 0;
 }
 
@@ -1710,7 +1714,7 @@
   border-radius: 999px;
   background: #ff3b30;
   color: #fff;
-  border: 2px solid #fbfbfc;
+  border: 2px solid #ffffff;
   box-sizing: border-box;
   display: flex;
   align-items: center;

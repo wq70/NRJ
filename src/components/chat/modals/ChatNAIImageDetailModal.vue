@@ -193,7 +193,7 @@ const handleSave = () => {
             </div>
 
             <!-- NAI3 特定设置 -->
-            <div v-if="localConfig.model.includes('nai-diffusion-3')" class="form-row" style="margin-top: 10px; padding: 12px; background: rgba(0,0,0,0.02); border-radius: 8px; gap: 12px;">
+            <div v-if="localConfig.model.includes('nai-diffusion-3')" class="form-row" style="margin-top: 10px; padding: 12px; background: #ffffff; border: 1px solid var(--border-color); border-radius: 8px; gap: 12px;">
               <div>
                 <label>启用 SMEA (sm)</label>
                 <div class="switch-control-row">
@@ -215,7 +215,7 @@ const handleSave = () => {
             </div>
 
             <!-- NAI4 特定设置 -->
-            <div v-if="localConfig.model.includes('nai-diffusion-4')" class="form-row" style="margin-top: 10px; padding: 12px; background: rgba(0,0,0,0.02); border-radius: 8px;">
+            <div v-if="localConfig.model.includes('nai-diffusion-4')" class="form-row" style="margin-top: 10px; padding: 12px; background: #ffffff; border: 1px solid var(--border-color); border-radius: 8px;">
               <label>启用 Variety+ (skip_cfg_above_sigma)</label>
               <div class="switch-control-row">
                 <label class="toggle-switch">
@@ -300,7 +300,7 @@ const handleSave = () => {
             </div>
 
             <template v-if="localConfig.enableLlmAssist">
-              <div class="form-row" style="margin-top: 16px; background: rgba(0,0,0,0.02); padding: 12px; border-radius: 8px;">
+              <div class="form-row" style="margin-top: 16px; background: #ffffff; border: 1px solid var(--border-color); padding: 12px; border-radius: 8px;">
                 <div class="flex-between" style="margin-bottom: 8px;">
                   <label style="margin-bottom: 0; color: var(--text-primary);">独立 LLM 预设方案</label>
                   <button class="simple-modal-btn cancel" style="padding: 4px 12px; font-size: 12px; border: 1px solid rgba(0,0,0,0.1); border-radius: 6px; background: rgba(0,122,255,0.05); color: #007aff; height: auto; flex: none;" @click="pullFromGlobalApi">↓ 从全局节点拉取</button>
@@ -338,7 +338,7 @@ const handleSave = () => {
               <div class="form-row">
                 <div class="flex-between" style="margin-bottom: 8px;">
                   <label style="margin-bottom: 0;">LLM Model</label>
-                  <button class="simple-modal-btn cancel" style="padding: 4px 12px; font-size: 12px; border: 1px solid var(--border-color); border-radius: 6px; background: rgba(0,0,0,0.02); color: var(--text-primary); height: auto; flex: none; min-width: 80px;" @click="fetchLlmModels" :disabled="isFetchingModels">{{ isFetchingModels ? '拉取中...' : '拉取模型列表' }}</button>
+                  <button class="simple-modal-btn cancel" style="padding: 4px 12px; font-size: 12px; border: 1px solid var(--border-color); border-radius: 6px; background: #ffffff; color: var(--text-primary); height: auto; flex: none; min-width: 80px;" @click="fetchLlmModels" :disabled="isFetchingModels">{{ isFetchingModels ? '拉取中...' : '拉取模型列表' }}</button>
                 </div>
                 <div v-if="llmModelOptions.length > 0" style="margin-bottom: 8px;">
                   <select v-model="localConfig.llmModel" class="form-select" style="background: rgba(0,122,255,0.05); border-color: rgba(0,122,255,0.3);">
@@ -408,8 +408,8 @@ const handleSave = () => {
       </div>
 
       <div class="confirm-actions" style="margin-top: 16px; border-top: none; padding: 0 24px; gap: 12px; margin-bottom: 4px;">
-        <div class="confirm-btn secondary" style="background: rgba(0,0,0,0.05); color: var(--text-secondary); border-radius: 12px;" @click="closeModal">取消</div>
-        <div class="confirm-btn primary" style="background: var(--text-primary); color: var(--sys-bg-primary); border-radius: 12px;" @click="handleSave">保存配置</div>
+        <div class="confirm-btn secondary" style="background: #ffffff; color: var(--text-secondary); border: 1px solid var(--border-color); border-radius: 12px;" @click="closeModal">取消</div>
+        <div class="confirm-btn primary" style="background: var(--text-primary); color: #ffffff; border-radius: 12px;" @click="handleSave">保存配置</div>
       </div>
     </div>
 

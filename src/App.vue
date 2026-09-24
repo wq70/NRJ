@@ -294,6 +294,17 @@ watchEffect(() => {
   }
 })
 
+const hexToRgba = (hex: string, alpha: number) => {
+  let c = hex.replace('#', '').trim()
+  if (c.length === 3) c = c.split('').map(x => x + x).join('')
+  const num = parseInt(c, 16)
+  if (isNaN(num) || c.length !== 6) return `rgba(59, 130, 246, ${alpha})`
+  const r = (num >> 16) & 255
+  const g = (num >> 8) & 255
+  const b = num & 255
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`
+}
+
 // 只标记网页/PWA显示环境，不接触任何原生状态栏能力。
 watchEffect(() => {
   const root = document.documentElement
@@ -302,6 +313,13 @@ watchEffect(() => {
   root.classList.toggle('is-ios-web', iosWeb)
   root.classList.toggle('is-ios-pwa', standalone)
   root.classList.toggle('ios-pwa-fullscreen', iosWeb && globalSettings.iosPwaFullscreen)
+
+  // 全局同步强调色与输入框高亮光圈颜色，确保 Teleport 到 body 的弹窗也能正常继承 CSS 变量
+  const focusColor = globalSettings.textEditFocusColor || '#3b82f6'
+  root.style.setProperty('--accent-color', globalSettings.accentColor || '#007aff')
+  root.style.setProperty('--text-edit-focus-color', focusColor)
+  root.style.setProperty('--text-edit-focus-ring', hexToRgba(focusColor, 0.22))
+  root.style.setProperty('--global-ui-scale', String(globalSettings.uiScale || 1))
 })
 
 const handleUnlock = () => {
@@ -316,13 +334,18 @@ const handleOpenChatFromLock = () => {
 
 const containerStyle = computed(() => {
   const isDefault = globalSettings.wallpaper === 'default' || !globalSettings.wallpaper
+  const focusColor = globalSettings.textEditFocusColor || '#3b82f6'
+  const scale = Number(globalSettings.uiScale) || 1
   return {
     '--accent-color': globalSettings.accentColor,
+    '--text-edit-focus-color': focusColor,
+    '--text-edit-focus-ring': hexToRgba(focusColor, 0.22),
     'backgroundImage': isDefault ? 'none' : `url(${globalSettings.wallpaper})`,
     'backgroundColor': isDefault ? '' : 'transparent',
     'backgroundSize': 'cover',
     'backgroundPosition': 'center',
-    'backgroundRepeat': 'no-repeat'
+    'backgroundRepeat': 'no-repeat',
+    zoom: scale !== 1 ? String(scale) : undefined
   }
 })
 

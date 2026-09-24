@@ -12,6 +12,7 @@ import CircleAvatarWidget from './CircleAvatarWidget.vue'
 import RectangleImageWidget from './RectangleImageWidget.vue'
 import ProfileCardWidget from './ProfileCardWidget.vue'
 import AboutUsWidget from './AboutUsWidget.vue'
+import DualAestheticWidget from './DualAestheticWidget.vue'
 import WidgetSourceRenderer from './WidgetSourceRenderer.vue'
 
 const props = defineProps<{ entry: DesktopWidgetEntry; editing?: boolean; hideDelete?: boolean }>()
@@ -34,6 +35,7 @@ onMounted(loadWidgetSources)
     <RectangleImageWidget v-else-if="entry.widgetType === 'rectangle-image'" :instance-id="entry.id" :editing="editing" />
     <ProfileCardWidget v-else-if="entry.widgetType === 'profile-card-widget'" :instance-id="entry.id" :editing="editing" />
     <AboutUsWidget v-else-if="entry.widgetType === 'about-us-widget'" :instance-id="entry.id" :editing="editing" />
+    <DualAestheticWidget v-else-if="entry.widgetType === 'dual-aesthetic'" :instance-id="entry.id" :editing="editing" />
     <CustomImageWidget v-else :instance-id="entry.id" :editing="editing" />
   </div>
 </template>

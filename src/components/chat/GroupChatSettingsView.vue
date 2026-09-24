@@ -30,6 +30,7 @@ import ChatCallRecordsView from './ChatCallRecordsView.vue'
 import ChatEmojiView from './ChatEmojiView.vue'
 import ChatIdentityProfileModal from './modals/ChatIdentityProfileModal.vue'
 import ChatTimelineManagerModal from './modals/ChatTimelineManagerModal.vue'
+import ChatInnerThoughtLimitModal from './modals/ChatInnerThoughtLimitModal.vue'
 import GroupChatCapabilityPanel from './GroupChatCapabilityPanel.vue'
 import { getChatLanguageLabel } from '../../constants/chatLanguages'
 import { useTimezone } from '../../composables/useTimezone'
@@ -113,6 +114,30 @@ const showCallRecordsView = ref(false)
 const showEmojiView = ref(false)
 const showIdentityProfileModal = ref(false)
 const showTimelineManagerModal = ref(false)
+const showGroupInnerThoughtLimitModal = ref(false)
+const showGroupRoleThoughtCountModal = ref(false)
+const showGroupUserThoughtCountModal = ref(false)
+
+const onSaveGroupInnerThoughtLimit = (val: number) => {
+  if (props.group) {
+    props.group.innerThoughtLimit = val
+    save()
+  }
+}
+
+const onSaveGroupRoleThoughtCount = (val: number) => {
+  if (props.group) {
+    props.group.roleThoughtHistoryCount = val
+    save()
+  }
+}
+
+const onSaveGroupUserThoughtCount = (val: number) => {
+  if (props.group) {
+    props.group.userThoughtHistoryCount = val
+    save()
+  }
+}
 const bindingMemberId = ref('')
 const ensureMemberTimelineBindings = () => {
   props.group.memberTimelineBindings ||= {}
@@ -552,7 +577,7 @@ const clearWallpaper = async () => { currentChatWallpaper.value = null; await wa
 const handleSaveTransferStyle = (style: 'wechat' | 'ticket' | 'glass') => { chatSettings.transferStyle = style }
 const handleSaveAvatarDisplayStyle = (style: 'all' | 'user_only' | 'character_only' | 'none') => { chatSettings.avatarDisplayStyle = style }
 const handleSaveNameDisplayStyle = (style: 'all' | 'user_only' | 'character_only' | 'none') => { chatSettings.nameDisplayStyle = style }
-const handleSaveTimeDisplayStyle = (style: 'none' | 'hm' | 'hms', position: 'avatar_bottom' | 'bubble_outer' | 'name_side') => { chatSettings.timeDisplayStyle = style; chatSettings.timeDisplayPosition = position }
+const handleSaveTimeDisplayStyle = (style: 'none' | 'hm' | 'hms', position: any) => { chatSettings.timeDisplayStyle = style; chatSettings.timeDisplayPosition = position }
 const deleteGroupCallRecords = (ids: (string | number)[]) => { props.group.callSummaries = (props.group.callSummaries || []).filter(item => !ids.includes(item.id)); save() }
 const resummarizeGroupCallRecord = (id: string | number) => {
   const record = (props.group.callSummaries || []).find(item => item.id === id)
@@ -753,12 +778,30 @@ onUnmounted(() => {
           <div v-if="group.enableMsgCountLimit" class="glass-list-item" @click="showMsgCountModal = true"><span class="item-label bilingual-child-label">└ 群消息总量范围</span><div class="item-value"><span class="item-value-text">{{ group.minMsgCount }} ~ {{ group.maxMsgCount }} 条</span><span class="arrow">›</span></div></div>
           <div class="glass-list-item"><div><div class="item-label">允许角色内心活动</div><div class="group-item-desc">沿用各成员单聊思维设定，并按成员隔离保存</div></div><label class="switch"><input v-model="group.enableAutoThought" type="checkbox" @change="save"><span class="slider"></span></label></div>
           <template v-if="group.enableAutoThought">
-            <div class="glass-list-item"><span class="item-label bilingual-child-label">└ 心声存储上限</span><div class="item-value"><input v-model.number="group.innerThoughtLimit" class="group-inline-number" type="number" min="1" max="1000" @change="save"><span class="item-value-text">条</span></div></div>
+            <div class="glass-list-item clickable" @click="showGroupInnerThoughtLimitModal = true">
+              <span class="item-label bilingual-child-label">└ 心声存储上限</span>
+              <div class="item-value">
+                <span class="item-value-text">{{ group.innerThoughtLimit ?? 50 }} 条</span>
+                <span class="arrow">></span>
+              </div>
+            </div>
             <div class="glass-list-item"><span class="item-label bilingual-child-label">└ 读取成员自己的历史心声</span><label class="switch"><input v-model="group.enableRoleThoughtHistory" type="checkbox" @change="save"><span class="slider"></span></label></div>
-            <div v-if="group.enableRoleThoughtHistory" class="glass-list-item"><span class="item-label bilingual-child-label">　└ 最近成员心声</span><div class="item-value"><input v-model.number="group.roleThoughtHistoryCount" class="group-inline-number" type="number" min="1" max="999" @change="save"><span class="item-value-text">条</span></div></div>
+            <div v-if="group.enableRoleThoughtHistory" class="glass-list-item clickable" @click="showGroupRoleThoughtCountModal = true">
+              <span class="item-label bilingual-child-label">　└ 最近成员心声</span>
+              <div class="item-value">
+                <span class="item-value-text">{{ group.roleThoughtHistoryCount || 3 }} 条</span>
+                <span class="arrow">></span>
+              </div>
+            </div>
           </template>
           <div class="glass-list-item"><span class="item-label">读取用户历史心声</span><label class="switch"><input v-model="group.enableUserThoughtHistory" type="checkbox" @change="save"><span class="slider"></span></label></div>
-          <div v-if="group.enableUserThoughtHistory" class="glass-list-item"><span class="item-label bilingual-child-label">└ 最近用户心声</span><div class="item-value"><input v-model.number="group.userThoughtHistoryCount" class="group-inline-number" type="number" min="1" max="999" @change="save"><span class="item-value-text">条</span></div></div>
+          <div v-if="group.enableUserThoughtHistory" class="glass-list-item clickable" @click="showGroupUserThoughtCountModal = true">
+            <span class="item-label bilingual-child-label">└ 最近用户心声</span>
+            <div class="item-value">
+              <span class="item-value-text">{{ group.userThoughtHistoryCount || 3 }} 条</span>
+              <span class="arrow">></span>
+            </div>
+          </div>
           <div class="glass-list-item"><div><div class="item-label">线下见面模式</div><div class="group-item-desc">在输入栏中可随时开始或结束群体线下现场</div></div><label class="switch"><input v-model="group.offlineMeetEnabled" type="checkbox" @change="save"><span class="slider"></span></label></div>
           <template v-if="group.offlineMeetEnabled">
             <div class="glass-list-item" @click="openGroupOption('offlineMode')"><span class="item-label bilingual-child-label">└ 线下表现形式</span><div class="item-value"><span class="item-value-text">{{ group.offlineMeetMode === 'separate' ? '独立线下页面' : '与线上共用页面' }}</span><span class="arrow">›</span></div></div>
@@ -941,7 +984,7 @@ onUnmounted(() => {
     <ChatTransferPreviewModal v-model:visible="showTransferPreview" :current-style="chatSettings.transferStyle || 'wechat'" @save="handleSaveTransferStyle" />
     <ChatAvatarDisplayModal v-model:visible="showAvatarDisplayModal" @save="handleSaveAvatarDisplayStyle" />
     <ChatNameDisplayModal v-model:visible="showNameDisplayModal" @save="handleSaveNameDisplayStyle" />
-    <ChatTimeDisplayModal :show="showTimeDisplayModal" :initial-style="(chatSettings.timeDisplayStyle as 'none' | 'hm' | 'hms') || 'none'" :initial-position="(chatSettings.timeDisplayPosition as 'avatar_bottom' | 'bubble_outer' | 'name_side') || 'avatar_bottom'" @close="showTimeDisplayModal = false" @save="handleSaveTimeDisplayStyle" />
+    <ChatTimeDisplayModal :show="showTimeDisplayModal" :initial-style="(chatSettings.timeDisplayStyle as 'none' | 'hm' | 'hms') || 'none'" :initial-position="(chatSettings.timeDisplayPosition as any) || 'avatar_bottom'" @close="showTimeDisplayModal = false" @save="handleSaveTimeDisplayStyle" />
     <Teleport to="body"><ChatBubbleBeautifyModal v-if="showBubbleBeautifyModal" @close="showBubbleBeautifyModal = false" /></Teleport>
     <transition name="fade"><ChatCallRecordsView v-if="showCallRecordsView" :records="group.callSummaries || []" @close="showCallRecordsView = false" @delete="deleteGroupCallRecords" @resummarize="resummarizeGroupCallRecord" /></transition>
     <ChatEmojiView v-if="showEmojiView" mode="group" :group-id="group.id" @close="showEmojiView = false" />
@@ -972,6 +1015,44 @@ onUnmounted(() => {
       @special-title="({ memberId, title }) => groupMgmt.setMemberSpecialTitle(memberId, title)"
       @adjust-points="({ memberId, points }) => groupMgmt.adjustMemberPoints(memberId, points)"
       @reset-points="(memberId) => groupMgmt.resetMemberPoints(memberId)"
+    />
+    <ChatInnerThoughtLimitModal
+      :visible="showGroupInnerThoughtLimitModal"
+      :model-value="group.innerThoughtLimit ?? 50"
+      :default-value="50"
+      title="心声存储上限"
+      sub-title="角色生成的心声超出此上限时，将自动淘汰较早记录"
+      :min="1"
+      :max="1000"
+      :presets="[20, 50, 100, 200, 500]"
+      @close="showGroupInnerThoughtLimitModal = false"
+      @save="onSaveGroupInnerThoughtLimit"
+    />
+    <ChatInnerThoughtLimitModal
+      :visible="showGroupRoleThoughtCountModal"
+      :model-value="group.roleThoughtHistoryCount || 3"
+      :default-value="3"
+      title="最近成员心声"
+      sub-title="设置群聊中各成员在回复时最多可读取自己最近的历史心声条数"
+      placeholder="输入条数 (1 ~ 50)..."
+      :min="1"
+      :max="50"
+      :presets="[1, 2, 3, 5, 10, 20]"
+      @close="showGroupRoleThoughtCountModal = false"
+      @save="onSaveGroupRoleThoughtCount"
+    />
+    <ChatInnerThoughtLimitModal
+      :visible="showGroupUserThoughtCountModal"
+      :model-value="group.userThoughtHistoryCount || 3"
+      :default-value="3"
+      title="最近用户心声"
+      sub-title="设置群聊中成员在回复时最多可读取用户最近的历史心声条数"
+      placeholder="输入条数 (1 ~ 50)..."
+      :min="1"
+      :max="50"
+      :presets="[1, 2, 3, 5, 10, 20]"
+      @close="showGroupUserThoughtCountModal = false"
+      @save="onSaveGroupUserThoughtCount"
     />
     <ChatTimelineManagerModal v-model:visible="showTimelineManagerModal" :selected-chat="group" @save="save" />
 

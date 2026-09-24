@@ -70,7 +70,6 @@ defineExpose({
   <main class="message-area" ref="messageAreaRef" @click="emit('click-overlay')">
     <template v-for="(msg, index) in renderMessages" :key="msg.id">
       <ChatMessageItem
-        :class="{ 'reply-variant-preview-message': msg._replyVariantPreview }"
         :msg="msg"
         :index="index"
         :displayMessages="renderMessages"
@@ -85,6 +84,7 @@ defineExpose({
         :voicePlayingId="voicePlayingId"
         :isVoiceSynthesizing="isVoiceSynthesizing"
         :resolveSender="resolveSender"
+        :is-reply-variant-preview="Boolean(msg._replyVariantPreview)"
         @click-message="emit('click-message', $event)"
         @toggle-selection="emit('toggle-selection', $event)"
         @touch-start="emit('touch-start', $event)"

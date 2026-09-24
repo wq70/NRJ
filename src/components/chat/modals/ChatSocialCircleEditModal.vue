@@ -392,8 +392,8 @@ const handleSave = async () => {
           <div class="social-form-label">朋友圈互动偏好</div>
           <div class="social-switch-row">
             <div class="social-switch-text">
-              <div class="social-switch-title">朋友圈动态互动</div>
-              <div class="social-switch-sub">允许在角色发布朋友圈或日常中产生互动</div>
+              <div class="social-switch-title">参与朋友圈动态</div>
+              <div class="social-switch-sub">允许在角色发布朋友圈或日常时发动态、点赞与评论</div>
             </div>
             <label class="social-switch">
               <input v-model="form.enableMoments" type="checkbox" />
@@ -402,7 +402,7 @@ const handleSave = async () => {
           </div>
 
           <div v-if="form.enableMoments" class="social-freq-container">
-            <div class="social-freq-label">互动活跃度</div>
+            <div class="social-freq-label">互动频率</div>
             <div class="social-pill-group">
               <button
                 type="button"
@@ -410,7 +410,7 @@ const handleSave = async () => {
                 :class="{ active: form.interactionFrequency === 'high' }"
                 @click="form.interactionFrequency = 'high'"
               >
-                频繁热情
+                经常互动
               </button>
               <button
                 type="button"
@@ -426,7 +426,7 @@ const handleSave = async () => {
                 :class="{ active: form.interactionFrequency === 'low' }"
                 @click="form.interactionFrequency = 'low'"
               >
-                安静围观
+                很少互动
               </button>
             </div>
           </div>

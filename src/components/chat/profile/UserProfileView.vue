@@ -301,7 +301,7 @@ onUnmounted(() => { window.removeEventListener('clingy:moments-updated', load); 
     <div class="profile-scroll-container with-solid-nav">
       <template v-if="currentPage === 'profile'">
         <template v-if="appearanceStyleId === 'default'">
-          <header class="character-hero-cover user-hero"><div class="cover-image" :style="coverUrl ? { backgroundImage: `url(${coverUrl})` } : {}"></div><div class="hero-fog-overlay"></div></header>
+          <header class="character-hero-cover user-hero"><div class="cover-image" :style="{ backgroundImage: `url(${coverUrl || '/profile_cover_default.jpg'})` }"></div><div class="hero-fog-overlay"></div></header>
           <main class="editorial-body">
             <section class="user-avatar-identity">
               <button class="user-profile-avatar" type="button" :style="currentAccount?.avatarUrl ? { backgroundImage: `url(${currentAccount.avatarUrl})` } : {}" @click="showAvatarUpload = true">{{ currentAccount?.avatarUrl ? '' : displayName.charAt(0) }}</button>

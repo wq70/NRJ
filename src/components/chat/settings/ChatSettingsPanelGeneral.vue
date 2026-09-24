@@ -3,6 +3,8 @@
 import { computed, onBeforeUnmount, ref } from 'vue'
 import { chatSettings, offlinePresetSettings } from '../../../store'
 import ChatOfflinePresetModal from '../modals/ChatOfflinePresetModal.vue'
+import ChatInnerThoughtLimitModal from '../modals/ChatInnerThoughtLimitModal.vue'
+import ChatCallDndModal from '../modals/ChatCallDndModal.vue'
 import { getOfflineModelProfileLabel } from '../../../services/offlinePresets'
 import { sanitizeThoughtHistoryCount } from '../../../services/innerThoughtContext'
 import {
@@ -52,6 +54,68 @@ const saveThoughtHistoryCount = (key: 'roleThoughtHistoryCount' | 'userThoughtHi
 const showOfflinePresetModal = ref(false)
 const showOfflineModeModal = ref(false)
 const showOfflineLocationModal = ref(false)
+const showInnerThoughtLimitModal = ref(false)
+const showRoleThoughtCountModal = ref(false)
+const showUserThoughtCountModal = ref(false)
+const showVoiceMsgCountModal = ref(false)
+const showVoiceSummaryThresholdModal = ref(false)
+const showVideoMsgCountModal = ref(false)
+const showVideoSummaryThresholdModal = ref(false)
+const showCallRingSecondsModal = ref(false)
+const showCallDndModal = ref(false)
+
+const onSaveInnerThoughtLimit = (val: number) => {
+  chatSettings.innerThoughtLimit = val
+  handleSave()
+}
+
+const onSaveVoiceMsgCount = (val: number) => {
+  chatSettings.voiceMsgCount = val
+  handleSave()
+}
+
+const onSaveVoiceSummaryThreshold = (val: number) => {
+  chatSettings.voiceSummaryThreshold = val
+  handleSave()
+}
+
+const onSaveVideoMsgCount = (val: number) => {
+  chatSettings.videoMsgCount = val
+  handleSave()
+}
+
+const onSaveVideoSummaryThreshold = (val: number) => {
+  chatSettings.videoSummaryThreshold = val
+  handleSave()
+}
+
+const onSaveCallRingSeconds = (val: number) => {
+  chatSettings.charCallRingSeconds = val
+  handleSave()
+}
+
+const onSaveCallDnd = (payload: { start: string; end: string }) => {
+  chatSettings.dndStart = payload.start
+  chatSettings.dndEnd = payload.end
+  handleSave()
+}
+
+const dndDisplayTime = computed(() => {
+  if (chatSettings.dndStart && chatSettings.dndEnd) {
+    return `${chatSettings.dndStart} 至 ${chatSettings.dndEnd}`
+  }
+  return '--:-- 至 --:--'
+})
+
+const onSaveRoleThoughtCount = (val: number) => {
+  props.selectedChat.roleThoughtHistoryCount = val
+  saveThoughtHistoryCount('roleThoughtHistoryCount')
+}
+
+const onSaveUserThoughtCount = (val: number) => {
+  props.selectedChat.userThoughtHistoryCount = val
+  saveThoughtHistoryCount('userThoughtHistoryCount')
+}
 const currentOfflinePresetName = computed(() => {
   const id = props.selectedChat?.offlinePresetId || offlinePresetSettings.currentPresetId || 'offline_default'
   return offlinePresetSettings.presets.find(item => item.id === id)?.name || '线下默认'
@@ -60,13 +124,11 @@ const currentOfflineProfileName = computed(() => getOfflineModelProfileLabel(pro
 
 const selectOfflineMode = (mode: 'mixed' | 'separate') => {
   props.selectedChat.offlineMeetMode = mode
-  showOfflineModeModal.value = false
   handleSave()
 }
 
 const selectOfflineLocationMode = (mode: 'vague' | 'continuous') => {
   props.selectedChat.offlineMeetLocationMode = mode
-  showOfflineLocationModal.value = false
   handleSave()
 }
 
@@ -293,11 +355,11 @@ onBeforeUnmount(() => {
         </div>
       </div>
       <template v-if="selectedChat.enableAutoThought">
-        <div class="glass-list-item" v-show="matchSearch('心声存储上限')">
+        <div class="glass-list-item clickable" v-show="matchSearch('心声存储上限')" @click="showInnerThoughtLimitModal = true">
           <div class="item-label" style="font-size: 13px; color: var(--text-secondary); padding-left: 12px;">└ 心声存储上限</div>
-          <div class="item-value" style="display:flex; align-items:center; gap:8px;">
-            <input type="number" v-model="chatSettings.innerThoughtLimit" @change="handleSave" style="width: 50px; text-align: right; background: transparent; border: none; font-size: 15px; color: var(--text-secondary); outline: none;" min="1" max="1000">
-            <span class="item-value-text">条</span>
+          <div class="item-value">
+            <span class="item-value-text">{{ chatSettings.innerThoughtLimit ?? 50 }} 条</span>
+            <span class="arrow">></span>
           </div>
         </div>
         <div class="glass-list-item" v-show="matchSearch('角色读取历史心声')">
@@ -309,19 +371,11 @@ onBeforeUnmount(() => {
             </label>
           </div>
         </div>
-        <div v-if="selectedChat.enableRoleThoughtHistory" class="glass-list-item" v-show="matchSearch('读取最近角色心声数量')">
+        <div v-if="selectedChat.enableRoleThoughtHistory" class="glass-list-item clickable" v-show="matchSearch('读取最近角色心声数量')" @click="showRoleThoughtCountModal = true">
           <div class="item-label thought-history-child">└ 读取最近</div>
-          <div class="item-value thought-count-value">
-            <input
-              class="thought-count-input"
-              type="text"
-              inputmode="numeric"
-              maxlength="3"
-              v-model="selectedChat.roleThoughtHistoryCount"
-              @change="saveThoughtHistoryCount('roleThoughtHistoryCount')"
-              @blur="saveThoughtHistoryCount('roleThoughtHistoryCount')"
-            >
-            <span class="item-value-text">条</span>
+          <div class="item-value">
+            <span class="item-value-text">{{ selectedChat.roleThoughtHistoryCount || 3 }} 条</span>
+            <span class="arrow">></span>
           </div>
         </div>
         <div class="glass-list-item" v-show="matchSearch('心声附带生图')">
@@ -352,19 +406,11 @@ onBeforeUnmount(() => {
           </label>
         </div>
       </div>
-      <div v-if="selectedChat.enableUserThoughtHistory" class="glass-list-item" v-show="matchSearch('读取最近用户心声数量')">
+      <div v-if="selectedChat.enableUserThoughtHistory" class="glass-list-item clickable" v-show="matchSearch('读取最近用户心声数量')" @click="showUserThoughtCountModal = true">
         <div class="item-label thought-history-child">└ 读取最近</div>
-        <div class="item-value thought-count-value">
-          <input
-            class="thought-count-input"
-            type="text"
-            inputmode="numeric"
-            maxlength="3"
-            v-model="selectedChat.userThoughtHistoryCount"
-            @change="saveThoughtHistoryCount('userThoughtHistoryCount')"
-            @blur="saveThoughtHistoryCount('userThoughtHistoryCount')"
-          >
-          <span class="item-value-text">条</span>
+        <div class="item-value">
+          <span class="item-value-text">{{ selectedChat.userThoughtHistoryCount || 3 }} 条</span>
+          <span class="arrow">></span>
         </div>
       </div>
     </div>
@@ -380,48 +426,48 @@ onBeforeUnmount(() => {
       </div>
       
       <!-- 语音专属上下文记忆条数 -->
-      <div class="glass-list-item" v-show="matchSearch('语音上下文记忆')" style="border-top: 1px dashed rgba(0,0,0,0.05); padding-top: 12px; margin-top: 4px; display:flex; flex-direction:column; align-items:flex-start; gap:8px;">
+      <div class="glass-list-item" v-show="matchSearch('语音上下文记忆')" @click="showVoiceMsgCountModal = true" style="cursor: pointer; display:flex; flex-direction:column; align-items:flex-start; gap:8px;">
         <div style="display:flex; justify-content:space-between; width:100%; align-items:center;">
           <span class="item-label">语音短期上下文记忆</span>
-          <div class="item-value" style="display:flex; align-items:center; gap:8px;">
-            <input type="number" v-model="chatSettings.voiceMsgCount" @change="handleSave" style="width: 50px; text-align: right; background: transparent; border: none; font-size: 15px; color: var(--text-secondary); outline: none;" min="1" max="100">
-            <span class="item-value-text">条</span>
+          <div class="item-value">
+            <span class="item-value-text">{{ chatSettings.voiceMsgCount ?? 15 }} 条</span>
+            <span class="arrow">></span>
           </div>
         </div>
         <span style="font-size: 11px; color: var(--text-tertiary); font-weight: 400; line-height: 1.4;">独立于文字聊天外的通话记录条数</span>
       </div>
       
       <!-- 语音临时总结阈值 -->
-      <div class="glass-list-item" v-show="matchSearch('语音临时总结')" style="padding-top: 12px; margin-top: 4px; display:flex; flex-direction:column; align-items:flex-start; gap:8px;">
+      <div class="glass-list-item" v-show="matchSearch('语音临时总结')" @click="showVoiceSummaryThresholdModal = true" style="cursor: pointer; display:flex; flex-direction:column; align-items:flex-start; gap:8px;">
         <div style="display:flex; justify-content:space-between; width:100%; align-items:center;">
           <span class="item-label">语音临时总结频次</span>
-          <div class="item-value" style="display:flex; align-items:center; gap:8px;">
-            <input type="number" v-model="chatSettings.voiceSummaryThreshold" @change="handleSave" style="width: 50px; text-align: right; background: transparent; border: none; font-size: 15px; color: var(--text-secondary); outline: none;" min="10" max="200">
-            <span class="item-value-text">条</span>
+          <div class="item-value">
+            <span class="item-value-text">{{ chatSettings.voiceSummaryThreshold ?? 50 }} 条</span>
+            <span class="arrow">></span>
           </div>
         </div>
         <span style="font-size: 11px; color: var(--text-tertiary); font-weight: 400; line-height: 1.4;">每达到几条自动总结一次以省Token</span>
       </div>
 
       <!-- 视频专属上下文记忆条数 -->
-      <div class="glass-list-item" v-show="matchSearch('视频上下文记忆')" style="border-top: 1px dashed rgba(0,0,0,0.05); padding-top: 12px; margin-top: 4px; display:flex; flex-direction:column; align-items:flex-start; gap:8px;">
+      <div class="glass-list-item" v-show="matchSearch('视频上下文记忆')" @click="showVideoMsgCountModal = true" style="cursor: pointer; display:flex; flex-direction:column; align-items:flex-start; gap:8px;">
         <div style="display:flex; justify-content:space-between; width:100%; align-items:center;">
           <span class="item-label">视频短期上下文记忆</span>
-          <div class="item-value" style="display:flex; align-items:center; gap:8px;">
-            <input type="number" v-model="chatSettings.videoMsgCount" @change="handleSave" style="width: 50px; text-align: right; background: transparent; border: none; font-size: 15px; color: var(--text-secondary); outline: none;" min="1" max="100">
-            <span class="item-value-text">条</span>
+          <div class="item-value">
+            <span class="item-value-text">{{ chatSettings.videoMsgCount ?? 15 }} 条</span>
+            <span class="arrow">></span>
           </div>
         </div>
         <span style="font-size: 11px; color: var(--text-tertiary); font-weight: 400; line-height: 1.4;">独立于文字聊天外的视频通话记录条数</span>
       </div>
       
       <!-- 视频临时总结阈值 -->
-      <div class="glass-list-item" v-show="matchSearch('视频临时总结')" style="padding-top: 12px; margin-top: 4px; display:flex; flex-direction:column; align-items:flex-start; gap:8px;">
+      <div class="glass-list-item" v-show="matchSearch('视频临时总结')" @click="showVideoSummaryThresholdModal = true" style="cursor: pointer; display:flex; flex-direction:column; align-items:flex-start; gap:8px;">
         <div style="display:flex; justify-content:space-between; width:100%; align-items:center;">
           <span class="item-label">视频临时总结频次</span>
-          <div class="item-value" style="display:flex; align-items:center; gap:8px;">
-            <input type="number" v-model="chatSettings.videoSummaryThreshold" @change="handleSave" style="width: 50px; text-align: right; background: transparent; border: none; font-size: 15px; color: var(--text-secondary); outline: none;" min="10" max="200">
-            <span class="item-value-text">条</span>
+          <div class="item-value">
+            <span class="item-value-text">{{ chatSettings.videoSummaryThreshold ?? 50 }} 条</span>
+            <span class="arrow">></span>
           </div>
         </div>
         <span style="font-size: 11px; color: var(--text-tertiary); font-weight: 400; line-height: 1.4;">每达到几条自动总结一次以省Token</span>
@@ -462,7 +508,7 @@ onBeforeUnmount(() => {
       </div>
       
       <!-- 新增线下模式的对应开关 -->
-      <div class="glass-list-item" v-show="matchSearch('线下模式禁用多媒体')" style="border-top: 1px dashed rgba(0,0,0,0.05); padding-top: 12px; margin-top: 4px; display:flex; flex-direction:column; align-items:flex-start; gap:8px;">
+      <div class="glass-list-item" v-show="matchSearch('线下模式禁用多媒体')" style="display:flex; flex-direction:column; align-items:flex-start; gap:8px;">
         <div style="display:flex; justify-content:space-between; width:100%; align-items:center;">
           <span class="item-label">线下模式禁用多媒体与互动</span>
           <div class="item-value">
@@ -487,7 +533,7 @@ onBeforeUnmount(() => {
         <span style="font-size: 11px; color: var(--text-tertiary); font-weight: 400; line-height: 1.4;">线下见面时不再写心声碎碎念，提升沉浸感和响应速度</span>
       </div>
       
-      <div class="glass-list-item" v-show="matchSearch('允许角色主动发朋友圈与互动', '朋友圈')" style="border-top: 1px dashed rgba(0,0,0,0.05); padding-top: 12px; margin-top: 4px; display:flex; flex-direction:column; align-items:flex-start; gap:8px;">
+      <div class="glass-list-item" v-show="matchSearch('允许角色主动发朋友圈与互动', '朋友圈')" style="display:flex; flex-direction:column; align-items:flex-start; gap:8px;">
         <div style="display:flex; justify-content:space-between; width:100%; align-items:center;">
           <span class="item-label">允许此角色主动发朋友圈与互动</span>
           <div class="item-value">
@@ -513,7 +559,7 @@ onBeforeUnmount(() => {
         <span style="font-size: 11px; color: var(--text-tertiary); font-weight: 400; line-height: 1.4;">角色发帖带图片描述时调用其图像引擎；关闭后仅发布文字动态</span>
       </div>
 
-      <div class="glass-list-item" v-show="matchSearch('允许角色主动拨打语音', '来电', '语音')" style="border-top: 1px dashed rgba(0,0,0,0.05); padding-top: 12px; margin-top: 4px; display:flex; flex-direction:column; align-items:flex-start; gap:8px;">
+      <div class="glass-list-item" v-show="matchSearch('允许角色主动拨打语音', '来电', '语音')" style="display:flex; flex-direction:column; align-items:flex-start; gap:8px;">
         <div style="display:flex; justify-content:space-between; width:100%; align-items:center;">
           <span class="item-label">允许角色主动拨打语音</span>
           <div class="item-value">
@@ -525,6 +571,27 @@ onBeforeUnmount(() => {
         </div>
         <span style="font-size: 11px; color: var(--text-tertiary); font-weight: 400; line-height: 1.4;">关闭后角色拨来的语音会直接记为未接来电</span>
       </div>
+
+      <!-- 仅当开启语音通话且关闭视频通话时，来电子设置吸附在语音通话项下方 -->
+      <template v-if="chatSettings.enableCharVoiceCall !== false && chatSettings.enableCharVideoCall === false">
+        <div class="glass-list-item clickable" v-show="matchSearch('响铃时长', '来电')" @click="showCallRingSecondsModal = true" style="cursor: pointer;">
+          <div class="item-label" style="font-size: 13px; color: var(--text-secondary); padding-left: 12px;">└ 来电响铃时长</div>
+          <div class="item-value">
+            <span class="item-value-text">{{ chatSettings.charCallRingSeconds ?? 30 }} 秒</span>
+            <span class="arrow">></span>
+          </div>
+        </div>
+        <div class="glass-list-item clickable" v-show="matchSearch('免打扰')" @click="showCallDndModal = true" style="display:flex; flex-direction:column; align-items:flex-start; gap:8px; cursor: pointer;">
+          <div style="display:flex; justify-content:space-between; width:100%; align-items:center; padding-left: 12px;">
+            <span style="font-size: 13px; color: var(--text-secondary);">└ 免打扰时段</span>
+            <div class="item-value">
+              <span class="item-value-text">{{ dndDisplayTime }}</span>
+              <span class="arrow">></span>
+            </div>
+          </div>
+          <span style="font-size: 11px; color: var(--text-tertiary); font-weight: 400; line-height: 1.4; padding-left: 12px;">留空表示不限制，此时段内来电不响铃</span>
+        </div>
+      </template>
       
       <div class="glass-list-item" v-show="matchSearch('允许角色主动拨打视频', '来电', '视频')" style="display:flex; flex-direction:column; align-items:flex-start; gap:8px;">
         <div style="display:flex; justify-content:space-between; width:100%; align-items:center;">
@@ -539,21 +606,21 @@ onBeforeUnmount(() => {
         <span style="font-size: 11px; color: var(--text-tertiary); font-weight: 400; line-height: 1.4;">关闭后角色拨来的视频会直接记为未接来电</span>
       </div>
 
-      <template v-if="chatSettings.enableCharVoiceCall !== false || chatSettings.enableCharVideoCall !== false">
-        <div class="glass-list-item" v-show="matchSearch('响铃时长', '来电')">
+      <!-- 开启视频通话时，来电子设置吸附在视频通话项下方展开；关闭视频通话时此处自然收起 -->
+      <template v-if="chatSettings.enableCharVideoCall !== false">
+        <div class="glass-list-item clickable" v-show="matchSearch('响铃时长', '来电')" @click="showCallRingSecondsModal = true" style="cursor: pointer;">
           <div class="item-label" style="font-size: 13px; color: var(--text-secondary); padding-left: 12px;">└ 来电响铃时长</div>
-          <div class="item-value" style="display:flex; align-items:center; gap:8px;">
-            <input type="number" v-model="chatSettings.charCallRingSeconds" @change="handleSave" style="width: 50px; text-align: right; background: transparent; border: none; font-size: 15px; color: var(--text-secondary); outline: none;" min="5" max="120">
-            <span class="item-value-text">秒</span>
+          <div class="item-value">
+            <span class="item-value-text">{{ chatSettings.charCallRingSeconds ?? 30 }} 秒</span>
+            <span class="arrow">></span>
           </div>
         </div>
-        <div class="glass-list-item" v-show="matchSearch('免打扰')" style="display:flex; flex-direction:column; align-items:flex-start; gap:8px;">
+        <div class="glass-list-item clickable" v-show="matchSearch('免打扰')" @click="showCallDndModal = true" style="display:flex; flex-direction:column; align-items:flex-start; gap:8px; cursor: pointer;">
           <div style="display:flex; justify-content:space-between; width:100%; align-items:center; padding-left: 12px;">
             <span style="font-size: 13px; color: var(--text-secondary);">└ 免打扰时段</span>
-            <div class="item-value" style="display:flex; align-items:center; gap:4px;">
-              <input type="time" v-model="chatSettings.dndStart" @change="handleSave" style="background: transparent; border: none; font-size: 13px; color: var(--text-secondary); outline: none;">
-              <span class="item-value-text" style="font-size: 12px;">至</span>
-              <input type="time" v-model="chatSettings.dndEnd" @change="handleSave" style="background: transparent; border: none; font-size: 13px; color: var(--text-secondary); outline: none;">
+            <div class="item-value">
+              <span class="item-value-text">{{ dndDisplayTime }}</span>
+              <span class="arrow">></span>
             </div>
           </div>
           <span style="font-size: 11px; color: var(--text-tertiary); font-weight: 400; line-height: 1.4; padding-left: 12px;">留空表示不限制，此时段内来电不响铃</span>
@@ -658,6 +725,126 @@ onBeforeUnmount(() => {
       </div>
     </div>
 
+    <ChatInnerThoughtLimitModal
+      :visible="showInnerThoughtLimitModal"
+      :model-value="chatSettings.innerThoughtLimit ?? 50"
+      :default-value="50"
+      title="心声存储上限"
+      sub-title="角色生成的心声超出此上限时，将自动淘汰较早记录"
+      :min="1"
+      :max="1000"
+      :presets="[20, 50, 100, 200, 500]"
+      @close="showInnerThoughtLimitModal = false"
+      @save="onSaveInnerThoughtLimit"
+    />
+
+    <ChatInnerThoughtLimitModal
+      :visible="showRoleThoughtCountModal"
+      :model-value="selectedChat.roleThoughtHistoryCount || 3"
+      :default-value="3"
+      title="读取角色最近心声"
+      sub-title="设置角色在生成新回复时，最多读取其自身最近几条历史心声"
+      placeholder="输入条数 (1 ~ 50)..."
+      :min="1"
+      :max="50"
+      :presets="[1, 2, 3, 5, 10, 20]"
+      @close="showRoleThoughtCountModal = false"
+      @save="onSaveRoleThoughtCount"
+    />
+
+    <ChatInnerThoughtLimitModal
+      :visible="showUserThoughtCountModal"
+      :model-value="selectedChat.userThoughtHistoryCount || 3"
+      :default-value="3"
+      title="读取用户最近心声"
+      sub-title="设置角色在生成新回复时，最多读取用户最近几条历史心声"
+      placeholder="输入条数 (1 ~ 50)..."
+      :min="1"
+      :max="50"
+      :presets="[1, 2, 3, 5, 10, 20]"
+      @close="showUserThoughtCountModal = false"
+      @save="onSaveUserThoughtCount"
+    />
+
+    <ChatInnerThoughtLimitModal
+      :visible="showVoiceMsgCountModal"
+      :model-value="chatSettings.voiceMsgCount ?? 15"
+      :default-value="15"
+      title="语音短期上下文记忆"
+      sub-title="独立于文字聊天外的通话记录条数"
+      placeholder="输入条数 (1 ~ 100)..."
+      :min="1"
+      :max="100"
+      :presets="[5, 10, 15, 20, 30, 50]"
+      @close="showVoiceMsgCountModal = false"
+      @save="onSaveVoiceMsgCount"
+    />
+
+    <ChatInnerThoughtLimitModal
+      :visible="showVoiceSummaryThresholdModal"
+      :model-value="chatSettings.voiceSummaryThreshold ?? 50"
+      :default-value="50"
+      title="语音临时总结频次"
+      sub-title="每达到几条自动总结一次以省Token"
+      placeholder="输入条数 (10 ~ 200)..."
+      :min="10"
+      :max="200"
+      :presets="[20, 30, 50, 80, 100]"
+      @close="showVoiceSummaryThresholdModal = false"
+      @save="onSaveVoiceSummaryThreshold"
+    />
+
+    <ChatInnerThoughtLimitModal
+      :visible="showVideoMsgCountModal"
+      :model-value="chatSettings.videoMsgCount ?? 15"
+      :default-value="15"
+      title="视频短期上下文记忆"
+      sub-title="独立于文字聊天外的视频通话记录条数"
+      placeholder="输入条数 (1 ~ 100)..."
+      :min="1"
+      :max="100"
+      :presets="[5, 10, 15, 20, 30, 50]"
+      @close="showVideoMsgCountModal = false"
+      @save="onSaveVideoMsgCount"
+    />
+
+    <ChatInnerThoughtLimitModal
+      :visible="showVideoSummaryThresholdModal"
+      :model-value="chatSettings.videoSummaryThreshold ?? 50"
+      :default-value="50"
+      title="视频临时总结频次"
+      sub-title="每达到几条自动总结一次以省Token"
+      placeholder="输入条数 (10 ~ 200)..."
+      :min="10"
+      :max="200"
+      :presets="[20, 30, 50, 80, 100]"
+      @close="showVideoSummaryThresholdModal = false"
+      @save="onSaveVideoSummaryThreshold"
+    />
+
+    <ChatInnerThoughtLimitModal
+      :visible="showCallRingSecondsModal"
+      :model-value="chatSettings.charCallRingSeconds ?? 30"
+      :default-value="30"
+      title="来电响铃时长"
+      sub-title="设置角色主动来电时的最大等待接听时长（秒）"
+      placeholder="输入时长 (5 ~ 120)..."
+      unit="秒"
+      :min="5"
+      :max="120"
+      :presets="[15, 20, 30, 45, 60]"
+      @close="showCallRingSecondsModal = false"
+      @save="onSaveCallRingSeconds"
+    />
+
+    <ChatCallDndModal
+      :visible="showCallDndModal"
+      :dnd-start="chatSettings.dndStart"
+      :dnd-end="chatSettings.dndEnd"
+      @close="showCallDndModal = false"
+      @save="onSaveCallDnd"
+    />
+
     <ChatOfflinePresetModal
       :visible="showOfflinePresetModal"
       :selected-chat="selectedChat"
@@ -667,35 +854,71 @@ onBeforeUnmount(() => {
 
     <div v-if="showOfflineModeModal" class="wb-modal-overlay" @click.self="showOfflineModeModal = false">
       <div class="custom-confirm-modal offline-choice-modal">
-        <div class="confirm-title">线下表现形式</div>
+        <div class="modal-header-row">
+          <div class="modal-header-title">线下表现形式</div>
+          <button class="modal-close-btn" aria-label="关闭" @click="showOfflineModeModal = false">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12"/></svg>
+          </button>
+        </div>
         <div class="offline-choice-list">
-          <div class="memory-type-item" :class="{ active: selectedChat.offlineMeetMode !== 'separate' }" @click="selectOfflineMode('mixed')">
-            <div><div class="offline-choice-name">与线上共用页面</div><div class="offline-choice-desc">在当前聊天中切换线下状态</div></div>
-            <span v-if="selectedChat.offlineMeetMode !== 'separate'">✓</span>
+          <div class="choice-card" :class="{ active: selectedChat.offlineMeetMode !== 'separate' }" @click="selectOfflineMode('mixed')">
+            <div class="choice-info">
+              <div class="choice-name">与线上共用页面</div>
+              <div class="choice-desc">在当前聊天中切换线下状态，保持对话连贯</div>
+            </div>
+            <div class="choice-check-indicator" :class="{ checked: selectedChat.offlineMeetMode !== 'separate' }">
+              <svg v-if="selectedChat.offlineMeetMode !== 'separate'" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M5 12.5L9.5 17L19 7"/>
+              </svg>
+            </div>
           </div>
-          <div class="memory-type-item" :class="{ active: selectedChat.offlineMeetMode === 'separate' }" @click="selectOfflineMode('separate')">
-            <div><div class="offline-choice-name">独立线下页面</div><div class="offline-choice-desc">线下记录与线上消息分开展示</div></div>
-            <span v-if="selectedChat.offlineMeetMode === 'separate'">✓</span>
+          <div class="choice-card" :class="{ active: selectedChat.offlineMeetMode === 'separate' }" @click="selectOfflineMode('separate')">
+            <div class="choice-info">
+              <div class="choice-name">独立线下页面</div>
+              <div class="choice-desc">线下见面单独开辟空间，与线上日常消息隔离</div>
+            </div>
+            <div class="choice-check-indicator" :class="{ checked: selectedChat.offlineMeetMode === 'separate' }">
+              <svg v-if="selectedChat.offlineMeetMode === 'separate'" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M5 12.5L9.5 17L19 7"/>
+              </svg>
+            </div>
           </div>
         </div>
-        <div class="confirm-actions"><button class="confirm-btn cancel" @click="showOfflineModeModal = false">取消</button></div>
       </div>
     </div>
 
     <div v-if="showOfflineLocationModal" class="wb-modal-overlay" @click.self="showOfflineLocationModal = false">
       <div class="custom-confirm-modal offline-choice-modal">
-        <div class="confirm-title">地点处理</div>
+        <div class="modal-header-row">
+          <div class="modal-header-title">地点处理</div>
+          <button class="modal-close-btn" aria-label="关闭" @click="showOfflineLocationModal = false">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12"/></svg>
+          </button>
+        </div>
         <div class="offline-choice-list">
-          <div class="memory-type-item" :class="{ active: selectedChat.offlineMeetLocationMode !== 'continuous' }" @click="selectOfflineLocationMode('vague')">
-            <div><div class="offline-choice-name">未确定时保持模糊</div><div class="offline-choice-desc">不替用户擅自决定具体见面地点</div></div>
-            <span v-if="selectedChat.offlineMeetLocationMode !== 'continuous'">✓</span>
+          <div class="choice-card" :class="{ active: selectedChat.offlineMeetLocationMode !== 'continuous' }" @click="selectOfflineLocationMode('vague')">
+            <div class="choice-info">
+              <div class="choice-name">未确定时保持模糊</div>
+              <div class="choice-desc">不替用户擅自决定具体见面地点，留出想象空间</div>
+            </div>
+            <div class="choice-check-indicator" :class="{ checked: selectedChat.offlineMeetLocationMode !== 'continuous' }">
+              <svg v-if="selectedChat.offlineMeetLocationMode !== 'continuous'" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M5 12.5L9.5 17L19 7"/>
+              </svg>
+            </div>
           </div>
-          <div class="memory-type-item" :class="{ active: selectedChat.offlineMeetLocationMode === 'continuous' }" @click="selectOfflineLocationMode('continuous')">
-            <div><div class="offline-choice-name">保持场景连续</div><div class="offline-choice-desc">优先沿用历史中已经确定的地点</div></div>
-            <span v-if="selectedChat.offlineMeetLocationMode === 'continuous'">✓</span>
+          <div class="choice-card" :class="{ active: selectedChat.offlineMeetLocationMode === 'continuous' }" @click="selectOfflineLocationMode('continuous')">
+            <div class="choice-info">
+              <div class="choice-name">保持场景连续</div>
+              <div class="choice-desc">优先沿用历史中已经确定的地点，连贯性更高</div>
+            </div>
+            <div class="choice-check-indicator" :class="{ checked: selectedChat.offlineMeetLocationMode === 'continuous' }">
+              <svg v-if="selectedChat.offlineMeetLocationMode === 'continuous'" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M5 12.5L9.5 17L19 7"/>
+              </svg>
+            </div>
           </div>
         </div>
-        <div class="confirm-actions"><button class="confirm-btn cancel" @click="showOfflineLocationModal = false">取消</button></div>
       </div>
     </div>
   </div>
@@ -715,8 +938,185 @@ onBeforeUnmount(() => {
 
 <style scoped>
 @import './ChatSettingsStyles.css';
-.offline-choice-modal { width: min(88vw, 360px); }
-.offline-choice-list { display: flex; flex-direction: column; gap: 8px; margin-top: 16px; }
-.offline-choice-name { color: var(--text-primary); font-size: 14px; font-weight: 500; }
-.offline-choice-desc { color: var(--text-tertiary); font-size: 11px; line-height: 1.4; margin-top: 3px; }
+
+.offline-choice-modal {
+  width: min(90vw, 380px);
+  padding: 20px 20px 22px;
+  border-radius: 20px;
+  background: #ffffff;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.12), 0 2px 8px rgba(0, 0, 0, 0.04);
+  border: 1px solid rgba(0, 0, 0, 0.06);
+}
+
+:global(.is-dark) .offline-choice-modal {
+  background: var(--sys-bg-secondary);
+  border-color: color-mix(in srgb, var(--text-primary) 12%, transparent);
+}
+
+.modal-header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+  padding: 0 2px;
+}
+
+.modal-header-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-primary);
+  letter-spacing: -0.01em;
+}
+
+.modal-close-btn {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  padding: 0;
+}
+
+.modal-close-btn svg {
+  width: 15px;
+  height: 15px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.modal-close-btn:hover {
+  background: rgba(0, 0, 0, 0.05);
+  color: var(--text-primary);
+  transform: scale(1.05);
+}
+
+:global(.is-dark) .modal-close-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.modal-close-btn:active {
+  transform: scale(0.92);
+}
+
+.offline-choice-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.choice-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 14px 16px;
+  border-radius: 14px;
+  border: 1.5px solid #eaeaea;
+  background: #ffffff;
+  cursor: pointer;
+  transition: all 0.22s cubic-bezier(0.4, 0, 0.2, 1);
+  user-select: none;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.02);
+}
+
+:global(.is-dark) .choice-card {
+  background: var(--sys-bg-secondary);
+  border-color: color-mix(in srgb, var(--text-primary) 12%, transparent);
+}
+
+.choice-card:hover {
+  border-color: rgba(0, 0, 0, 0.2);
+  background: #ffffff;
+}
+
+:global(.is-dark) .choice-card:hover {
+  border-color: color-mix(in srgb, var(--text-primary) 22%, transparent);
+  background: var(--sys-bg-secondary);
+}
+
+.choice-card:active {
+  transform: scale(0.985);
+}
+
+.choice-card.active {
+  border-color: var(--text-primary);
+  background: #ffffff;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.06);
+}
+
+:global(.is-dark) .choice-card.active {
+  border-color: var(--text-primary);
+  background: var(--sys-bg-secondary);
+  box-shadow: 0 4px 14px color-mix(in srgb, var(--text-primary) 8%, transparent);
+}
+
+.choice-info {
+  min-width: 0;
+  flex: 1;
+  text-align: left;
+}
+
+.choice-name {
+  color: var(--text-primary);
+  font-size: 14.5px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.choice-desc {
+  color: var(--text-tertiary);
+  font-size: 11.5px;
+  line-height: 1.45;
+  margin-top: 4px;
+}
+
+.choice-card.active .choice-desc {
+  color: var(--text-secondary);
+}
+
+.choice-check-indicator {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 1.5px solid color-mix(in srgb, var(--text-primary) 22%, transparent);
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+  background: #ffffff;
+}
+
+:global(.is-dark) .choice-check-indicator {
+  background: transparent;
+}
+
+.choice-check-indicator.checked {
+  background: var(--text-primary);
+  border-color: var(--text-primary);
+  transform: scale(1.05);
+}
+
+.choice-check-indicator svg {
+  width: 13px;
+  height: 13px;
+  fill: none;
+  stroke: #ffffff;
+  stroke-width: 2.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+:global(.is-dark) .choice-check-indicator svg {
+  stroke: var(--sys-bg-secondary);
+}
 </style>

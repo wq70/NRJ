@@ -6,7 +6,7 @@
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  background: #f8f9fa; /* 柔和现代底色 */
+  background: #ffffff; /* 纯白底色 */
   color: #1a1a1a;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
   -webkit-font-smoothing: antialiased;
@@ -28,9 +28,9 @@
   border-bottom: 1px solid transparent;
 }
 .floating-nav-bar.is-scrolled, .floating-nav-bar.solid-nav {
-  background: rgba(255, 255, 255, 0.85);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
+  background: #ffffff;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
   border-bottom: 1px solid rgba(0,0,0,0.05);
 }
 
@@ -41,7 +41,7 @@
   height: 38px;
   border: 0;
   border-radius: 50%;
-  background: rgba(255, 255, 255, 0.4);
+  background: rgba(255, 255, 255, 0.8);
   color: #111;
   cursor: pointer;
   backdrop-filter: blur(4px);
@@ -262,7 +262,8 @@
 .card-tag {
   font-size: 11px;
   color: #999;
-  background: #f5f5f5;
+  background: #ffffff;
+  border: 1px solid #ededed;
   padding: 4px 8px;
   border-radius: 6px;
 }
@@ -461,9 +462,9 @@
   align-items: center;
   gap: 6px;
   padding: 8px 14px;
-  border: none;
+  border: 1px solid #ededed;
   border-radius: 20px;
-  background: #f2f2f2;
+  background: #ffffff;
   color: #333;
   font-size: 12px;
   font-weight: 600;
@@ -482,9 +483,13 @@
 
 .full-stream {
   padding: 0 16px 40px;
+  background: #ffffff;
 }
 .full-stream .editorial-card {
   cursor: default;
+  background: #ffffff;
+  border: 1px solid #f0f0ee;
+  box-shadow: 0 2px 10px rgba(0,0,0,0.02);
 }
 
 .alternate-profile-extras {
@@ -812,7 +817,8 @@
   align-items: center;
   padding: 4px 10px;
   border-radius: 12px;
-  background: #f5f6f7;
+  background: #ffffff;
+  border: 1px solid #ededed;
   color: #4b4b4b;
   font-size: 11px;
   font-weight: 500;
@@ -824,7 +830,7 @@
   height: 40px;
   place-items: center;
   border-radius: 12px;
-  background: #eef0f2;
+  background: #f7f7f7;
   background-position: center;
   background-size: cover;
   color: #555;
@@ -856,7 +862,7 @@
   align-items: center;
   gap: 14px;
   padding: 14px 16px;
-  border: 1px solid rgba(0, 0, 0, 0.05);
+  border: 1px solid #ededed;
   border-radius: 16px;
   background: #ffffff;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.02);

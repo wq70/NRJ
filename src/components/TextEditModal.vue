@@ -1,45 +1,100 @@
 /* WARNING: 本项目专属“粘人精”，严禁出现 Kiro、Krio、周棋洛等任何相关英文或拼音命名！ */
 <template>
   <Teleport to="body">
-    <div class="nrt-text-edit-overlay" v-if="visible" @click.self="close">
-      <div class="nrt-text-edit-content">
-        <!-- 绝对稳定的头部导航栏 -->
-        <div class="nrt-text-edit-header">
-          <div class="nrt-text-btn-left" @click="close">取消</div>
-          <div class="nrt-text-title">{{ title }}</div>
-          <div class="nrt-text-btn-right" @click="saveText">完成</div>
-        </div>
-        
-        <!-- 沉浸式排版输入区 -->
-        <div class="nrt-text-edit-body">
-          <div class="nrt-canvas-wrapper">
-            <span class="nrt-quote-mark">“</span>
-            <textarea 
-              ref="textareaRef"
-              v-model="inputText" 
-              :placeholder="placeholder"
-              class="nrt-canvas-textarea"
-              spellcheck="false"
-              @input="autoResize"
-            ></textarea>
+    <div 
+      v-if="visible" 
+      class="clingy-scribe-backdrop" 
+      @click.self="handleClose"
+      @keydown.esc="handleClose"
+    >
+      <div 
+        class="clingy-scribe-sheet"
+        role="dialog"
+        aria-modal="true"
+        :aria-label="title"
+      >
+        <!-- 便笺顶栏：标题与轻触关闭 -->
+        <header class="sheet-masthead">
+          <div class="masthead-meta">
+            <span class="meta-label">EDIT</span>
+            <h2 class="meta-title">{{ title }}</h2>
           </div>
-          
-          <!-- 极简重置操作 -->
           <button 
-            class="nrt-subtle-reset-btn" 
-            @click="resetText"
-            :class="{ invisible: inputText === defaultText }"
+            type="button" 
+            class="masthead-close-btn" 
+            title="关闭"
+            aria-label="关闭"
+            @click="handleClose"
           >
-            恢复默认
+            <svg class="close-icon" viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="18" y1="6" x2="6" y2="18"></line>
+              <line x1="6" y1="6" x2="18" y2="18"></line>
+            </svg>
           </button>
-        </div>
+        </header>
+
+        <!-- 书写工作区 -->
+        <section class="sheet-editor-box">
+          <textarea
+            ref="inputRef"
+            v-model="inputText"
+            :placeholder="placeholder || '在此挥笔撰写...'"
+            class="sheet-textarea"
+            rows="3"
+            spellcheck="false"
+            @input="handleInputResize"
+            @keydown.enter="handleKeyEnter"
+          ></textarea>
+        </section>
+
+        <!-- 底部交互控制带 -->
+        <footer class="sheet-dock">
+          <div class="dock-status">
+            <span class="char-meter">{{ characterCount }} 字</span>
+            <span v-if="hasChanges" class="status-badge modified">已编辑</span>
+            <span v-else class="status-badge untouched">原样</span>
+          </div>
+
+          <div class="dock-actions">
+            <!-- 辅助按钮：恢复默认 -->
+            <button
+              v-if="canReset"
+              type="button"
+              class="dock-action-btn subtle-btn"
+              title="复原默认文案"
+              @click="handleReset"
+            >
+              重置
+            </button>
+
+            <!-- 辅助按钮：一键清空 -->
+            <button
+              v-if="inputText.length > 0"
+              type="button"
+              class="dock-action-btn subtle-btn"
+              title="清空输入"
+              @click="handleClear"
+            >
+              清空
+            </button>
+
+            <!-- 主提交按钮 -->
+            <button
+              type="button"
+              class="dock-action-btn commit-btn"
+              @click="handleSave"
+            >
+              保存
+            </button>
+          </div>
+        </footer>
       </div>
     </div>
   </Teleport>
 </template>
 
 <script setup lang="ts">
-import { ref, watch, nextTick } from 'vue'
+import { ref, watch, nextTick, computed } from 'vue'
 
 const props = defineProps<{
   visible: boolean
@@ -55,214 +110,309 @@ const emit = defineEmits<{
 }>()
 
 const inputText = ref('')
-const textareaRef = ref<HTMLTextAreaElement | null>(null)
+const inputRef = ref<HTMLTextAreaElement | null>(null)
 
-const autoResize = () => {
-  if (textareaRef.value) {
-    textareaRef.value.style.height = 'auto'
-    textareaRef.value.style.height = textareaRef.value.scrollHeight + 'px'
+const characterCount = computed(() => {
+  return inputText.value.length
+})
+
+const hasChanges = computed(() => {
+  return inputText.value !== props.currentText
+})
+
+const canReset = computed(() => {
+  return props.defaultText !== undefined && inputText.value !== props.defaultText
+})
+
+const handleInputResize = () => {
+  if (inputRef.value) {
+    inputRef.value.style.height = 'auto'
+    const nextHeight = Math.min(Math.max(inputRef.value.scrollHeight, 72), 220)
+    inputRef.value.style.height = `${nextHeight}px`
   }
 }
 
-watch(() => props.visible, (newVal) => {
-  if (newVal) {
-    inputText.value = props.currentText
-    nextTick(() => {
-      autoResize()
-    })
+const focusAndPositionCursor = () => {
+  if (inputRef.value) {
+    inputRef.value.focus()
+    const len = inputRef.value.value.length
+    inputRef.value.setSelectionRange(len, len)
   }
-})
+}
 
-watch(() => inputText.value, () => {
+watch(
+  () => props.visible,
+  (newVal) => {
+    if (newVal) {
+      inputText.value = props.currentText || ''
+      nextTick(() => {
+        handleInputResize()
+        focusAndPositionCursor()
+      })
+    }
+  }
+)
+
+watch(inputText, () => {
   nextTick(() => {
-    autoResize()
+    handleInputResize()
   })
 })
 
-const close = () => {
+const handleClose = () => {
   emit('update:visible', false)
 }
 
-const resetText = () => {
-  inputText.value = props.defaultText
+const handleClear = () => {
+  inputText.value = ''
+  nextTick(() => {
+    handleInputResize()
+    inputRef.value?.focus()
+  })
 }
 
-const saveText = () => {
+const handleReset = () => {
+  inputText.value = props.defaultText || ''
+  nextTick(() => {
+    handleInputResize()
+    focusAndPositionCursor()
+  })
+}
+
+const handleKeyEnter = (e: KeyboardEvent) => {
+  // 单行回车或 Ctrl/Cmd+Enter 即可快捷提交；Shift+Enter 允许换行
+  if (e.shiftKey) return
+  e.preventDefault()
+  handleSave()
+}
+
+const handleSave = () => {
   const finalVal = inputText.value.trim() !== '' ? inputText.value.trim() : props.defaultText
   emit('saved', finalVal)
-  close()
+  handleClose()
 }
 </script>
 
 <style scoped>
-/* 隔离所有样式，重写最坚固的排版 */
-.nrt-text-edit-overlay * {
+.clingy-scribe-backdrop * {
   box-sizing: border-box;
 }
 
-.nrt-text-edit-overlay {
+.clingy-scribe-backdrop {
   position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(0, 0, 0, 0.4);
-  backdrop-filter: blur(4px);
+  inset: 0;
+  background-color: rgba(18, 20, 26, 0.45);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
   display: flex;
-  justify-content: center;
   align-items: center;
+  justify-content: center;
+  padding: 20px;
   z-index: 9999;
-  animation: nrtFadeIn 0.2s ease-out;
+  animation: scribeFade 0.18s ease-out;
 }
 
-@keyframes nrtFadeIn {
-  from { opacity: 0; }
-  to { opacity: 1; }
+@keyframes scribeFade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
 }
 
-.nrt-text-edit-content {
-  background: var(--sys-bg-secondary);
-  border-radius: 20px;
-  width: 85%;
-  max-width: 320px;
-  box-shadow: 0 24px 48px rgba(0,0,0,0.15);
-  display: block; /* 放弃 flex 列布局，直接用 block */
-  overflow: hidden;
-  animation: nrtSlideUp 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-}
-
-@keyframes nrtSlideUp {
-  from { transform: translateY(20px); opacity: 0; }
-  to { transform: translateY(0); opacity: 1; }
-}
-
-/* 最核心的头部排版：绝对定位法 */
-.nrt-text-edit-header {
-  position: relative;
-  height: 52px;
-  border-bottom: 1px solid var(--border-color);
+/* 笺纸主体容器：纯色、挺括、文学质感 */
+.clingy-scribe-sheet {
   width: 100%;
+  max-width: 380px;
+  background-color: #ffffff;
+  border: 1px solid #e8eaee;
+  border-radius: 16px;
+  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.12);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  animation: scribeSlide 0.24s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-.nrt-text-btn-left,
-.nrt-text-btn-right {
-  position: absolute;
-  top: 0;
-  height: 52px;
-  line-height: 52px;
-  padding: 0 20px;
-  font-size: 15px;
-  cursor: pointer;
-  white-space: nowrap; /* 绝对禁止换行 */
+@keyframes scribeSlide {
+  from {
+    transform: translateY(12px) scale(0.98);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0) scale(1);
+    opacity: 1;
+  }
 }
 
-.nrt-text-btn-left {
-  left: 0;
-  color: var(--text-tertiary);
-  font-weight: 400;
+/* 笺顶信息栏 */
+.sheet-masthead {
+  padding: 18px 20px 14px 20px;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  border-bottom: 1px solid #f0f2f5;
+  background-color: #fafbfc;
 }
 
-.nrt-text-btn-right {
-  right: 0;
-  color: var(--text-primary);
-  font-weight: 600;
+.masthead-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
 }
 
-.nrt-text-btn-left:active,
-.nrt-text-btn-right:active {
-  opacity: 0.5;
+.meta-label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 1.5px;
+  color: #8c93a0;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  text-transform: uppercase;
 }
 
-.nrt-text-title {
-  position: absolute;
-  top: 0;
-  left: 80px; /* 避开左按钮 */
-  right: 80px; /* 避开右按钮 */
-  height: 52px;
-  line-height: 52px;
-  text-align: center;
+.meta-title {
+  margin: 0;
   font-size: 16px;
   font-weight: 600;
-  color: var(--text-primary);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  color: #1f2329;
+  letter-spacing: 0.2px;
+  line-height: 1.3;
 }
 
-.nrt-text-edit-body {
-  padding: 30px 24px 40px;
-  max-height: 60vh;
-  overflow-y: auto;
-  display: block;
-}
-
-.nrt-text-edit-body::-webkit-scrollbar {
-  display: none;
-}
-
-.nrt-canvas-wrapper {
-  position: relative;
-  width: 100%;
-  padding-left: 12px;
-  border-left: 2px solid var(--border-color);
-  margin-bottom: 30px;
-}
-
-.nrt-quote-mark {
-  position: absolute;
-  top: -15px;
-  left: -8px;
-  font-size: 40px;
-  color: #e5e5e5;
-  font-family: Georgia, serif;
-  user-select: none;
-  line-height: 1;
-}
-
-.nrt-canvas-textarea {
-  width: 100%;
-  border: none;
+.masthead-close-btn {
   background: transparent;
-  outline: none;
-  font-size: 17px;
-  font-weight: 400;
-  color: #2c2c2e;
-  text-align: left;
-  padding: 0;
-  resize: none;
-  line-height: 1.8;
-  letter-spacing: 0.6px;
-  min-height: 40px;
-  overflow: hidden;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-  display: block;
-}
-
-.nrt-canvas-textarea::placeholder {
-  color: #d1d1d6;
-  font-weight: 300;
-}
-
-.nrt-subtle-reset-btn {
-  background: none;
   border: none;
-  color: #a1a1aa;
-  font-size: 12px;
-  font-weight: 500;
+  padding: 6px;
+  margin-top: -2px;
+  margin-right: -4px;
+  color: #8c93a0;
+  border-radius: 8px;
   cursor: pointer;
-  padding: 4px 12px;
-  display: block;
-  margin: 0 auto;
-  transition: all 0.2s;
-  letter-spacing: 0.5px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: color 0.15s ease, background-color 0.15s ease;
 }
 
-.nrt-subtle-reset-btn:hover {
-  color: var(--text-primary);
+.masthead-close-btn:hover {
+  color: #1f2329;
+  background-color: #eef1f4;
 }
 
-.invisible {
-  opacity: 0;
-  pointer-events: none;
+/* 文本编辑区域 */
+.sheet-editor-box {
+  padding: 16px 20px 12px 20px;
+  background-color: #ffffff;
+}
+
+.sheet-textarea {
+  width: 100%;
+  min-height: 72px;
+  max-height: 220px;
+  padding: 12px 14px;
+  font-size: 15px;
+  line-height: 1.65;
+  color: #1f2329;
+  background-color: #f7f8fa;
+  border: 1px solid #e5e8ec;
+  border-radius: 10px;
+  outline: none;
+  resize: none;
+  font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Segoe UI", Roboto, sans-serif;
+  transition: border-color 0.15s ease, background-color 0.15s ease;
+}
+
+.sheet-textarea:focus {
+  background-color: #ffffff;
+  border-color: var(--text-edit-focus-color, #3b82f6);
+  box-shadow: 0 0 0 3px var(--text-edit-focus-ring, rgba(59, 130, 246, 0.22));
+}
+
+.sheet-textarea::placeholder {
+  color: #a0a6b1;
+  font-weight: 400;
+}
+
+/* 底部交互控制带 */
+.sheet-dock {
+  padding: 12px 20px 16px 20px;
+  background-color: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.dock-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.char-meter {
+  color: #8c93a0;
+  font-weight: 500;
+}
+
+.status-badge {
+  font-size: 10px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-weight: 500;
+}
+
+.status-badge.modified {
+  background-color: #eff6ff;
+  color: #2563eb;
+}
+
+.status-badge.untouched {
+  background-color: #f3f4f6;
+  color: #9ca3af;
+}
+
+.dock-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.dock-action-btn {
+  border: none;
+  outline: none;
+  cursor: pointer;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  transition: background-color 0.15s ease, color 0.15s ease;
+  font-family: inherit;
+}
+
+.subtle-btn {
+  background-color: transparent;
+  color: #64748b;
+  padding: 6px 10px;
+}
+
+.subtle-btn:hover {
+  background-color: #f1f5f9;
+  color: #0f172a;
+}
+
+.commit-btn {
+  background-color: #1f2329;
+  color: #ffffff;
+  padding: 7px 18px;
+  font-weight: 600;
+}
+
+.commit-btn:hover {
+  background-color: #374151;
+}
+
+.commit-btn:active {
+  background-color: #111827;
 }
 </style>

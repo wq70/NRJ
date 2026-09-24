@@ -5,7 +5,7 @@ import { useChatState } from '../../composables/useChatState'
 import { useChatRoomAPI } from '../../composables/useChatRoomAPI'
 import { useChatAuth } from '../../composables/useChatAuth'
 import { hasPendingReplyReplacement } from '../../services/replyVariants'
-import './ChatRoomView.css'
+import ChatMessageEditModal from './modals/ChatMessageEditModal.vue'
 
 const props = defineProps<{ groupMode?: boolean; group?: any; externalIsGenerating?: boolean }>()
 const emit = defineEmits<{
@@ -22,6 +22,21 @@ const activeChat = computed(() => props.group || selectedChat.value)
 const isRoomActive = ref(true)
 const inputMessage = ref('')
 const messageAreaRef = ref<HTMLElement | null>(null)
+const textareaRef = ref<HTMLTextAreaElement | null>(null)
+
+// 提示 Toast
+const toastText = ref('')
+const toastVisible = ref(false)
+let toastTimer: any = null
+
+function showToast(msg: string) {
+  toastText.value = msg
+  toastVisible.value = true
+  if (toastTimer) clearTimeout(toastTimer)
+  toastTimer = setTimeout(() => {
+    toastVisible.value = false
+  }, 1800)
+}
 
 const displayMessages = computed(() => {
   if (!activeChat.value?.messages) return []
@@ -29,11 +44,6 @@ const displayMessages = computed(() => {
     m.isOfflineMeetMsg && (m.type === 'left' || m.type === 'right' || m.type === 'system' || m.type === 'narration')
   )
 })
-
-function showToast(msg: string) {
-  // 线下页简单提示
-  console.log('[线下见面]', msg)
-}
 
 function updatePreviewAndTime(content: string) {
   if (!selectedChat.value) return
@@ -105,6 +115,7 @@ const handleSend = async () => {
   if (props.groupMode) {
     emit('send', text)
     inputMessage.value = ''
+    resetTextareaHeight()
     await scrollToBottom()
     return
   }
@@ -113,18 +124,132 @@ const handleSend = async () => {
     selectedChat.value.messages = []
   }
 
+  const now = Date.now()
   selectedChat.value.messages.push({
-    id: Date.now(),
+    id: now,
     type: 'right',
     content: text,
-    isOfflineMeetMsg: true
+    isOfflineMeetMsg: true,
+    timestamp: now
   })
 
   inputMessage.value = ''
+  resetTextareaHeight()
   updatePreviewAndTime(text)
   saveCustomContacts()
   await scrollToBottom()
   await triggerAPI()
+}
+
+function resetTextareaHeight() {
+  if (textareaRef.value) {
+    textareaRef.value.style.height = '36px'
+  }
+}
+
+function handleInput() {
+  if (!textareaRef.value) return
+  textareaRef.value.style.height = 'auto'
+  textareaRef.value.style.height = Math.min(textareaRef.value.scrollHeight, 120) + 'px'
+}
+
+// 格式化时间
+function formatMsgTime(timestamp?: number) {
+  if (!timestamp) return ''
+  const d = new Date(timestamp)
+  return d.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
+}
+
+// 连续发言判断（弱化重复头像）
+function isContinuation(idx: number): boolean {
+  if (idx === 0) return false
+  const prev = displayMessages.value[idx - 1]
+  const curr = displayMessages.value[idx]
+  if (!prev || !curr) return false
+  return prev.type === curr.type && (curr.type === 'left' || curr.type === 'right')
+}
+
+// 文本段落解析（支持 *动作/心理* 样式）
+interface ParsedParagraph {
+  text: string
+  isAction: boolean
+}
+
+function parseParagraphs(content: string): ParsedParagraph[] {
+  if (!content) return []
+  const rawParagraphs = content.split('\n').filter(p => p.trim().length > 0)
+  return rawParagraphs.map(p => {
+    const trimmed = p.trim()
+    const isAction = (trimmed.startsWith('*') && trimmed.endsWith('*')) || (trimmed.startsWith('（') && trimmed.endsWith('）')) || (trimmed.startsWith('(') && trimmed.endsWith(')'))
+    return {
+      text: trimmed,
+      isAction
+    }
+  })
+}
+
+// 复制消息
+async function handleCopy(content: string) {
+  try {
+    await navigator.clipboard.writeText(content)
+    showToast('已复制内容')
+  } catch {
+    showToast('复制失败')
+  }
+}
+
+// 删除消息
+function handleDelete(msgId: number) {
+  if (!selectedChat.value?.messages) return
+  const idx = selectedChat.value.messages.findIndex((m: any) => m.id === msgId)
+  if (idx !== -1) {
+    selectedChat.value.messages.splice(idx, 1)
+    saveCustomContacts()
+    showToast('已删除消息')
+  }
+}
+
+// 编辑消息
+const showEditModal = ref(false)
+const editTargetId = ref<number | undefined>(undefined)
+const editInitialContent = ref('')
+const editInitialType = ref('left')
+
+function handleOpenEdit(msg: any) {
+  editTargetId.value = msg.id
+  editInitialContent.value = msg.content || ''
+  editInitialType.value = msg.type || 'left'
+  showEditModal.value = true
+}
+
+function handleSaveEdit(payload: { messageId?: number; content: string; type: string; action: 'replace' | 'insert_above' | 'insert_below' }) {
+  if (!payload.messageId || !selectedChat.value?.messages) return
+  const index = selectedChat.value.messages.findIndex((m: any) => m.id === payload.messageId)
+  if (index === -1) return
+
+  if (payload.action === 'replace') {
+    selectedChat.value.messages[index].content = payload.content
+    selectedChat.value.messages[index].type = payload.type
+    saveCustomContacts()
+    showToast('消息已修改')
+  } else {
+    const isAbove = payload.action === 'insert_above'
+    const insertIndex = isAbove ? index : index + 1
+    const targetMsg = selectedChat.value.messages[index]
+    const newTimestamp = targetMsg.timestamp ? targetMsg.timestamp + (isAbove ? -1 : 1) : Date.now()
+    const newMessage = {
+      id: Date.now() + Math.floor(Math.random() * 1000),
+      timestamp: newTimestamp,
+      type: payload.type,
+      content: payload.content,
+      isOfflineMeetMsg: true
+    }
+    selectedChat.value.messages.splice(insertIndex, 0, newMessage)
+    selectedChat.value.messages.sort((a: any, b: any) => (a.timestamp || a.id) - (b.timestamp || b.id))
+    saveCustomContacts()
+    showToast('已插入消息')
+  }
+  showEditModal.value = false
 }
 
 onMounted(() => {
@@ -133,333 +258,715 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="offline-meet-container" v-if="activeChat">
-    <!-- 顶部半透明导航 -->
-    <header class="offline-meet-header">
-      <button class="offline-back-btn" @click="emit('back')">
-        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <polyline points="15 18 9 12 15 6"></polyline>
-        </svg>
-        <span>结束见面</span>
+  <div class="offline-wrapper" v-if="activeChat">
+    <!-- 顶部纯白标题栏 -->
+    <header class="offline-topbar">
+      <button class="back-action-btn" @click="emit('back')" title="结束见面">
+        <span class="back-chevron">‹</span>
+        <span class="back-label">结束见面</span>
       </button>
-      <div class="offline-header-title">线下互动录</div>
-      <div class="offline-header-right"></div>
+      <div class="room-title-info">
+        <div class="room-name">{{ activeChat.name || '角色' }}</div>
+        <div class="room-sub">线下互动录 · 面对面互动</div>
+      </div>
+      <div class="topbar-actions">
+        <button
+          v-if="displayedGenerating"
+          class="topbar-btn stop-btn"
+          @click="handleStop"
+          title="停止生成"
+        >
+          ■
+        </button>
+        <button
+          v-else
+          class="topbar-btn regen-btn"
+          @click="handleRegenerateClick"
+          title="重新生成"
+        >
+          ↻
+        </button>
+      </div>
     </header>
 
-    <!-- 滚动区域 -->
-    <div class="offline-meet-messages" ref="messageAreaRef">
-      <div class="offline-meet-scene-hint">
-        「 你们正处于线下面对面的真实接触中 」<br/>
-        <span style="opacity: 0.7; font-size: 11px;">地点保持模糊，由你或角色共同决定氛围与节奏</span>
+    <!-- 滚动消息内容区 -->
+    <main class="offline-chat-area" ref="messageAreaRef">
+      <div class="offline-scene-header">
+        <div class="scene-badge">「 你们正处于线下面对面的真实接触中 」</div>
+        <div class="scene-desc">地点保持模糊，由你或角色共同决定氛围与节奏</div>
       </div>
 
-      <div v-if="displayMessages.length === 0" class="offline-empty-hint">
-        暂无记录。发送第一句话，开始你们的故事。
+      <div v-if="displayMessages.length === 0" class="offline-empty-notice">
+        暂无记录。在下方输入动作或说话，开启你们的面对面故事。
       </div>
 
-      <!-- 流式段落排版 -->
-      <div class="offline-novel-flow">
-        <div
-          v-for="msg in displayMessages"
-          :key="msg.id"
-          class="offline-msg-row"
-          :class="{
-            'is-user': msg.type === 'right',
-            'is-char': msg.type === 'left',
-            'is-narration': msg.type === 'system' || msg.type === 'narration'
-          }"
-        >
-          <template v-if="msg.type === 'system' || msg.type === 'narration'">
-            <div class="offline-narration">—— {{ msg.content }} ——</div>
-          </template>
-          <template v-else-if="msg.type === 'right'">
-            <div class="offline-paragraph user-paragraph">
-              {{ msg.content }}
+      <div class="offline-dialog-stream">
+        <template v-for="(msg, idx) in displayMessages" :key="msg.id">
+          <!-- 旁白 / 系统条目 -->
+          <section v-if="msg.type === 'system' || msg.type === 'narration'" class="stream-narration">
+            <span class="narration-line">—— {{ msg.content }} ——</span>
+          </section>
+
+          <!-- 角色侧消息 (left) -->
+          <section
+            v-else-if="msg.type === 'left'"
+            class="msg-row left"
+            :class="{ continuation: isContinuation(idx) }"
+          >
+            <div class="square-avatar">
+              <img
+                v-if="activeChat.avatarUrl && !isContinuation(idx)"
+                :src="activeChat.avatarUrl"
+                :alt="activeChat.name"
+                class="avatar-img"
+              />
+              <span v-else-if="!isContinuation(idx)" class="avatar-letter">
+                {{ String(activeChat.name || 'C').charAt(0) }}
+              </span>
             </div>
-          </template>
-          <template v-else>
-            <div class="offline-paragraph char-paragraph">
-              {{ msg.content }}
+            <div class="msg-content-wrapper">
+              <div v-if="!isContinuation(idx)" class="msg-meta">
+                <span class="speaker-name">{{ activeChat.name || '角色' }}</span>
+                <span class="msg-time">{{ formatMsgTime(msg.timestamp) }}</span>
+              </div>
+              <div class="msg-box">
+                <div class="msg-paragraphs">
+                  <p
+                    v-for="(para, pIdx) in parseParagraphs(msg.content)"
+                    :key="pIdx"
+                    :class="{ 'action-text': para.isAction }"
+                  >
+                    {{ para.text }}
+                  </p>
+                </div>
+                <!-- 悬浮工具条 -->
+                <div class="msg-toolbar">
+                  <button class="tool-btn" @click="handleCopy(msg.content)">复制</button>
+                  <button class="tool-btn" @click="handleOpenEdit(msg)">编辑</button>
+                  <button class="tool-btn" :disabled="displayedGenerating" @click="handleRegenerateClick" title="重新生成">↻</button>
+                  <button class="tool-btn danger" @click="handleDelete(msg.id)">删除</button>
+                </div>
+              </div>
             </div>
-          </template>
-        </div>
+          </section>
 
-        <div v-if="activeChat.isTyping" class="offline-typing-indicator">
-          对方正在回应<span class="dot">.</span><span class="dot">.</span><span class="dot">.</span>
+          <!-- 用户侧消息 (right) -->
+          <section
+            v-else-if="msg.type === 'right'"
+            class="msg-row right"
+            :class="{ continuation: isContinuation(idx) }"
+          >
+            <div class="msg-content-wrapper">
+              <div v-if="!isContinuation(idx)" class="msg-meta">
+                <span class="msg-time">{{ formatMsgTime(msg.timestamp) }}</span>
+                <span class="speaker-name">{{ myProfile.name || '我' }}</span>
+              </div>
+              <div class="msg-box">
+                <div class="msg-paragraphs">
+                  <p
+                    v-for="(para, pIdx) in parseParagraphs(msg.content)"
+                    :key="pIdx"
+                    :class="{ 'action-text': para.isAction }"
+                  >
+                    {{ para.text }}
+                  </p>
+                </div>
+                <!-- 悬浮工具条 -->
+                <div class="msg-toolbar">
+                  <button class="tool-btn" @click="handleCopy(msg.content)">复制</button>
+                  <button class="tool-btn" @click="handleOpenEdit(msg)">编辑</button>
+                  <button class="tool-btn danger" @click="handleDelete(msg.id)">删除</button>
+                </div>
+              </div>
+            </div>
+            <div class="square-avatar">
+              <img
+                v-if="myProfile.avatarUrl && !isContinuation(idx)"
+                :src="myProfile.avatarUrl"
+                :alt="myProfile.name"
+                class="avatar-img"
+              />
+              <span v-else-if="!isContinuation(idx)" class="avatar-letter">
+                {{ String(myProfile.name || '我').charAt(0) }}
+              </span>
+            </div>
+          </section>
+        </template>
+
+        <!-- 对方回应状态 -->
+        <div v-if="activeChat.isTyping || displayedGenerating" class="typing-notice">
+          {{ activeChat.name || '对方' }} 正在回应<span class="typing-dots">...</span>
         </div>
       </div>
-    </div>
+    </main>
 
-    <!-- 底部悬浮输入区 -->
-    <footer class="offline-meet-footer">
-      <div class="offline-input-wrapper">
+    <!-- 底部纯白输入栏 -->
+    <footer class="offline-composer-wrap">
+      <div class="offline-composer">
         <textarea
+          ref="textareaRef"
           v-model="inputMessage"
-          class="offline-input"
+          class="composer-textarea"
           placeholder="描述你的动作，或说点什么..."
           rows="1"
+          @input="handleInput"
           @keydown.enter.exact.prevent="handleSend"
-          oninput="this.style.height = '';this.style.height = Math.min(this.scrollHeight, 120) + 'px'"
         ></textarea>
-        
-        <div class="offline-action-group">
+        <div class="composer-actions">
+          <button
+            v-if="groupMode"
+            class="composer-btn trigger"
+            :disabled="displayedGenerating"
+            @click="handleTrigger"
+            title="请求回应"
+          >
+            回应
+          </button>
           <button
             v-if="displayedGenerating"
-            class="offline-icon-btn stop"
+            class="composer-btn stop"
             @click="handleStop"
             title="停止生成"
           >
-            <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2"></rect></svg>
+            停止
           </button>
           <button
             v-else
-            class="offline-icon-btn send"
+            class="composer-btn send"
             :disabled="!inputMessage.trim()"
             @click="handleSend"
-            title="发送"
           >
-            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
-          </button>
-          <button
-            class="offline-icon-btn regen"
-            :disabled="displayedGenerating"
-            @click="handleRegenerateClick"
-            title="重新生成"
-          >
-            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
-          </button>
-          <button v-if="groupMode" class="offline-icon-btn regen" :disabled="displayedGenerating" @click="handleTrigger" title="请求群成员回应">
-            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20V4"></path><polyline points="5 11 12 4 19 11"></polyline></svg>
+            发送
           </button>
         </div>
       </div>
     </footer>
+
+    <!-- 提示 Toast -->
+    <transition name="toast-fade">
+      <div v-if="toastVisible" class="offline-toast">
+        {{ toastText }}
+      </div>
+    </transition>
+
+    <!-- 消息编辑弹窗 -->
+    <ChatMessageEditModal
+      :visible="showEditModal"
+      :message-id="editTargetId"
+      :initial-content="editInitialContent"
+      :initial-type="editInitialType"
+      :has-media="false"
+      @close="showEditModal = false"
+      @save="handleSaveEdit"
+    />
   </div>
 </template>
 
 <style scoped>
-.offline-meet-container {
+/* 纯白现代极简排版风格 */
+.offline-wrapper {
   display: flex;
   flex-direction: column;
   height: 100%;
-  background-color: #ffffff; /* 纯净白色背景 */
+  width: 100%;
+  background: #ffffff;
+  color: #242424;
+  font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", "Segoe UI", Roboto, sans-serif;
   position: relative;
+  overflow: hidden;
 }
 
-.offline-meet-header {
-  flex-shrink: 0;
+/* 顶部栏 */
+.offline-topbar {
+  height: 56px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 12px 16px;
-  background: rgba(255, 255, 255, 0.85);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border-bottom: 1px solid rgba(0, 0, 0, 0.05);
-  z-index: 10;
-  position: sticky;
-  top: 0;
+  padding: 0 16px;
+  background: #ffffff;
+  border-bottom: 1px solid #f0f0f0;
+  z-index: 20;
+  flex-shrink: 0;
 }
 
-.offline-back-btn {
-  background: transparent;
-  border: none;
-  color: var(--text-secondary);
-  display: flex;
+.back-action-btn {
+  display: inline-flex;
   align-items: center;
   gap: 4px;
-  font-size: 15px;
+  background: transparent;
+  border: none;
   cursor: pointer;
-  padding: 4px 8px 4px 0;
-  transition: opacity 0.2s;
+  color: #4b5563;
+  padding: 6px 8px 6px 0;
+  transition: color 0.2s;
 }
 
-.offline-back-btn:hover {
-  opacity: 0.7;
+.back-action-btn:hover {
+  color: #111827;
 }
 
-.offline-header-title {
-  font-size: 16px;
+.back-chevron {
+  font-size: 20px;
+  line-height: 1;
+  font-weight: 300;
+}
+
+.back-label {
+  font-size: 14px;
   font-weight: 500;
-  color: var(--text-primary);
-  letter-spacing: 1px;
 }
 
-.offline-header-right {
-  width: 60px; /* 占位以保证标题居中 */
+.room-title-info {
+  text-align: center;
+  flex: 1;
+  min-width: 0;
+  padding: 0 12px;
 }
 
-.offline-meet-messages {
+.room-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: #18181b;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.room-sub {
+  font-size: 11px;
+  color: #a1a1aa;
+  margin-top: 1px;
+}
+
+.topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.topbar-btn {
+  width: 32px;
+  height: 32px;
+  border: 1px solid #e4e4e7;
+  background: #ffffff;
+  border-radius: 4px;
+  color: #52525b;
+  display: grid;
+  place-items: center;
+  font-size: 14px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.topbar-btn:hover {
+  background: #f4f4f5;
+  color: #18181b;
+}
+
+.topbar-btn.stop-btn {
+  color: #ef4444;
+  border-color: #fca5a5;
+}
+
+/* 消息滚动区域 */
+.offline-chat-area {
   flex: 1;
   overflow-y: auto;
-  padding: 0 20px 100px; /* 底部留白给悬浮输入框 */
+  padding: 24px 20px 100px;
   scroll-behavior: smooth;
+  background: #ffffff;
 }
 
-.offline-meet-scene-hint {
+.offline-scene-header {
   text-align: center;
-  margin: 30px 0 40px;
-  font-size: 13px;
-  color: var(--text-tertiary);
-  line-height: 1.8;
-  font-family: serif;
-  letter-spacing: 0.5px;
+  margin: 8px 0 28px;
 }
 
-.offline-empty-hint {
+.scene-badge {
+  font-size: 12px;
+  font-family: serif, "Songti SC", Simsun;
+  color: #71717a;
+  letter-spacing: 0.05em;
+}
+
+.scene-desc {
+  font-size: 11px;
+  color: #a1a1aa;
+  margin-top: 4px;
+}
+
+.offline-empty-notice {
   text-align: center;
-  color: var(--text-tertiary);
+  color: #a1a1aa;
   font-size: 13px;
-  margin-top: 60px;
+  margin-top: 48px;
   font-style: italic;
 }
 
-.offline-novel-flow {
+.offline-dialog-stream {
+  width: min(860px, 100%);
+  margin: 0 auto;
   display: flex;
   flex-direction: column;
   gap: 24px;
-  max-width: 600px;
-  margin: 0 auto;
 }
 
-.offline-msg-row {
-  width: 100%;
-}
-
-.offline-paragraph {
-  font-size: 15px;
-  line-height: 1.8;
-  white-space: pre-wrap;
-  word-break: break-word;
-  color: #333;
-}
-
-.user-paragraph {
-  background: rgba(0, 122, 255, 0.06);
-  padding: 16px 20px;
-  border-radius: 12px;
-  border-left: 3px solid rgba(0, 122, 255, 0.4);
-  color: #444;
-}
-
-.char-paragraph {
-  padding: 0 8px;
-  color: #222;
-  text-indent: 2em; /* 首行缩进营造小说感 */
-}
-
-.offline-narration {
+/* 旁白 */
+.stream-narration {
   text-align: center;
-  font-size: 13px;
-  color: var(--text-tertiary);
-  margin: 16px 0;
-  opacity: 0.7;
+  margin: 12px 0;
 }
 
-.offline-typing-indicator {
-  font-size: 13px;
-  color: var(--text-tertiary);
-  text-align: center;
-  margin-top: 10px;
+.narration-line {
+  font-size: 12px;
+  color: #a1a1aa;
+  letter-spacing: 0.03em;
   font-style: italic;
 }
 
-.dot {
-  animation: typing-dot 1.4s infinite ease-in-out both;
-}
-.dot:nth-child(1) { animation-delay: -0.32s; }
-.dot:nth-child(2) { animation-delay: -0.16s; }
-
-@keyframes typing-dot {
-  0%, 80%, 100% { opacity: 0; }
-  40% { opacity: 1; }
+/* 消息行结构 (左右镜像) */
+.msg-row {
+  display: grid;
+  align-items: start;
+  column-gap: 14px;
+  width: 100%;
 }
 
-/* 底部悬浮输入 */
-.offline-meet-footer {
+.msg-row.left {
+  grid-template-columns: 46px minmax(0, 1fr);
+  justify-content: start;
+}
+
+.msg-row.right {
+  grid-template-columns: minmax(0, 1fr) 46px;
+  justify-content: end;
+}
+
+/* 方形头像 */
+.square-avatar {
+  width: 46px;
+  height: 46px;
+  border: 1px solid #e4e4e7;
+  background: #fafafa;
+  border-radius: 4px;
+  display: grid;
+  place-items: center;
+  user-select: none;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.avatar-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.avatar-letter {
+  font-family: Georgia, serif;
+  font-weight: 700;
+  font-size: 17px;
+  color: #52525b;
+}
+
+.msg-content-wrapper {
+  min-width: 0;
+  padding-top: 2px;
+}
+
+.msg-row.right .msg-content-wrapper {
+  text-align: right;
+}
+
+/* 名字与时间 */
+.msg-meta {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 6px;
+  min-height: 18px;
+}
+
+.msg-row.right .msg-meta {
+  justify-content: flex-end;
+}
+
+.speaker-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: #27272a;
+  letter-spacing: 0.02em;
+}
+
+.msg-time {
+  font-size: 11px;
+  color: #a1a1aa;
+}
+
+/* 正文框体 (纯白非传统圆角气泡) */
+.msg-box {
+  position: relative;
+  display: inline-block;
+  width: 100%;
+  text-align: left;
+  border-top: 1px solid #ebebeb;
+  padding: 10px 0 0;
+  background: transparent;
+}
+
+.msg-paragraphs {
+  font-size: 14.5px;
+  line-height: 1.85;
+  letter-spacing: 0.01em;
+  color: #27272a;
+  word-break: break-word;
+}
+
+.msg-paragraphs p {
+  margin: 0 0 10px;
+}
+
+.msg-paragraphs p:last-child {
+  margin-bottom: 0;
+}
+
+/* 动作描写高雅斜体灰字 */
+.action-text {
+  font-style: italic;
+  color: #71717a;
+}
+
+/* 悬浮快捷工具栏 */
+.msg-toolbar {
+  margin-top: 8px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  opacity: 0.25;
+  transition: opacity 0.2s ease;
+}
+
+.msg-row.right .msg-toolbar {
+  justify-content: flex-end;
+}
+
+.msg-row:hover .msg-toolbar,
+.msg-row:focus-within .msg-toolbar {
+  opacity: 1;
+}
+
+.tool-btn {
+  height: 24px;
+  min-width: 24px;
+  padding: 0 8px;
+  border: 1px solid transparent;
+  background: transparent;
+  border-radius: 3px;
+  color: #71717a;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.tool-btn:hover {
+  background: #f4f4f5;
+  color: #18181b;
+  border-color: #e4e4e7;
+}
+
+.tool-btn.danger:hover {
+  color: #ef4444;
+  background: #fef2f2;
+  border-color: #fecaca;
+}
+
+/* 连续消息优化 */
+.msg-row.continuation {
+  margin-top: -14px;
+}
+
+.msg-row.continuation .square-avatar {
+  visibility: hidden;
+  height: 1px;
+  border: none;
+  background: transparent;
+}
+
+.msg-row.continuation .msg-meta {
+  display: none;
+}
+
+.msg-row.continuation .msg-box {
+  border-top-color: #f2f2f2;
+  padding-top: 6px;
+}
+
+/* 正在输入提示 */
+.typing-notice {
+  font-size: 12.5px;
+  color: #a1a1aa;
+  text-align: center;
+  margin: 8px 0;
+  font-style: italic;
+}
+
+.typing-dots {
+  display: inline-block;
+  letter-spacing: 2px;
+  animation: pulse 1.4s infinite ease-in-out;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 0.3; }
+  50% { opacity: 1; }
+}
+
+/* 底部输入框 */
+.offline-composer-wrap {
   position: absolute;
   bottom: 0;
   left: 0;
   right: 0;
-  padding: 16px 20px 24px;
-  background: linear-gradient(to top, #ffffff 60%, rgba(255, 255, 255, 0));
-  pointer-events: none; /* 让渐变层透传点击 */
+  padding: 12px 16px 16px;
+  background: linear-gradient(to top, #ffffff 78%, rgba(255, 255, 255, 0));
+  z-index: 25;
 }
 
-.offline-input-wrapper {
-  max-width: 600px;
+.offline-composer {
+  width: min(860px, 100%);
   margin: 0 auto;
-  background: #fff;
-  border-radius: 24px;
-  padding: 8px 16px;
-  display: flex;
-  align-items: flex-end;
-  gap: 12px;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.06);
-  border: 1px solid rgba(0, 0, 0, 0.04);
-  pointer-events: auto; /* 恢复内部元素的点击 */
+  min-height: 52px;
+  border: 1px solid #e4e4e7;
+  background: #ffffff;
+  border-radius: 6px;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: end;
+  gap: 10px;
+  padding: 8px 10px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.04);
+  transition: border-color 0.2s, box-shadow 0.2s;
 }
 
-.offline-input {
-  flex: 1;
+.offline-composer:focus-within {
+  border-color: #a1a1aa;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.07);
+}
+
+.composer-textarea {
+  min-height: 36px;
+  max-height: 120px;
+  padding: 6px 4px;
+  font-size: 13.5px;
+  line-height: 1.55;
+  color: #18181b;
   border: none;
   background: transparent;
-  padding: 8px 0;
-  font-size: 15px;
-  line-height: 1.5;
-  max-height: 120px;
-  resize: none;
   outline: none;
-  color: var(--text-primary);
+  resize: none;
+  font-family: inherit;
 }
 
-.offline-input::placeholder {
-  color: #bbb;
+.composer-textarea::placeholder {
+  color: #a1a1aa;
 }
 
-.offline-action-group {
-  display: flex;
-  gap: 8px;
-  padding-bottom: 4px;
-}
-
-.offline-icon-btn {
-  width: 36px;
-  height: 36px;
-  border-radius: 50%;
-  border: none;
+.composer-actions {
   display: flex;
   align-items: center;
-  justify-content: center;
+  gap: 6px;
+}
+
+.composer-btn {
+  height: 34px;
+  padding: 0 16px;
+  border: 1px solid #18181b;
+  background: #18181b;
+  color: #ffffff;
+  border-radius: 4px;
+  font-size: 12.5px;
+  font-weight: 500;
   cursor: pointer;
-  transition: all 0.2s;
+  transition: all 0.2s ease;
 }
 
-.offline-icon-btn:disabled {
-  opacity: 0.4;
+.composer-btn:hover:not(:disabled) {
+  opacity: 0.88;
+}
+
+.composer-btn:disabled {
+  opacity: 0.35;
   cursor: not-allowed;
+  border-color: #d4d4d8;
+  background: #d4d4d8;
+  color: #71717a;
 }
 
-.offline-icon-btn.send {
-  background: var(--accent-color, #007aff);
-  color: #fff;
+.composer-btn.stop {
+  background: #ef4444;
+  border-color: #ef4444;
+  color: #ffffff;
 }
 
-.offline-icon-btn.send:not(:disabled):hover {
-  transform: scale(1.05);
+.composer-btn.trigger {
+  background: #ffffff;
+  border-color: #d4d4d8;
+  color: #3f3f46;
 }
 
-.offline-icon-btn.stop {
-  background: #ff4d4f;
-  color: #fff;
+.composer-btn.trigger:hover:not(:disabled) {
+  background: #f4f4f5;
 }
 
-.offline-icon-btn.regen {
-  background: #f0f0f0;
-  color: #666;
+/* 简约 Toast */
+.offline-toast {
+  position: absolute;
+  top: 68px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(24, 24, 27, 0.88);
+  color: #ffffff;
+  padding: 6px 14px;
+  border-radius: 20px;
+  font-size: 12px;
+  z-index: 100;
+  pointer-events: none;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
 }
 
-.offline-icon-btn.regen:not(:disabled):hover {
-  background: #e4e4e4;
+.toast-fade-enter-active,
+.toast-fade-leave-active {
+  transition: all 0.2s ease;
+}
+
+.toast-fade-enter-from,
+.toast-fade-leave-to {
+  opacity: 0;
+  transform: translate(-50%, -6px);
+}
+
+@media (max-width: 720px) {
+  .offline-chat-area {
+    padding: 16px 12px 96px;
+  }
+  .msg-row.left {
+    grid-template-columns: 40px minmax(0, 1fr);
+  }
+  .msg-row.right {
+    grid-template-columns: minmax(0, 1fr) 40px;
+  }
+  .square-avatar {
+    width: 40px;
+    height: 40px;
+  }
+  .msg-paragraphs {
+    font-size: 14px;
+    line-height: 1.75;
+  }
+  .msg-toolbar {
+    opacity: 0.7;
+  }
 }
 </style>

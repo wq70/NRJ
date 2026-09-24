@@ -23,7 +23,7 @@ import ChatVoiceCallView from './ChatVoiceCallView.vue'
 import ChatVideoCallView from './ChatVideoCallView.vue'
 import ChatCallRecordsView from './ChatCallRecordsView.vue'
 import localforage from 'localforage'
-import { chatSettings } from '../../store'
+import { chatSettings, getAppearanceStyleId, globalSettings } from '../../store'
 import { addUndeliveredUserMessage, ensureRelationship } from '../../composables/useChatRelationship'
 import { useRelationshipAdvance } from '../../composables/useRelationshipAdvance'
 import { useChatRoomAPI } from '../../composables/useChatRoomAPI'
@@ -191,6 +191,21 @@ const emit = defineEmits<{
 
 const { mockChats, selectedChat, effectiveMyProfile: myProfile, buildChatMessages, totalUnreadCount, showNotification, checkTransfersExpired } = useChatState()
 const { currentChatUserId } = useChatAuth()
+const chatAppearanceStyle = computed(() => getAppearanceStyleId('chatRoom', currentChatUserId.value))
+
+const chatRoomZoomStyle = computed(() => {
+  const globalScale = Number(globalSettings.uiScale) || 1
+  const customChatScale = Number(chatSettings.chatUiScale) || 0
+  // 如果聊天设置了单独缩放（chatUiScale > 0），则聊天室缩放严格等于 chatUiScale（优先且大于外观设置）
+  // 此时局部需要抵消全局 container 的缩放：effectiveZoom = customChatScale / globalScale
+  if (customChatScale > 0) {
+    const effective = customChatScale / globalScale
+    return {
+      zoom: String(effective)
+    }
+  }
+  return {}
+})
 
 const showExtensionPanel = ref(false)
 const showEmojiPanel = ref(false)
@@ -702,7 +717,7 @@ const handleAddMessage = async (text: string) => {
     selectedChat.value.isTyping = true
     setTimeout(() => {
       selectedChat.value.isTyping = false
-      const reply = '我是一个本地的系统通知助手，无法与你进行真实对话。请创建你自己的角色吧！'
+      const reply = '当前会话仅用于系统通知与记录，不支持直接对话。请在联系人列表选择或创建角色开始聊天。'
       selectedChat.value.messages.push({
         id: Date.now(),
         type: 'left',
@@ -1328,7 +1343,7 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="view-container full-height chat-view-bg chat-bubble-theme" :style="currentRoomWallpaper ? { backgroundImage: `url(${currentRoomWallpaper})`, backgroundSize: 'cover', backgroundPosition: 'center', backgroundRepeat: 'no-repeat' } : {}">
+  <div class="view-container full-height chat-view-bg chat-bubble-theme" :class="`chat-appearance-${chatAppearanceStyle}`" :style="[currentRoomWallpaper ? { backgroundImage: `url(${currentRoomWallpaper})`, backgroundSize: 'cover', backgroundPosition: 'center', backgroundRepeat: 'no-repeat' } : {}, chatRoomZoomStyle]">
     <div v-if="currentRoomWallpaper" class="chat-wallpaper-overlay"></div>
     
     <ChatRoomHeader
@@ -1336,6 +1351,8 @@ onUnmounted(() => {
       :totalUnreadCount="totalUnreadCount"
       :currentDateStr="currentDateStr"
       :currentDayStr="currentDayStr"
+      :appearance-style="chatAppearanceStyle"
+      compact-call-records
       @back="handleRoomBack"
       @open-settings="emit('open-settings')"
       @show-inner-thought-modal="showInnerThoughtModal = true"
@@ -1343,6 +1360,8 @@ onUnmounted(() => {
       @open-call-records="handleOpenCallRecords"
       @open-offline-meet="emit('open-offline-meet')"
       @open-timelines="timelineForkMessageId = null; showTimelineManagerModal = true"
+      @show-voice-call="startVoiceCall"
+      @show-video-call="startVideoCall"
       @click-overlay="showExtensionPanel = false; showEmojiPanel = false"
     />
 
@@ -1754,5 +1773,6 @@ onUnmounted(() => {
 <style>
 @import '../app_ChatPreview.css';
 @import './ChatRoomView.css';
+@import './ChatRoomAppearanceSoftPink.css';
 .conversation-time-pause-banner{position:relative;z-index:14;display:flex;align-items:center;justify-content:center;gap:7px;padding:7px 12px;background:color-mix(in srgb,var(--theme-color,#1890ff) 9%,var(--sys-bg-secondary));border-bottom:1px solid var(--border-color);color:var(--text-secondary);font-size:12px;cursor:pointer;user-select:none}.pause-dot{width:7px;height:7px;border-radius:50%;background:var(--theme-color,#1890ff);box-shadow:0 0 0 3px color-mix(in srgb,var(--theme-color,#1890ff) 14%,transparent)}
 </style>

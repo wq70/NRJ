@@ -17,6 +17,7 @@ import type { CharacterAssetMeta, GeneratedFileFormat } from '../../../types/cha
 
 const props = defineProps<{
   selectedChat: any
+  myProfile?: any
   characterCurrentTime: string
   getTimezoneLabel: (tz: string) => string
   matchSearch: (...keywords: (string | undefined | null)[]) => boolean
@@ -24,7 +25,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   (e: 'open-timezone-modal', target: 'character'): void
-  (e: 'open-avatar-upload', target: 'contact'): void
+  (e: 'open-avatar-upload', target: 'contact' | 'me'): void
   (e: 'open-text-modal', title: string, text: string, defaultText: string, placeholder: string, target: string): void
   (e: 'open-long-text-modal', title: string, text: string, defaultText: string, placeholder: string, target: string): void
   (e: 'show-voice-detail-modal'): void
@@ -272,28 +273,29 @@ watch(() => props.selectedChat, calculateMomentTokens)
 
 <template>
   <div class="role-edit-section">
-    <div class="user-avatar-action-box" style="margin-bottom: 24px;" v-show="matchSearch('当前时间', '待开发', '更换头像', '伴')">
-      <div class="action-column">
-        <div class="action-btn" @click="emit('open-timezone-modal', 'character')">
-          <span style="font-size: 11px; opacity: 0.8; margin-bottom: 2px;">当前时间</span>
-          <span style="font-family: monospace; font-size: 15px;">{{ characterCurrentTime }}</span>
-        </div>
-        <div class="action-btn placeholder">待开发</div>
-      </div>
-      
-      <div class="role-edit-avatar-box">
-        <div class="role-edit-avatar" @click="emit('open-avatar-upload', 'contact')" :style="selectedChat?.avatarUrl ? { backgroundImage: `url(${selectedChat.avatarUrl})` } : {}">
-          <span v-if="!selectedChat?.avatarUrl">{{ selectedChat?.avatarText || '伴' }}</span>
-          <div class="avatar-edit-overlay">
-            <svg viewBox="0 0 24 24" width="20" height="20" stroke="#fff" stroke-width="2" fill="none"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path><circle cx="12" cy="13" r="4"></circle></svg>
+    <!-- 1:1 复刻无背景小组件 -->
+    <div class="clingy-role-custom-widget" style="margin-bottom: 24px;" v-show="matchSearch('更换头像', '头像', '签名', '小组件', '伴', selectedChat?.remark, selectedChat?.realName, selectedChat?.name)">
+      <!-- 上方大头像与昵称 -->
+      <div class="widget-top-section">
+        <div class="widget-main-avatar" @click="emit('open-avatar-upload', 'contact')" :style="selectedChat?.avatarUrl ? { backgroundImage: `url(${selectedChat.avatarUrl})` } : {}" title="点击更换头像">
+          <span v-if="!selectedChat?.avatarUrl">{{ selectedChat?.avatarText || selectedChat?.name?.charAt(0) || '伴' }}</span>
+          <div class="widget-avatar-edit-badge">
+            <svg viewBox="0 0 24 24" width="12" height="12" stroke="#fff" stroke-width="2.5" fill="none"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path><circle cx="12" cy="13" r="4"></circle></svg>
           </div>
         </div>
-        <div class="role-edit-avatar-tip">点击更换头像</div>
+        <div class="widget-name-row" @click="emit('open-text-modal', '编辑备注', selectedChat.remark || selectedChat.realName || selectedChat.name, '', '请输入备注或昵称', 'remark')" title="点击修改备注">
+          <span class="widget-name-text">♡⑅ºʚ՞{{ selectedChat?.remark || selectedChat?.realName || selectedChat?.name || '伴' }}՞ɞº⑅♡</span>
+        </div>
       </div>
-      
-      <div class="action-column">
-        <div class="action-btn placeholder">待开发</div>
-        <div class="action-btn placeholder">待开发</div>
+
+      <!-- 下方小头像(用户头像)与胶囊气泡(用户自定义文案) -->
+      <div class="widget-bottom-section">
+        <div class="widget-sub-avatar" @click="emit('open-avatar-upload', 'me')" :style="myProfile?.avatarUrl ? { backgroundImage: `url(${myProfile.avatarUrl})` } : {}" title="点击更换用户头像">
+          <span v-if="!myProfile?.avatarUrl">{{ myProfile?.name?.charAt(0) || '我' }}</span>
+        </div>
+        <div class="widget-bubble-capsule" @click="emit('open-text-modal', '编辑自定义文案', selectedChat?.widgetBubbleText || '自定义文案', '自定义文案', '请输入自定义文案', 'widgetBubbleText')" title="点击修改自定义文案">
+          <span class="widget-bubble-text">{{ selectedChat?.widgetBubbleText || '自定义文案' }}</span>
+        </div>
       </div>
     </div>
 
@@ -642,6 +644,178 @@ watch(() => props.selectedChat, calculateMomentTokens)
 </template>
 
 <style scoped>
+/* 1:1 复刻无背景小组件样式 */
+.clingy-role-custom-widget {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 100%;
+  padding: 10px 4px 6px;
+  box-sizing: border-box;
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+}
+
+.widget-top-section {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  cursor: pointer;
+}
+
+.widget-main-avatar {
+  width: 76px;
+  height: 76px;
+  border-radius: 50%;
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  background-color: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 26px;
+  font-weight: 500;
+  color: var(--text-secondary, #8e8e93);
+  position: relative;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.05);
+  border: 2px solid #ffffff;
+  transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.2s;
+  user-select: none;
+}
+
+.is-dark .widget-main-avatar {
+  border-color: rgba(255, 255, 255, 0.12);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+}
+
+.widget-main-avatar:active {
+  transform: scale(0.96);
+}
+
+.widget-avatar-edit-badge {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1.5px solid #fff;
+}
+
+.widget-name-row {
+  margin-top: 10px;
+  text-align: center;
+  cursor: pointer;
+  padding: 2px 8px;
+  border-radius: 8px;
+  transition: background-color 0.2s;
+}
+
+.widget-name-row:active {
+  background-color: rgba(0, 0, 0, 0.05);
+}
+
+.widget-name-text {
+  font-size: 13.5px;
+  font-weight: 500;
+  color: var(--text-secondary, #737373);
+  letter-spacing: 0.3px;
+  user-select: none;
+}
+
+.widget-bottom-section {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  width: 100%;
+  margin-top: 18px;
+  padding: 0 10px;
+  gap: 12px;
+  box-sizing: border-box;
+}
+
+.widget-sub-avatar {
+  width: 44px;
+  height: 44px;
+  min-width: 44px;
+  border-radius: 50%;
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  background-color: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  font-weight: 500;
+  color: var(--text-secondary, #8e8e93);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+  border: 1.5px solid #ffffff;
+  cursor: pointer;
+  transition: transform 0.2s ease;
+  user-select: none;
+}
+
+.is-dark .widget-sub-avatar {
+  border-color: rgba(255, 255, 255, 0.12);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
+}
+
+.widget-sub-avatar:active {
+  transform: scale(0.95);
+}
+
+.widget-bubble-capsule {
+  flex: 1;
+  max-width: 82%;
+  display: inline-flex;
+  align-items: center;
+  padding: 9px 18px;
+  border-radius: 999px;
+  background: #ffffff;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.02);
+  cursor: pointer;
+  transition: transform 0.2s ease, background-color 0.2s, border-color 0.2s;
+  box-sizing: border-box;
+}
+
+.is-dark .widget-bubble-capsule {
+  background: rgba(40, 40, 42, 0.85);
+  border-color: rgba(255, 255, 255, 0.15);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+}
+
+.widget-bubble-capsule:active {
+  transform: scale(0.98);
+  background-color: #f7f7f8;
+}
+
+.is-dark .widget-bubble-capsule:active {
+  background-color: rgba(55, 55, 58, 0.95);
+}
+
+.widget-bubble-text {
+  font-size: 13px;
+  color: var(--text-secondary, #5c5c60);
+  line-height: 1.4;
+  letter-spacing: 0.2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  user-select: none;
+}
+
 .bilingual-child-label {
   padding-left: 12px;
   color: var(--text-secondary);

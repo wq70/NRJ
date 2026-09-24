@@ -331,11 +331,20 @@ export const loadCustomContacts = async () => {
     if (savedSysMsgs) sysMessages = JSON.parse(savedSysMsgs)
   } catch(e) {}
   
+  const defaultNoticeContent = '系统已就绪。点击右上角新建角色即可开始对话。'
   if (sysMessages.length === 0) {
-    sysMessages = [{ id: 1, type: 'left', content: '欢迎使用，请创建你的专属陪伴。' }]
+    sysMessages = [{ id: 1, type: 'left', content: defaultNoticeContent }]
+  } else {
+    // 兼容升级旧的默认文案
+    sysMessages = sysMessages.map((item: any) => {
+      if (item.content === '欢迎使用，请创建你的专属陪伴。') {
+        return { ...item, content: defaultNoticeContent }
+      }
+      return item
+    })
   }
   
-  let sysPreview = '欢迎使用，请创建你的专属陪伴。'
+  let sysPreview = defaultNoticeContent
   let sysTime = '刚刚'
   if (sysMessages.length > 0) {
     const lastMsg = sysMessages[sysMessages.length - 1]
@@ -347,6 +356,16 @@ export const loadCustomContacts = async () => {
     } else {
       sysTime = `${d.getMonth() + 1}/${d.getDate()}`
     }
+  }
+
+  let sysAvatarUrl = '/system_notice_avatar.jpg'
+  try {
+    const storedSysAvatar = await avatarStore.getItem<string>('avatar_contact_1')
+    if (storedSysAvatar) {
+      sysAvatarUrl = storedSysAvatar
+    }
+  } catch (e) {
+    console.error('Failed to load avatar from indexedDB for system notice', e)
   }
 
   const groupMainAvatarStore = localforage.createInstance({ name: 'nrt-app', storeName: 'groupMainAvatars' })
@@ -379,7 +398,7 @@ export const loadCustomContacts = async () => {
 
   const baseMock = [
     { 
-      id: 1, name: '系统通知', realName: '系统通知', remark: '', persona: '系统内置的通知助手。', preview: sysPreview, time: sysTime, unread: sysRead ? 0 : 1, avatarText: '通', isPinned: sysPinned,
+      id: 1, name: '系统通知', realName: '系统通知', remark: '', persona: '系统内置的通知助手。', preview: sysPreview, time: sysTime, unread: sysRead ? 0 : 1, avatarText: '通', avatarUrl: sysAvatarUrl, isPinned: sysPinned,
       groups: [],
       messages: sysMessages,
       isTyping: currentTypingState.get(1) || false

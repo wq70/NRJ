@@ -77,14 +77,15 @@ const handleSelect = (val: string) => {
 
 <template>
   <div v-if="visible" class="wb-modal-overlay" style="z-index: 10010;" @click.self="close">
-    <div class="custom-confirm-modal" style="max-width: 320px; padding-bottom: 20px; max-height: 80vh; display: flex; flex-direction: column;">
+    <div class="custom-confirm-modal pure-white-modal" style="max-width: 320px; padding-bottom: 20px; max-height: 80vh; display: flex; flex-direction: column; background: #ffffff !important;">
       <div class="confirm-title" style="margin-bottom: 12px;">选择发音语言</div>
       <div style="padding: 0 16px; margin-bottom: 12px;">
         <input 
           type="text" 
           v-model="languageSearchQuery" 
           placeholder="搜索语言名称..." 
-          style="width: 100%; border: 1px solid var(--border-color); border-radius: 8px; padding: 10px 12px; font-size: 14px; background: var(--sys-bg-primary); color: var(--text-primary); box-sizing: border-box; outline: none;"
+          class="pure-white-input"
+          style="width: 100%; border: 1px solid rgba(0, 0, 0, 0.12); border-radius: 8px; padding: 10px 12px; font-size: 14px; background: #ffffff !important; color: var(--text-primary); box-sizing: border-box; outline: none;"
         />
       </div>
       <div style="flex: 1; overflow-y: auto; padding: 0 16px; display: flex; flex-direction: column; gap: 8px;">
@@ -95,7 +96,7 @@ const handleSelect = (val: string) => {
           v-else
           v-for="opt in filteredLanguageOptions" 
           :key="opt.value" 
-          class="memory-type-item"
+          class="memory-type-item pure-white-item"
           :class="{ active: currentLanguage === opt.value }"
           @click="handleSelect(opt.value)"
           style="margin-bottom: 0;"
@@ -109,4 +110,30 @@ const handleSelect = (val: string) => {
 
 <style scoped>
 @import '../settings/ChatSettingsStyles.css';
+
+.pure-white-modal {
+  background: #ffffff !important;
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.12) !important;
+  border: 1px solid rgba(0, 0, 0, 0.08) !important;
+}
+
+.pure-white-input:focus {
+  border-color: var(--text-primary) !important;
+}
+
+.pure-white-item {
+  background: #ffffff !important;
+  border: 1px solid rgba(0, 0, 0, 0.12) !important;
+  transition: all 0.2s ease;
+}
+
+.pure-white-item:hover {
+  border-color: rgba(0, 0, 0, 0.25) !important;
+}
+
+.pure-white-item.active {
+  background: #ffffff !important;
+  border: 1.5px solid var(--text-primary) !important;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+}
 </style>

@@ -492,6 +492,162 @@
 .soft-btn-cancel { border-right: 1px solid var(--border-color) !important; }
 .soft-btn-confirm { font-weight: 500; color: var(--text-primary) !important; }
 
+/* 缩放滑动条弹窗样式 */
+.scale-slider-soft-panel {
+  width: 320px;
+}
+
+.scale-soft-content {
+  padding: 10px 20px 20px;
+  display: flex;
+  flex-direction: column;
+}
+
+.scale-soft-status {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.scale-soft-tag {
+  font-size: 11px;
+  font-weight: 500;
+  color: #8c8c8c;
+  letter-spacing: 1px;
+}
+
+.scale-soft-val {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-primary);
+  background: var(--sys-bg-tertiary);
+  padding: 3px 10px;
+  border-radius: 12px;
+}
+
+.scale-soft-slider-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 6px;
+}
+
+.scale-soft-btn {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: 1px solid var(--border-color);
+  background: var(--card-bg-solid);
+  color: var(--text-primary);
+  font-size: 16px;
+  font-weight: bold;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: all 0.15s;
+}
+
+.scale-soft-btn:active {
+  transform: scale(0.92);
+}
+
+.scale-soft-range {
+  flex: 1;
+  -webkit-appearance: none;
+  appearance: none;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--border-color);
+  outline: none;
+  cursor: pointer;
+}
+
+.scale-soft-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--text-primary);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
+  cursor: pointer;
+  transition: transform 0.1s;
+}
+
+.scale-soft-range::-webkit-slider-thumb:hover {
+  transform: scale(1.15);
+}
+
+.scale-soft-range-labels {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  color: var(--text-tertiary);
+  padding: 0 4px;
+  margin-bottom: 12px;
+}
+
+.scale-soft-range-labels .active-label {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.scale-soft-hint {
+  font-size: 11px;
+  color: var(--text-tertiary);
+  line-height: 1.4;
+  text-align: center;
+  margin-bottom: 18px;
+}
+
+.scale-soft-actions {
+  display: flex;
+  gap: 10px;
+}
+
+.scale-soft-reset-btn {
+  flex: 1;
+  padding: 10px 0;
+  border-radius: 12px;
+  border: 1px solid var(--border-color);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.scale-soft-reset-btn.disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.scale-soft-reset-btn:not(.disabled):hover {
+  background: var(--sys-bg-tertiary);
+  color: var(--text-primary);
+}
+
+.scale-soft-done-btn {
+  flex: 1;
+  padding: 10px 0;
+  border-radius: 12px;
+  border: none;
+  background: var(--text-primary);
+  color: var(--sys-bg-primary, #ffffff);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity 0.15s, transform 0.1s;
+}
+
+.scale-soft-done-btn:active {
+  transform: scale(0.98);
+  opacity: 0.9;
+}
+
 /* 动画 */
 .soft-fade-enter-active, .soft-fade-leave-active { transition: opacity 0.3s ease; }
 .soft-fade-enter-from, .soft-fade-leave-to { opacity: 0; }

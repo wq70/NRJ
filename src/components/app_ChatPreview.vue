@@ -9,6 +9,7 @@ import ChatListView from './chat/ChatListView.vue'
 import ChatRoomView from './chat/ChatRoomView.vue'
 import ChatSettingsView from './chat/ChatSettingsView.vue'
 import ChatGroupCreateModal from './chat/modals/ChatGroupCreateModal.vue'
+import ChatNoticeModal from './chat/modals/ChatNoticeModal.vue'
 import GroupChatRoomView from './chat/GroupChatRoomView.vue'
 import GroupChatSettingsView from './chat/GroupChatSettingsView.vue'
 import ChatOfflineMeetView from './chat/ChatOfflineMeetView.vue'
@@ -274,6 +275,22 @@ const avatarModalVisible = ref(false)
 const avatarTarget = ref<'contact' | 'me'>('contact')
 const personaSelectVisible = ref(false)
 const savedPersonas = ref<any[]>([])
+
+// 居中提示弹窗状态
+const noticeModalVisible = ref(false)
+const noticeModalTitle = ref('提示')
+const noticeModalMessage = ref('')
+const noticeModalConfirmText = ref('确定')
+const noticeModalCancelText = ref('')
+let noticeModalOnConfirm: (() => void) | null = null
+
+const handleNoticeConfirm = () => {
+  if (noticeModalOnConfirm) {
+    const fn = noticeModalOnConfirm
+    noticeModalOnConfirm = null
+    fn()
+  }
+}
 
 const currentAvatarForModal = computed(() => {
   if (currentView.value === 'chatSettings') {
@@ -564,7 +581,14 @@ const useAccountPersona = async () => {
   const personas = await loadUserPersonas()
   const boundPersona = personas.find(item => item.boundAccountId === currentChatUserId.value)
   if (!boundPersona) {
-    chatSettingsRef.value?.showToast?.('当前账号还没有绑定人设，请先在“我的－人设库”中绑定')
+    noticeModalTitle.value = '提示'
+    noticeModalMessage.value = '当前账号还没有绑定人设，请先在“我的－人设库”中绑定'
+    noticeModalConfirmText.value = '去绑定'
+    noticeModalCancelText.value = '我知道了'
+    noticeModalOnConfirm = () => {
+      openPersonaSelect()
+    }
+    noticeModalVisible.value = true
     return
   }
   await selectPersona(boundPersona)
@@ -829,10 +853,26 @@ onUnmounted(() => {
 
     <!-- 人设库选择弹窗 -->
     <div v-if="personaSelectVisible" class="canvas-modal-overlay" @click.self="personaSelectVisible = false">
-      <div class="canvas-modal-content" style="max-height: 400px; padding: 20px;">
-        <div style="font-size: 16px; font-weight: 600; margin-bottom: 16px; text-align: center;">选择人设</div>
+      <div class="canvas-modal-content" style="max-height: 400px; padding: 20px; display: flex; flex-direction: column;">
+        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px;">
+          <div style="width: 32px; height: 32px;"></div>
+          <div style="font-size: 16px; font-weight: 600; text-align: center; color: var(--text-primary, #1f2937);">选择人设</div>
+          <button 
+            type="button" 
+            class="canvas-close-btn"
+            style="width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center; border: none; background: rgba(0, 0, 0, 0.05); color: var(--text-secondary, #6b7280); cursor: pointer; transition: all 0.2s;"
+            title="关闭"
+            aria-label="关闭"
+            @click="personaSelectVisible = false"
+          >
+            <svg viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="18" y1="6" x2="6" y2="18"></line>
+              <line x1="6" y1="6" x2="18" y2="18"></line>
+            </svg>
+          </button>
+        </div>
         <div style="flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 12px;">
-          <div v-if="savedPersonas.length === 0" style="text-align: center; color: var(--text-tertiary); font-size: 13px; margin-top: 20px;">暂无人设，请先在“我的”页面创建</div>
+          <div v-if="savedPersonas.length === 0" style="text-align: center; color: var(--text-tertiary); font-size: 13px; margin: 36px 0 20px;">暂无人设，请先在“我的”页面创建</div>
           <div 
             v-for="p in savedPersonas" 
             :key="p.id" 
@@ -843,6 +883,15 @@ onUnmounted(() => {
             <div style="flex: 1; font-size: 15px; font-weight: 500;">{{ p.name }}</div>
           </div>
         </div>
+        <div style="margin-top: 16px; display: flex; justify-content: center;">
+          <button
+            type="button"
+            style="padding: 8px 32px; border-radius: 18px; border: 1px solid var(--border-color, rgba(0, 0, 0, 0.08)); background: var(--sys-bg-primary, #f3f4f6); color: var(--text-secondary, #4b5563); font-size: 13px; font-weight: 500; cursor: pointer; transition: all 0.2s;"
+            @click="personaSelectVisible = false"
+          >
+            关闭
+          </button>
+        </div>
       </div>
     </div>
 
@@ -852,6 +901,16 @@ onUnmounted(() => {
       :chats="mockChats"
       :user-profile="effectiveMyProfile"
       @created="createGroup"
+    />
+
+    <!-- 居中提示弹窗 -->
+    <ChatNoticeModal
+      v-model:visible="noticeModalVisible"
+      :title="noticeModalTitle"
+      :message="noticeModalMessage"
+      :confirm-text="noticeModalConfirmText"
+      :cancel-text="noticeModalCancelText"
+      @confirm="handleNoticeConfirm"
     />
 
     <!-- 头像上传弹窗 -->
@@ -989,4 +1048,3 @@ onUnmounted(() => {
   }
 }
 </style>
-  characterProfileStack.value = []

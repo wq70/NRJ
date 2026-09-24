@@ -710,8 +710,29 @@ const handleTextSave = (newText: string, target: string) => {
     selectedChat.value.realName = newText
   } else if (target === 'remark') {
     selectedChat.value.remark = newText
+  } else if (target === 'widgetBubbleText') {
+    selectedChat.value.widgetBubbleText = newText
+  } else if (target === 'widgetSuffix') {
+    selectedChat.value.widgetSuffix = newText
   } else if (target === 'persona') {
     selectedChat.value.persona = newText
+  } else if (target === 'myWidgetBubbleText') {
+    myProfile.value.widgetBubbleText = newText
+    if (selectedChat.value?.userProfileSource?.personaId) {
+      const snapshot: ChatUserProfileSnapshot = {
+        name: effectiveMyProfile.value.name || '',
+        remark: effectiveMyProfile.value.remark || '',
+        persona: effectiveMyProfile.value.persona || '',
+        avatarUrl: effectiveMyProfile.value.avatarUrl || ''
+      }
+      requestUserProfileSave(snapshot)
+    }
+    saveMyProfile()
+    return
+  } else if (target === 'myWidgetSuffix') {
+    myProfile.value.widgetSuffix = newText
+    saveMyProfile()
+    return
   } else if (target === 'myRealName' || target === 'myRemark' || target === 'myPersona') {
     const snapshot: ChatUserProfileSnapshot = {
       name: effectiveMyProfile.value.name || '',
@@ -792,7 +813,7 @@ const handleSaveNameDisplayStyle = (style: 'all' | 'user_only' | 'character_only
   chatSettings.nameDisplayStyle = style
 }
 
-const handleSaveTimeDisplayStyle = (style: 'none' | 'hm' | 'hms', position: 'avatar_bottom' | 'bubble_outer' | 'name_side') => {
+const handleSaveTimeDisplayStyle = (style: 'none' | 'hm' | 'hms', position: any) => {
   chatSettings.timeDisplayStyle = style
   chatSettings.timeDisplayPosition = position
 }
@@ -832,6 +853,7 @@ const handleSaveTimeDisplayStyle = (style: 'none' | 'hm' | 'hms', position: 'ava
       <ChatSettingsPanelRole
         v-show="activeChatSettingCategory === '角色' || searchQuery"
         :selected-chat="selectedChat"
+        :my-profile="effectiveMyProfile"
         :character-current-time="characterCurrentTime"
         :get-timezone-label="getTimezoneLabel"
         :match-search="matchSearch"
@@ -969,7 +991,7 @@ const handleSaveTimeDisplayStyle = (style: 'none' | 'hm' | 'hms', position: 'ava
       <ChatTimeDisplayModal
         :show="showTimeDisplayModal"
         :initial-style="(chatSettings.timeDisplayStyle as 'none' | 'hm' | 'hms') || 'none'"
-        :initial-position="(chatSettings.timeDisplayPosition as 'avatar_bottom' | 'bubble_outer' | 'name_side') || 'avatar_bottom'"
+        :initial-position="(chatSettings.timeDisplayPosition as any) || 'avatar_bottom'"
         @close="showTimeDisplayModal = false"
         @save="handleSaveTimeDisplayStyle"
       />
@@ -1133,10 +1155,10 @@ const handleSaveTimeDisplayStyle = (style: 'none' | 'hm' | 'hms', position: 'ava
 
       <!-- 音色选择弹窗 -->
       <div v-if="showVoiceModal" class="wb-modal-overlay" style="z-index: 10001;" @click.self="showVoiceModal = false">
-        <div class="custom-confirm-modal" style="max-width: 360px; padding-bottom: 20px; height: 80%; display: flex; flex-direction: column;">
+        <div class="custom-confirm-modal" style="max-width: 360px; padding-bottom: 20px; height: 80%; display: flex; flex-direction: column; background: #ffffff !important; box-shadow: 0 12px 36px rgba(0, 0, 0, 0.12); border: 1px solid rgba(0, 0, 0, 0.08);">
           <div class="confirm-title" style="margin-bottom: 16px;">选择音色</div>
           <div style="padding: 0 16px; margin-bottom: 12px;">
-            <button class="action-btn small-action-btn" @click="fetchCustomVoices" :disabled="isFetchingVoices" style="width: 100%; border: 1px solid var(--border-color); background: var(--sys-bg-primary); color: var(--text-primary); cursor: pointer; padding: 10px; border-radius: 8px;">
+            <button class="action-btn small-action-btn" @click="fetchCustomVoices" :disabled="isFetchingVoices" style="width: 100%; border: 1px solid rgba(0,0,0,0.12); background: #ffffff !important; color: var(--text-primary); cursor: pointer; padding: 10px; border-radius: 8px; transition: all 0.2s;">
               {{ isFetchingVoices ? '获取中...' : '拉取云端自定义音色' }}
             </button>
           </div>
@@ -1144,7 +1166,7 @@ const handleSaveTimeDisplayStyle = (style: 'none' | 'hm' | 'hms', position: 'ava
             <div v-if="fetchedVoices.length > 0" style="margin-bottom: 20px;">
               <div style="font-size: 13px; color: var(--text-secondary); margin-bottom: 8px;">我的云端音色</div>
               <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
-                <div v-for="v in fetchedVoices" :key="v.id" class="memory-type-item" :class="{ active: selectedChat.voiceId === v.id }" @click="selectVoice(v.id)" style="padding: 10px; margin-bottom: 0;">
+                <div v-for="v in fetchedVoices" :key="v.id" class="memory-type-item" :class="{ active: selectedChat.voiceId === v.id }" @click="selectVoice(v.id)" style="padding: 10px; margin-bottom: 0; background: #ffffff !important; border: 1px solid rgba(0,0,0,0.12);">
                   <div class="type-name" style="font-size: 14px; margin-bottom: 4px;">{{ v.name }}</div>
                   <div class="type-desc" style="font-size: 11px; word-break: break-all;">{{ v.id }}</div>
                 </div>
@@ -1154,7 +1176,7 @@ const handleSaveTimeDisplayStyle = (style: 'none' | 'hm' | 'hms', position: 'ava
             <div>
               <div style="font-size: 13px; color: var(--text-secondary); margin-bottom: 8px;">官方预设音色</div>
               <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
-                <div v-for="v in presetVoices" :key="v.id" class="memory-type-item" :class="{ active: selectedChat.voiceId === v.id }" @click="selectVoice(v.id)" style="padding: 10px; margin-bottom: 0;">
+                <div v-for="v in presetVoices" :key="v.id" class="memory-type-item" :class="{ active: selectedChat.voiceId === v.id }" @click="selectVoice(v.id)" style="padding: 10px; margin-bottom: 0; background: #ffffff !important; border: 1px solid rgba(0,0,0,0.12);">
                   <div class="type-name" style="font-size: 14px; margin-bottom: 4px;">{{ v.name }}</div>
                   <div class="type-desc" style="font-size: 11px; word-break: break-all;">{{ v.id }}</div>
                 </div>

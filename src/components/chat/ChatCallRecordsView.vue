@@ -1,6 +1,7 @@
 /* WARNING: 本项目专属“粘人精”，严禁出现 Kiro、Krio、周棋洛等任何相关英文或拼音命名！ */
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
+import ChatCallRecordSortModal, { type CallRecordSortType } from './modals/ChatCallRecordSortModal.vue'
 
 const props = defineProps<{
   records: any[]
@@ -15,7 +16,16 @@ const emit = defineEmits<{
 const searchQuery = ref('')
 const isManageMode = ref(false)
 const selectedIds = ref<(string | number)[]>([])
-const sortType = ref<'timeDesc' | 'timeAsc' | 'durationDesc' | 'durationAsc'>('timeDesc')
+const sortType = ref<CallRecordSortType>('timeDesc')
+const showSortModal = ref(false)
+
+const sortLabelMap: Record<CallRecordSortType, string> = {
+  timeDesc: '按时间 (从新到旧)',
+  timeAsc: '按时间 (从旧到新)',
+  durationDesc: '按时长 (从长到短)',
+  durationAsc: '按时长 (从短到长)'
+}
+
 const currentTypeTab = ref<'voice' | 'video'>('voice')
 const currentPage = ref(1)
 const pageSize = 10
@@ -201,12 +211,12 @@ const handleDelete = () => {
         </div>
         
         <div class="sort-options">
-          <select v-model="sortType" class="sort-select">
-            <option value="timeDesc">按时间 (从新到旧)</option>
-            <option value="timeAsc">按时间 (从旧到新)</option>
-            <option value="durationDesc">按时长 (从长到短)</option>
-            <option value="durationAsc">按时长 (从短到长)</option>
-          </select>
+          <button class="sort-trigger-btn" type="button" @click="showSortModal = true">
+            <span class="sort-trigger-text">{{ sortLabelMap[sortType] }}</span>
+            <svg class="sort-trigger-arrow" viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="6 9 12 15 18 9"></polyline>
+            </svg>
+          </button>
         </div>
       </div>
     </div>
@@ -316,6 +326,13 @@ const handleDelete = () => {
         </div>
       </div>
     </transition>
+
+    <!-- 排序方式弹窗 -->
+    <ChatCallRecordSortModal
+      :show="showSortModal"
+      v-model="sortType"
+      @close="showSortModal = false"
+    />
   </div>
 </template>
 
@@ -325,7 +342,7 @@ const handleDelete = () => {
   inset: 0;
   z-index: 1000;
   display: flex;
-  background-color: #f7f7f8;
+  background-color: #ffffff;
 }
 
 .chat-call-records-view {
@@ -335,6 +352,7 @@ const handleDelete = () => {
   flex-direction: column;
   overflow: hidden;
   position: relative;
+  background-color: #ffffff;
 }
 
 .header {
@@ -343,7 +361,8 @@ const handleDelete = () => {
   align-items: center;
   justify-content: space-between;
   padding: 0 16px;
-  background: #f7f7f8; /* 改为和底层一样的背景色 */
+  background: #ffffff;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.04);
   flex-shrink: 0;
 }
 
@@ -424,10 +443,9 @@ const handleDelete = () => {
 
 .type-tabs {
   display: flex;
-  background: #fff;
+  background: #f5f6f8;
   border-radius: 8px;
   padding: 4px;
-  box-shadow: 0 2px 6px rgba(0,0,0,0.02);
 }
 
 .type-tab {
@@ -442,15 +460,15 @@ const handleDelete = () => {
 }
 
 .type-tab.active {
-  background: #f7f7f8;
+  background: #ffffff;
   color: #333;
   font-weight: 500;
-  box-shadow: 0 1px 4px rgba(0,0,0,0.05);
+  box-shadow: 0 2px 6px rgba(0,0,0,0.06);
 }
 
 .toolbar {
-  padding: 0 16px 12px;
-  background: #f7f7f8; /* 改为和底层一样的背景色，去除底边框 */
+  padding: 12px 16px;
+  background: #ffffff;
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -472,14 +490,20 @@ const handleDelete = () => {
 .search-box input {
   width: 100%;
   height: 36px;
-  background: #fff; /* 背景色改为纯白，提升在灰色背景上的对比度 */
-  border: none;
+  background: #f5f6f8;
+  border: 1px solid transparent;
   border-radius: 18px;
   padding: 0 32px 0 36px;
   font-size: 14px;
   color: #333;
   outline: none;
-  box-shadow: 0 2px 6px rgba(0,0,0,0.02);
+  transition: all 0.2s;
+}
+
+.search-box input:focus {
+  background: #ffffff;
+  border-color: rgba(0, 0, 0, 0.12);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.04);
 }
 
 .search-box input::placeholder {
@@ -553,7 +577,8 @@ const handleDelete = () => {
 .pagination-controls {
   display: flex;
   align-items: center;
-  background: #fff;
+  background: #ffffff;
+  border: 1px solid rgba(0,0,0,0.06);
   border-radius: 16px;
   box-shadow: 0 2px 6px rgba(0,0,0,0.02);
   overflow: hidden;
@@ -590,22 +615,48 @@ const handleDelete = () => {
   justify-content: flex-end;
 }
 
-.sort-select {
+.sort-trigger-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   padding: 6px 12px;
   border-radius: 16px;
-  border: none;
-  background: #fff;
+  border: 1px solid rgba(0,0,0,0.06);
+  background: #ffffff;
   font-size: 13px;
   color: #666;
   outline: none;
   cursor: pointer;
   box-shadow: 0 2px 6px rgba(0,0,0,0.02);
+  transition: all 0.2s ease;
+}
+
+.sort-trigger-btn:hover {
+  background: #fafafa;
+  border-color: rgba(0,0,0,0.12);
+}
+
+.sort-trigger-btn:active {
+  transform: scale(0.97);
+}
+
+.sort-trigger-text {
+  font-size: 13px;
+  color: #555;
+  user-select: none;
+}
+
+.sort-trigger-arrow {
+  color: #888;
+  flex-shrink: 0;
+  transition: transform 0.2s ease;
 }
 
 .list-container {
   flex: 1;
   overflow-y: auto;
   padding: 16px;
+  background-color: #ffffff;
 }
 
 .empty-state {
@@ -623,10 +674,11 @@ const handleDelete = () => {
 }
 
 .record-card {
-  background: #fff;
+  background: #ffffff;
   border-radius: 12px;
   padding: 16px;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+  border: 1px solid rgba(0,0,0,0.06);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.02);
   cursor: pointer;
   transition: transform 0.2s, box-shadow 0.2s;
 }

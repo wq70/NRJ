@@ -2,24 +2,26 @@
 <script setup lang="ts">
 import { ref, watch } from 'vue'
 
+type TimePosition = 'avatar_bottom' | 'bubble_outer' | 'name_side' | 'bubble_bottom' | 'bubble_inner'
+
 const props = defineProps<{
   show: boolean
   initialStyle: 'none' | 'hm' | 'hms'
-  initialPosition: 'avatar_bottom' | 'bubble_outer' | 'name_side'
+  initialPosition: TimePosition
 }>()
 
 const emit = defineEmits<{
   (e: 'close'): void
-  (e: 'save', style: 'none' | 'hm' | 'hms', position: 'avatar_bottom' | 'bubble_outer' | 'name_side'): void
+  (e: 'save', style: 'none' | 'hm' | 'hms', position: TimePosition): void
 }>()
 
 const selectedStyle = ref<'none' | 'hm' | 'hms'>(props.initialStyle)
-const selectedPosition = ref<'avatar_bottom' | 'bubble_outer' | 'name_side'>(props.initialPosition)
+const selectedPosition = ref<TimePosition>(props.initialPosition)
 
 watch(() => props.show, (newVal) => {
   if (newVal) {
     selectedStyle.value = props.initialStyle
-    selectedPosition.value = props.initialPosition
+    selectedPosition.value = props.initialPosition || 'avatar_bottom'
   }
 })
 
@@ -57,20 +59,33 @@ const handleSave = () => {
           </div>
         </div>
 
-        <div class="setting-group" v-if="selectedStyle !== 'none'" style="margin-top: 24px;">
+        <div class="setting-group" style="margin-top: 24px;">
           <div class="setting-title">显示位置</div>
           <div class="radio-list">
             <label class="radio-item">
               <input type="radio" v-model="selectedPosition" value="avatar_bottom">
               <span class="radio-label">头像下方</span>
+              <span class="radio-desc">紧贴头像正下方</span>
             </label>
             <label class="radio-item">
               <input type="radio" v-model="selectedPosition" value="bubble_outer">
               <span class="radio-label">气泡外侧</span>
+              <span class="radio-desc">紧贴气泡外侧底部</span>
             </label>
             <label class="radio-item">
               <input type="radio" v-model="selectedPosition" value="name_side">
               <span class="radio-label">昵称旁边</span>
+              <span class="radio-desc">消息发送者昵称右侧</span>
+            </label>
+            <label class="radio-item">
+              <input type="radio" v-model="selectedPosition" value="bubble_bottom">
+              <span class="radio-label">气泡正下方</span>
+              <span class="radio-desc">气泡底部左/右对齐</span>
+            </label>
+            <label class="radio-item">
+              <input type="radio" v-model="selectedPosition" value="bubble_inner">
+              <span class="radio-label">气泡内部</span>
+              <span class="radio-desc">嵌入气泡右下角</span>
             </label>
           </div>
         </div>

@@ -1,6 +1,8 @@
 /* WARNING: 本项目专属“粘人精”，严禁出现 Kiro、Krio、周棋洛等任何相关英文或拼音命名！ */
 <script setup lang="ts">
+import { ref } from 'vue'
 import { useChatState } from '../../composables/useChatState'
+import TextEditModal from '../TextEditModal.vue'
 
 const { myProfile, saveMyProfile } = useChatState()
 
@@ -21,6 +23,13 @@ const emit = defineEmits<{
   (e: 'handleLogout'): void
   (e: 'openUserProfile'): void
 }>()
+
+const showStatusModal = ref(false)
+
+const handleStatusSave = (newVal: string) => {
+  myProfile.value.statusText = newVal
+  saveMyProfile()
+}
 </script>
 
 <template>
@@ -40,16 +49,14 @@ const emit = defineEmits<{
           
           <div class="profile-content-area" v-if="!activePersona.isCreate">
             <div class="profile-avatar-wrap">
-              <div class="mood-bubble" title="设置此状态后，AI 角色将能在对话中感知到你的心情或正在做的事">
-                <input 
-                  type="text" 
-                  class="mood-input" 
-                  placeholder="我的公开状态(AI可见)..." 
-                  v-model="myProfile.statusText" 
-                  @blur="saveMyProfile" 
-                  @change="saveMyProfile" 
-                  @keyup.enter="($event.target as HTMLInputElement).blur()"
-                />
+              <div 
+                class="mood-bubble" 
+                title="点击设置公开状态，AI角色将在对话中感知到" 
+                @click="showStatusModal = true"
+              >
+                <span class="mood-text" :class="{ empty: !myProfile.statusText }">
+                  {{ myProfile.statusText || '我的公开状态(AI可见)...' }}
+                </span>
                 <div class="mood-tail"></div>
               </div>
               <div 
@@ -140,6 +147,15 @@ const emit = defineEmits<{
 
       </div>
     </main>
+
+    <TextEditModal
+      v-model:visible="showStatusModal"
+      title="我的公开状态"
+      :current-text="myProfile.statusText || ''"
+      :default-text="''"
+      placeholder="输入你此刻的心情或正在做的事，AI角色将在对话中感知..."
+      @saved="handleStatusSave"
+    />
   </div>
 </template>
 
@@ -222,28 +238,45 @@ const emit = defineEmits<{
   top: -42px;
   background: var(--sys-bg-secondary);
   border-radius: 20px;
-  padding: 6px 14px;
+  padding: 6px 16px;
   box-shadow: 0 4px 16px rgba(0,0,0,0.06);
   border: 1px solid var(--border-color);
   display: flex;
   align-items: center;
   justify-content: center;
   min-width: 120px;
+  max-width: 220px;
   z-index: 10;
+  cursor: pointer;
+  user-select: none;
+  transition: transform 0.15s ease, box-shadow 0.15s ease, background-color 0.15s ease;
 }
 
-.mood-input {
-  border: none;
-  outline: none;
-  background: transparent;
+.mood-bubble:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(0,0,0,0.09);
+  background: var(--sys-bg-primary);
+}
+
+.mood-bubble:active {
+  transform: translateY(0) scale(0.98);
+}
+
+.mood-text {
   font-size: 13px;
-  color: var(--text-secondary);
+  color: var(--text-primary);
   text-align: center;
-  width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 190px;
+  font-weight: 500;
+  line-height: 1.4;
 }
 
-.mood-input::placeholder {
+.mood-text.empty {
   color: var(--text-tertiary);
+  font-weight: 400;
 }
 
 .mood-tail {

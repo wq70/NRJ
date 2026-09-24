@@ -145,7 +145,7 @@ const setSeedAudioReferences = (event: Event) => {
 
 <template>
   <div v-if="visible" class="wb-modal-overlay" style="z-index: 10000;" @click.self="close">
-    <div class="custom-confirm-modal" style="position: relative; width: 90%; max-width: 380px; max-height: 85vh; padding-bottom: 20px; display: flex; flex-direction: column;">
+    <div class="custom-confirm-modal voice-pure-white-modal" style="position: relative; width: 90%; max-width: 380px; max-height: 85vh; padding-bottom: 20px; display: flex; flex-direction: column; background: #ffffff !important;">
       <!-- 关闭按钮 -->
       <div @click="close" style="position: absolute; right: 16px; top: 16px; width: 24px; height: 24px; display: flex; align-items: center; justify-content: center; cursor: pointer; color: var(--text-secondary); font-size: 22px; font-weight: 300; line-height: 1; z-index: 2;">
         &times;
@@ -156,35 +156,35 @@ const setSeedAudioReferences = (event: Event) => {
         <div style="display: flex; flex-direction: column; gap: 12px;">
           <div style="font-size: 15px; font-weight: 600; color: var(--text-primary); border-left: 3px solid var(--text-primary); padding-left: 8px; line-height: 1;">语音引擎</div>
           <div class="voice-provider-grid">
-            <div class="memory-type-item" :class="{ active: (selectedChat.voiceProvider || 'minimax') === 'minimax' }" style="margin-bottom: 0;" @click="selectProvider('minimax')">
+            <div class="memory-type-item voice-pure-white-card" :class="{ active: (selectedChat.voiceProvider || 'minimax') === 'minimax' }" style="margin-bottom: 0;" @click="selectProvider('minimax')">
               <div class="type-name" style="margin-bottom: 4px;">MiniMax</div>
               <div class="type-desc">低延迟语音合成</div>
             </div>
-            <div class="memory-type-item" :class="{ active: selectedChat.voiceProvider === 'seed_audio' }" style="margin-bottom: 0;" @click="selectProvider('seed_audio')">
+            <div class="memory-type-item voice-pure-white-card" :class="{ active: selectedChat.voiceProvider === 'seed_audio' }" style="margin-bottom: 0;" @click="selectProvider('seed_audio')">
               <div class="type-name" style="margin-bottom: 4px;">Seed Audio 1.0</div>
               <div class="type-desc">高表现力角色语音</div>
             </div>
-            <div class="memory-type-item" :class="{ active: selectedChat.voiceProvider === 'gemini' }" style="margin-bottom: 0;" @click="selectProvider('gemini')">
+            <div class="memory-type-item voice-pure-white-card" :class="{ active: selectedChat.voiceProvider === 'gemini' }" style="margin-bottom: 0;" @click="selectProvider('gemini')">
               <div class="type-name" style="margin-bottom: 4px;">Gemini TTS</div>
               <div class="type-desc">自然可控角色语音</div>
             </div>
-            <div class="memory-type-item" :class="{ active: selectedChat.voiceProvider === 'elevenlabs' }" style="margin-bottom: 0;" @click="selectProvider('elevenlabs')">
+            <div class="memory-type-item voice-pure-white-card" :class="{ active: selectedChat.voiceProvider === 'elevenlabs' }" style="margin-bottom: 0;" @click="selectProvider('elevenlabs')">
               <div class="type-name" style="margin-bottom: 4px;">ElevenLabs</div>
               <div class="type-desc">细腻自然多语种语音</div>
             </div>
-            <div class="memory-type-item" :class="{ active: selectedChat.voiceProvider === 'microsoft_mai' }" style="margin-bottom: 0;" @click="selectProvider('microsoft_mai')">
+            <div class="memory-type-item voice-pure-white-card" :class="{ active: selectedChat.voiceProvider === 'microsoft_mai' }" style="margin-bottom: 0;" @click="selectProvider('microsoft_mai')">
               <div class="type-name" style="margin-bottom: 4px;">Microsoft MAI</div>
               <div class="type-desc">自然丰富多语言语音</div>
             </div>
-            <div class="memory-type-item" :class="{ active: selectedChat.voiceProvider === 'aliyun_tts' }" style="margin-bottom: 0;" @click="selectProvider('aliyun_tts')">
+            <div class="memory-type-item voice-pure-white-card" :class="{ active: selectedChat.voiceProvider === 'aliyun_tts' }" style="margin-bottom: 0;" @click="selectProvider('aliyun_tts')">
               <div class="type-name" style="margin-bottom: 4px;">阿里云 TTS</div>
               <div class="type-desc">自然可控的角色语音</div>
             </div>
-            <div class="memory-type-item" :class="{ active: selectedChat.voiceProvider === 'doubao_tts' }" style="margin-bottom: 0;" @click="selectProvider('doubao_tts')">
+            <div class="memory-type-item voice-pure-white-card" :class="{ active: selectedChat.voiceProvider === 'doubao_tts' }" style="margin-bottom: 0;" @click="selectProvider('doubao_tts')">
               <div class="type-name" style="margin-bottom: 4px;">豆包语音</div>
               <div class="type-desc">高自然度角色语音</div>
             </div>
-            <div class="memory-type-item" :class="{ active: selectedChat.voiceProvider === 'fish_audio' }" style="margin-bottom: 0;" @click="selectProvider('fish_audio')">
+            <div class="memory-type-item voice-pure-white-card" :class="{ active: selectedChat.voiceProvider === 'fish_audio' }" style="margin-bottom: 0;" @click="selectProvider('fish_audio')">
               <div class="type-name" style="margin-bottom: 4px;">Fish Audio</div>
               <div class="type-desc">克隆音色与自然情绪</div>
             </div>
@@ -200,7 +200,7 @@ const setSeedAudioReferences = (event: Event) => {
               <div style="font-size: 14px; color: var(--text-primary);">语音模型</div>
               <div style="font-size: 11px; color: var(--text-secondary); margin-top: 4px; line-height: 1.4;">建议使用 speech-2.6-turbo 等高保真模型。</div>
             </div>
-            <div style="display: flex; justify-content: space-between; align-items: center; background: rgba(0,0,0,0.03); border: 1px solid var(--border-color); border-radius: 8px; padding: 10px 14px; cursor: pointer;" @click="emit('open-model-modal')">
+            <div class="voice-pure-white-select" style="display: flex; justify-content: space-between; align-items: center; background: #ffffff; border: 1px solid rgba(0, 0, 0, 0.12); border-radius: 8px; padding: 10px 14px; cursor: pointer;" @click="emit('open-model-modal')">
               <span style="font-size: 14px; color: var(--text-primary);">{{ selectedChat.voiceModel || 'speech-2.6-turbo' }}</span>
               <span class="arrow">></span>
             </div>
@@ -211,8 +211,8 @@ const setSeedAudioReferences = (event: Event) => {
               <div style="font-size: 14px; color: var(--text-primary);">音色 ID</div>
               <div style="font-size: 11px; color: var(--text-secondary); margin-top: 4px; line-height: 1.4;">选择或输入该角色的专属音色 ID。</div>
             </div>
-            <div style="display: flex; align-items: center; background: rgba(0,0,0,0.03); border: 1px solid var(--border-color); border-radius: 8px; padding: 4px 14px; overflow: hidden;">
-              <input type="text" v-model="selectedChat.voiceId" @change="handleSave" placeholder="未设置" style="flex: 1; border: none; background: transparent; outline: none; font-size: 14px; color: var(--text-primary); padding: 6px 0;" />
+            <div class="voice-pure-white-select" style="display: flex; align-items: center; background: #ffffff; border: 1px solid rgba(0, 0, 0, 0.12); border-radius: 8px; padding: 4px 14px; overflow: hidden;">
+              <input type="text" v-model="selectedChat.voiceId" @change="handleSave" placeholder="未设置" style="flex: 1; border: none; background: #ffffff; outline: none; font-size: 14px; color: var(--text-primary); padding: 6px 0;" />
               <div @click="emit('open-voice-modal')" style="cursor: pointer; padding: 6px 0 6px 12px; border-left: 1px solid var(--border-color); margin-left: 8px; display: flex; align-items: center; gap: 4px; color: var(--text-secondary);">
                 <span style="font-size: 13px;">选择</span>
                 <span class="arrow">></span>
@@ -225,7 +225,7 @@ const setSeedAudioReferences = (event: Event) => {
               <div style="font-size: 14px; color: var(--text-primary);">发音语言</div>
               <div style="font-size: 11px; color: var(--text-secondary); margin-top: 4px; line-height: 1.4;">默认自动检测。选择特定语言将强制大模型生成该语言文本并以此发音。</div>
             </div>
-            <div style="display: flex; justify-content: space-between; align-items: center; background: rgba(0,0,0,0.03); border: 1px solid var(--border-color); border-radius: 8px; padding: 10px 14px; cursor: pointer;" @click="emit('open-language-modal')">
+            <div class="voice-pure-white-select" style="display: flex; justify-content: space-between; align-items: center; background: #ffffff; border: 1px solid rgba(0, 0, 0, 0.12); border-radius: 8px; padding: 10px 14px; cursor: pointer;" @click="emit('open-language-modal')">
               <span style="font-size: 14px; color: var(--text-primary);">{{ getLanguageLabel(selectedChat.voiceLanguage || '') }}</span>
               <span class="arrow">></span>
             </div>
@@ -679,7 +679,7 @@ const setSeedAudioReferences = (event: Event) => {
               <div style="font-size: 14px; color: var(--text-primary);">情感风格</div>
               <div style="font-size: 11px; color: var(--text-secondary); margin-top: 4px; line-height: 1.4;">强制指定情绪。新一代模型多已自带情感预测，此参数可能不生效。</div>
             </div>
-            <div style="display: flex; justify-content: space-between; align-items: center; background: rgba(0,0,0,0.03); border: 1px solid var(--border-color); border-radius: 8px; padding: 10px 14px; cursor: pointer;" @click="emit('open-emotion-modal')">
+            <div class="voice-pure-white-select" style="display: flex; justify-content: space-between; align-items: center; background: #ffffff; border: 1px solid rgba(0, 0, 0, 0.12); border-radius: 8px; padding: 10px 14px; cursor: pointer;" @click="emit('open-emotion-modal')">
               <span style="font-size: 14px; color: var(--text-primary);">{{ getEmotionLabel(selectedChat.voiceEmotion || '') }}</span>
               <span class="arrow">></span>
             </div>
@@ -689,7 +689,7 @@ const setSeedAudioReferences = (event: Event) => {
         
       </div>
       <div class="confirm-actions" style="margin-top: 16px; border-top: none; padding: 0 24px;">
-        <div class="confirm-btn danger" style="background: var(--text-primary); color: var(--sys-bg-primary); border-radius: 12px;" @click="close">完成配置</div>
+        <div class="confirm-btn danger" style="background: var(--text-primary); color: #ffffff; border-radius: 12px;" @click="close">完成配置</div>
       </div>
     </div>
   </div>
@@ -698,12 +698,43 @@ const setSeedAudioReferences = (event: Event) => {
 <style scoped>
 @import '../settings/ChatSettingsStyles.css';
 
+.voice-pure-white-modal {
+  background: #ffffff !important;
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.12) !important;
+  border: 1px solid rgba(0, 0, 0, 0.08) !important;
+}
+
+.voice-pure-white-card {
+  background: #ffffff !important;
+  border: 1px solid rgba(0, 0, 0, 0.12) !important;
+  transition: all 0.2s ease;
+}
+
+.voice-pure-white-card:hover {
+  border-color: rgba(0, 0, 0, 0.25) !important;
+}
+
+.voice-pure-white-card.active {
+  background: #ffffff !important;
+  border: 1.5px solid var(--text-primary) !important;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+}
+
+.voice-pure-white-select {
+  transition: all 0.2s ease;
+}
+
+.voice-pure-white-select:hover {
+  border-color: rgba(0, 0, 0, 0.25) !important;
+}
+
 .voice-mode-tabs {
   display: flex;
   width: fit-content;
   padding: 4px;
   border-radius: 100px;
-  background: rgba(0, 0, 0, 0.04);
+  background: #ffffff;
+  border: 1px solid rgba(0, 0, 0, 0.1);
 }
 
 .voice-provider-grid {
@@ -715,18 +746,19 @@ const setSeedAudioReferences = (event: Event) => {
 .voice-input {
   width: 100%;
   box-sizing: border-box;
-  border: 1px solid var(--border-color);
+  border: 1px solid rgba(0, 0, 0, 0.12);
   border-radius: 10px;
-  background: rgba(0, 0, 0, 0.02);
+  background: #ffffff !important;
   color: var(--text-primary);
   font-size: 14px;
   outline: none;
   padding: 11px 12px;
+  transition: border-color 0.2s;
 }
 
 .voice-input:focus {
-  border-color: var(--text-secondary);
-  background: var(--sys-bg-primary);
+  border-color: var(--text-primary);
+  background: #ffffff !important;
 }
 
 .voice-mode-tab {
@@ -735,33 +767,37 @@ const setSeedAudioReferences = (event: Event) => {
   color: var(--text-secondary);
   font-size: 13px;
   cursor: pointer;
+  background: transparent;
   transition: all 0.2s;
 }
 
 .voice-mode-tab.active {
   color: var(--text-primary);
-  background: var(--sys-bg-primary);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+  background: #ffffff;
+  border: 1px solid rgba(0, 0, 0, 0.15);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  font-weight: 600;
 }
 
 .voice-textarea {
   width: 100%;
   box-sizing: border-box;
   resize: none;
-  border: 1px solid var(--border-color);
+  border: 1px solid rgba(0, 0, 0, 0.12);
   border-radius: 8px;
-  background: rgba(0, 0, 0, 0.03);
+  background: #ffffff !important;
   color: var(--text-primary);
   font: inherit;
   font-size: 13px;
   line-height: 1.5;
   padding: 10px 12px;
   outline: none;
+  transition: border-color 0.2s;
 }
 
 .voice-textarea:focus {
-  border-color: var(--text-secondary);
-  background: rgba(0, 0, 0, 0.05);
+  border-color: var(--text-primary);
+  background: #ffffff !important;
 }
 
 .elegant-slider {
@@ -780,7 +816,7 @@ const setSeedAudioReferences = (event: Event) => {
   -webkit-appearance: none;
   width: 18px;
   height: 18px;
-  border: 3px solid var(--sys-bg-primary);
+  border: 3px solid #ffffff;
   border-radius: 50%;
   background: var(--text-primary);
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);
@@ -796,7 +832,7 @@ const setSeedAudioReferences = (event: Event) => {
 .elegant-slider::-moz-range-thumb {
   width: 12px;
   height: 12px;
-  border: 3px solid var(--sys-bg-primary);
+  border: 3px solid #ffffff;
   border-radius: 50%;
   background: var(--text-primary);
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);

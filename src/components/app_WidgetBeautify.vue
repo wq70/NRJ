@@ -7,6 +7,7 @@ const WidgetSourceEditor = defineAsyncComponent(() => import('./WidgetSourceEdit
 
 const emit = defineEmits<{ close: []; 'add-widget': [widgetType: WidgetType, widthUnits: number, heightUnits: number] }>()
 const sizeByType = reactive<Record<WidgetType, { width: number; height: number }>>({
+  'dual-aesthetic': { width: 4, height: 2 },
   'about-us-widget': { width: 4, height: 3 },
   'profile-card-widget': { width: 4, height: 3 },
   'circle-avatar-widget': { width: 2, height: 2 },
@@ -30,6 +31,34 @@ const openSource = (widgetType: WidgetType) => { activeSourceType.value = widget
       <p>添加后回到桌面，长按并拖动到喜欢的位置。</p>
     </header>
     <main class="content">
+      <article class="widget-card">
+        <div class="preview dual-aesthetic-preview">
+          <div class="p-ae-left">
+            <span class="p-ae-greet">Good afternoon</span>
+            <span class="p-ae-time">12:30</span>
+            <div class="p-ae-avatar-row">
+              <div class="p-ae-avatar"></div>
+              <div class="p-ae-date"><span>02/06</span><span>Wed</span></div>
+            </div>
+            <div class="p-ae-batt">100%</div>
+          </div>
+          <div class="p-ae-right">
+            <div class="p-ae-cover"></div>
+            <span class="p-ae-song">Be around with you</span>
+            <div class="p-ae-bar"></div>
+          </div>
+        </div>
+        <div class="details">
+          <div>
+            <h3>纯白随身听小组件</h3>
+            <p>1:1 纯白极简双联卡片，包含时钟问候、实时状态、人脉小圆头与随身听音乐卡</p>
+          </div>
+          <span class="size-label">{{ sizeByType['dual-aesthetic'].width }} × {{ sizeByType['dual-aesthetic'].height }}</span>
+        </div>
+        <WidgetSizeControls v-model:width="sizeByType['dual-aesthetic'].width" v-model:height="sizeByType['dual-aesthetic'].height" />
+        <button type="button" class="add-button" @click="add('dual-aesthetic', sizeByType['dual-aesthetic'].width, sizeByType['dual-aesthetic'].height)">添加到桌面</button>
+      </article>
+
       <article class="widget-card">
         <div class="preview about-us-preview">
           <div class="preview-au-header">
@@ -260,6 +289,19 @@ const openSource = (widgetType: WidgetType) => { activeSourceType.value = widget
 .app-widget-beautify{position:absolute;inset:0;z-index:50;display:flex;flex-direction:column;background:var(--sys-bg-primary,#fff);color:var(--text-primary,#000);animation:appOpen .3s cubic-bezier(.2,.8,.2,1)}
 .header{flex:0 0 auto;padding:max(42px,calc(env(safe-area-inset-top) + 28px)) 20px 16px;text-align:left;border-bottom:1px solid var(--border-color,#eee)}.header small{color:var(--text-secondary);font-size:10px;font-weight:700;letter-spacing:.12em}.header h2{margin:4px 0 5px;font-size:21px;font-weight:650}.header .title-btn{cursor:pointer;display:inline-block;user-select:none;transition:transform .15s ease,opacity .15s ease}.header .title-btn:hover{opacity:.85}.header .title-btn:active{transform:scale(.97);opacity:.7}.header p{margin:0;color:var(--text-secondary);font-size:12px;line-height:1.5}
 .content{flex:1;overflow-y:auto;padding:16px 16px 58px;box-sizing:border-box;overscroll-behavior:contain}.widget-card{max-width:430px;margin:0 auto 14px;padding:14px;border:1px solid var(--border-color);border-radius:22px;background:var(--sys-bg-secondary);box-shadow:0 4px 14px color-mix(in srgb,var(--shadow-color) 55%,transparent)}.preview{height:132px;margin-bottom:13px;overflow:hidden;border-radius:17px}.moment-preview{background:var(--card-bg-solid)}.moment-images{display:grid;grid-template-columns:1fr 1fr;height:60px}.moment-images i:first-child{background:#e4e6e8}.moment-images i:last-child{background:#d2d5d8}.moment-body{padding:10px 12px;display:flex;flex-direction:column;align-items:flex-end}.moment-body b{font-size:10px}.moment-body span{align-self:flex-start;margin-top:7px;font-size:9px;color:var(--text-secondary)}.moment-body em{align-self:stretch;height:3px;margin-top:9px;border-radius:2px;background:var(--border-color)}
+.dual-aesthetic-preview{display:grid;grid-template-columns:1fr 1fr;gap:10px;height:100%;padding:8px 12px;background:#fff;border:1px solid rgba(0,0,0,.06);border-radius:14px;box-sizing:border-box;user-select:none}
+.p-ae-left{display:flex;flex-direction:column;justify-content:space-between}
+.p-ae-greet{font-size:8px;color:#64748b}
+.p-ae-time{font-size:16px;font-weight:700;color:#1e293b;line-height:1}
+.p-ae-avatar-row{display:flex;align-items:center;gap:6px}
+.p-ae-avatar{width:22px;height:22px;border-radius:50%;background:#e2e8f0;border:1px solid #cbd5e1}
+.p-ae-date{display:flex;flex-direction:column;font-size:7.5px;color:#64748b;line-height:1.1}
+.p-ae-batt{height:12px;background:#64748b;color:#fff;border-radius:999px;font-size:7px;display:flex;align-items:center;padding-left:5px}
+.p-ae-right{background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:6px;display:flex;flex-direction:column;box-sizing:border-box}
+.p-ae-cover{width:100%;aspect-ratio:1/1;background:#f1f5f9;border-radius:8px;margin-bottom:4px}
+.p-ae-song{font-size:7.5px;color:#334155;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.p-ae-bar{height:2px;background:#64748b;border-radius:1px;margin-top:4px}
+
 .about-us-preview{position:relative;width:200px;height:185px;margin:4px auto 10px;background:transparent;display:flex;flex-direction:column;justify-content:space-between;user-select:none;box-sizing:border-box;padding:2px}
 .preview-au-header{display:flex;align-items:center;justify-content:space-between;width:100%}
 .preview-au-left{display:flex;align-items:center;gap:6px}

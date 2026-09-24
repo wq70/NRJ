@@ -69,7 +69,8 @@ const widgetTypeNames: Record<WidgetType, string> = {
   'circle-avatar-widget': '圆形头像卡片小组件',
   'rectangle-image': '长方形图片小组件',
   'profile-card-widget': '社交名片小组件',
-  'about-us-widget': '拍立得相框小组件'
+  'about-us-widget': '拍立得相框小组件',
+  'dual-aesthetic': '纯白随身听小组件'
 }
 const desktopWidgets = computed(() => layout.pages.flatMap((page, pageIndex) => page.entries
   .filter((entry): entry is DesktopWidgetEntry & { column: number; row: number } => entry.type === 'widget')

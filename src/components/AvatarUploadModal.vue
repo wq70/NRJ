@@ -372,14 +372,14 @@ const saveAvatar = () => {
 }
 
 .modal-content {
-  background: var(--sys-bg-secondary);
+  background: #ffffff;
   border-radius: 24px;
   padding: 0;
   width: 85%;
   max-width: 320px;
   max-height: 80vh;
   overflow: hidden;
-  box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.12);
   display: flex;
   flex-direction: column;
   animation: slideUp 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
@@ -408,7 +408,7 @@ const saveAvatar = () => {
   top: 16px;
   right: 16px;
   z-index: 10;
-  background: color-mix(in srgb, var(--sys-bg-secondary) 85%, transparent);
+  background: rgba(255, 255, 255, 0.85);
   backdrop-filter: blur(8px);
   border: none;
   color: var(--text-tertiary);
@@ -422,7 +422,7 @@ const saveAvatar = () => {
 }
 
 .close-btn:hover {
-  background: var(--sys-bg-primary);
+  background: #f3f4f6;
   color: var(--text-secondary);
 }
 
@@ -623,9 +623,11 @@ const saveAvatar = () => {
   display: flex;
   flex-direction: column;
   gap: 16px;
-  background: #f9fafb;
+  background: #ffffff;
   padding: 16px;
-  border-radius: 16px;
+  border-radius: 18px;
+  border: 1px solid #f0f0f2;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.02);
 }
 
 .option-group {
@@ -645,8 +647,8 @@ const saveAvatar = () => {
   display: flex;
   justify-content: center;
   align-items: center;
-  background: var(--sys-bg-secondary);
-  border: 1px dashed var(--border-color);
+  background: #ffffff;
+  border: 1px dashed #d6d9de;
   border-radius: 12px;
   padding: 12px;
   cursor: pointer;
@@ -657,8 +659,8 @@ const saveAvatar = () => {
 }
 
 .custom-file-upload:hover {
-  background: var(--sys-bg-primary);
-  border-color: var(--text-tertiary);
+  background: #fafafa;
+  border-color: #a3aab3;
 }
 
 .custom-file-upload:active {
@@ -679,7 +681,7 @@ const saveAvatar = () => {
   top: 50%;
   width: 40%;
   height: 1px;
-  background: #e5e7eb;
+  background: #f0f0f2;
 }
 
 .option-divider::before { left: 0; }
@@ -693,12 +695,15 @@ const saveAvatar = () => {
 .url-input-wrap input {
   flex: 1;
   padding: 8px 12px;
-  border: 1px solid var(--border-color);
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
   border-radius: 8px;
   outline: none;
   font-size: 12px;
   width: 100%;
   min-width: 0;
+  color: var(--text-primary);
+  transition: border-color 0.2s, box-shadow 0.2s;
 }
 
 .url-input-wrap input:focus {
@@ -722,12 +727,18 @@ const saveAvatar = () => {
 }
 
 .btn-small {
-  padding: 0 12px;
+  padding: 0 14px;
   font-size: 12px;
-  background: #e5e7eb;
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
   color: var(--text-secondary);
   border-radius: 8px;
   white-space: nowrap;
+}
+
+.btn-small:hover {
+  background: #f9fafb;
+  border-color: #d1d5db;
 }
 
 .modal-actions {
@@ -737,18 +748,30 @@ const saveAvatar = () => {
 }
 
 .btn-primary {
-  background: #333333;
+  background: #2b2b2b;
   color: white;
   flex: 1.5;
   padding: 12px;
   font-size: 14px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.btn-primary:hover {
+  background: #1f1f1f;
 }
 
 .btn-secondary {
-  background: var(--sys-bg-primary);
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
   color: var(--text-secondary);
   flex: 1;
   padding: 12px;
   font-size: 14px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
+}
+
+.btn-secondary:hover {
+  background: #fafafa;
+  border-color: #d1d5db;
 }
 </style>

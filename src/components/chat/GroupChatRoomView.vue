@@ -20,7 +20,7 @@ import { useSeedreamImage } from '../../composables/useSeedreamImage'
 import { usePollinationsImage } from '../../composables/usePollinationsImage'
 import { useAiHordeImage } from '../../composables/useAiHordeImage'
 import { useChatSummary } from '../../composables/useChatSummary'
-import { chatSettings, worldBooks } from '../../store'
+import { chatSettings, getAppearanceStyleId, globalSettings, worldBooks } from '../../store'
 import { activeGroupReplyIds, groupReplyControllers, requestGroupReply, saveGroupChat } from '../../services/groupChat'
 import { invalidateMemoriesForMessages, invalidateVectorMemoriesForMessages, normalizeMemoryMode } from '../../services/memoryEngine'
 import ChatRoomMessageList from './room/ChatRoomMessageList.vue'
@@ -77,6 +77,19 @@ const props = defineProps<{ group: any; isVisible?: boolean }>()
 const emit = defineEmits<{ (e: 'back'): void; (e: 'open-settings'): void; (e: 'open-character-profile', memberId: string): void }>()
 const { mockChats, effectiveMyProfile } = useChatState()
 const { currentChatUserId } = useChatAuth()
+const chatAppearanceStyle = computed(() => getAppearanceStyleId('chatRoom', currentChatUserId.value))
+
+const groupChatRoomZoomStyle = computed(() => {
+  const globalScale = Number(globalSettings.uiScale) || 1
+  const customChatScale = Number(chatSettings.chatUiScale) || 0
+  if (customChatScale > 0) {
+    const effective = customChatScale / globalScale
+    return {
+      zoom: String(effective)
+    }
+  }
+  return {}
+})
 const selectedGroup = computed(() => props.group)
 const groupUserProfile = computed(() => ({ ...effectiveMyProfile.value, ...(props.group.userProfile || {}), timezone: effectiveMyProfile.value.timezone, clockMode: effectiveMyProfile.value.clockMode, clockAnchorRealAt: effectiveMyProfile.value.clockAnchorRealAt, clockAnchorTimeAt: effectiveMyProfile.value.clockAnchorTimeAt }))
 const messageListRef = ref<any>(null)
@@ -776,7 +789,7 @@ onMounted(async () => { await loadEmojis(); updateTimeStr(); if (settleExpiredGr
 
 <template>
   <ChatOfflineMeetView v-if="showSeparateOffline" group-mode :group="group" :external-is-generating="isGenerating" @back="finishSeparateOffline" @send="handleSeparateOfflineSend" @trigger-api="runReply" @stop-generate="stopReply" @regenerate="regenerate" />
-  <div v-else class="view-container full-height chat-view-bg group-room" :style="groupWallpaperStyle">
+  <div v-else class="view-container full-height chat-view-bg group-room" :class="`chat-appearance-${chatAppearanceStyle}`" :style="[groupWallpaperStyle, groupChatRoomZoomStyle]">
     <div v-if="wallpaper" class="chat-wallpaper-overlay"></div>
 
     <ChatRoomHeader
@@ -784,12 +797,15 @@ onMounted(async () => { await loadEmojis(); updateTimeStr(); if (settleExpiredGr
       :totalUnreadCount="totalUnreadCount"
       :currentDateStr="currentDateStr"
       :currentDayStr="currentDayStr"
+      :appearance-style="chatAppearanceStyle"
       @back="emit('back')"
       @open-settings="emit('open-settings')"
       @show-inner-thought-modal="showInnerThoughtModal = true"
       @show-memory-modal="openMemoryModal"
       @open-offline-meet="toggleMixedOffline"
       @open-timelines="ensureMemberTimelineBindings(); timelineForkMessageId = null; showTimelineManagerModal = true"
+      @show-voice-call="addCallEvent('voice')"
+      @show-video-call="addCallEvent('video')"
       @click-overlay="showExtensionPanel = false; showEmojiPanel = false"
     />
     <div v-if="conversationTimePaused" class="conversation-time-pause-banner" @click="resumePausedConversation"><span class="pause-dot"></span><span>会话时间已暂停 · 点击继续</span></div>
@@ -966,6 +982,7 @@ onMounted(async () => { await loadEmojis(); updateTimeStr(); if (settleExpiredGr
 
 <style scoped>
 @import './ChatRoomView.css';
+@import './ChatRoomAppearanceSoftPink.css';
 .group-room{display:flex;flex-direction:column;min-height:0}
 .conversation-time-pause-banner{position:relative;z-index:14;display:flex;align-items:center;justify-content:center;gap:7px;padding:7px 12px;background:color-mix(in srgb,var(--theme-color,#1890ff) 9%,var(--sys-bg-secondary));border-bottom:1px solid var(--border-color);color:var(--text-secondary);font-size:12px;cursor:pointer;user-select:none}.pause-dot{width:7px;height:7px;border-radius:50%;background:var(--theme-color,#1890ff);box-shadow:0 0 0 3px color-mix(in srgb,var(--theme-color,#1890ff) 14%,transparent)}
 .group-muted-input-banner {

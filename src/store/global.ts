@@ -9,6 +9,7 @@ export const globalSettings = reactive({
   darkMode: savedSettings.darkMode ?? false,
   nightShift: savedSettings.nightShift ?? false,
   accentColor: savedSettings.accentColor ?? '#007aff',
+  textEditFocusColor: savedSettings.textEditFocusColor ?? '#3b82f6',
   wallpaper: savedSettings.wallpaper ?? 'default',
   lockScreenWallpaper: savedSettings.lockScreenWallpaper ?? 'default',
   lockScreenStyle: savedSettings.lockScreenStyle ?? 'modern',
@@ -27,7 +28,8 @@ export const globalSettings = reactive({
   unlockMethod: savedSettings.unlockMethod ?? 'swipe',
   unlockDigit: savedSettings.unlockDigit ?? '1234',
   unlockQaQuestion: savedSettings.unlockQaQuestion ?? '我是你的什么人？',
-  unlockQaAnswer: savedSettings.unlockQaAnswer ?? '粘人精'
+  unlockQaAnswer: savedSettings.unlockQaAnswer ?? '粘人精',
+  uiScale: savedSettings.uiScale ?? 1
 })
 
 watch(globalSettings, (newVal) => {

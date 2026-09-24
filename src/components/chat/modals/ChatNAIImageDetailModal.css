@@ -8,7 +8,7 @@
   padding-bottom: 16px; 
   display: flex; 
   flex-direction: column;
-  background: var(--sys-bg-primary);
+  background: #ffffff;
 }
 
 .modal-close-btn {
@@ -24,9 +24,10 @@
 /* Sections */
 .section {
   padding: 16px;
-  background: rgba(0, 0, 0, 0.02);
+  background: #ffffff;
   border-radius: 16px;
   border: 1px solid var(--border-color);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.03);
 }
 .section-title {
   font-size: 15px; font-weight: 600; color: var(--text-primary); margin: 0 0 12px 0;
@@ -47,7 +48,7 @@
   display: block !important; width: 100% !important; font-size: 13px; font-weight: 500; color: var(--text-primary); margin-bottom: 8px; text-align: left;
 }
 .form-input, .form-select, .form-textarea {
-  width: 100%; background: var(--sys-bg-primary); border: 1px solid var(--border-color);
+  width: 100%; background: #ffffff; border: 1px solid var(--border-color);
   border-radius: 10px; padding: 12px; font-size: 14px; color: var(--text-primary);
   box-sizing: border-box; transition: all 0.2s; font-family: inherit; appearance: none;
 }
@@ -58,7 +59,7 @@
 .form-textarea { resize: vertical; line-height: 1.5; }
 
 .input-with-btn {
-  display: flex; align-items: center; width: 100%; background: var(--sys-bg-primary);
+  display: flex; align-items: center; width: 100%; background: #ffffff;
   border-radius: 10px; border: 1px solid var(--border-color); overflow: hidden; transition: all 0.2s; box-sizing: border-box;
 }
 .input-with-btn:focus-within {

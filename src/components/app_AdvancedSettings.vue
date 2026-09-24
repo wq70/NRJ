@@ -1,6 +1,7 @@
 /* WARNING: 本项目专属“粘人精”，严禁出现 Kiro、Krio、周棋洛等任何相关英文或拼音命名！ */
 <script setup lang="ts">
-import { ref, watch, nextTick } from 'vue'
+import { ref, watch, nextTick, computed } from 'vue'
+import { globalSettings } from '../store'
 import ConsolePanel from './advanced_settings/ConsolePanel.vue'
 import PromptPanel from './advanced_settings/PromptPanel.vue'
 import CotPanel from './advanced_settings/CotPanel.vue'
@@ -24,7 +25,10 @@ watch(activeTab, () => {
   })
 })
 
-const tabs = [
+const scalePercent = computed(() => Math.round((globalSettings.uiScale || 1) * 100))
+
+const tabs = computed(() => [
+  { id: 'display_scale', name: '界面缩放', en: 'Display Scale', desc: `当前界面缩放比例：${scalePercent.value}%（与外观设置同步）` },
   { id: 'console', name: '控制台', en: 'Console', desc: '应用运行日志与调试' },
   { id: 'diagnostic', name: '诊断中心', en: 'Diagnostics', desc: '上下文轨迹、调用记录与场景回放' },
   { id: 'prompt', name: '全局提示词', en: 'Prompt', desc: '底层人设与格式规则' },
@@ -33,7 +37,31 @@ const tabs = [
   { id: 'plugin', name: '插件', en: 'Plugins', desc: '扩展应用功能' },
   { id: 'updater', name: '更新日志和更新', en: 'Changelog', desc: '查看更新日志与检查更新' },
   { id: 'tutorial', name: '使用教程', en: 'Tutorials', desc: '查看或下载使用教程' }
-]
+])
+
+const showScaleModal = ref(false)
+const advSliderScale = ref(100)
+
+const openScaleModal = () => {
+  advSliderScale.value = Math.round((globalSettings.uiScale || 1) * 100)
+  showScaleModal.value = true
+}
+
+const onAdvSliderInput = (val: number) => {
+  advSliderScale.value = val
+  globalSettings.uiScale = Math.round(val) / 100
+}
+
+const adjustAdvScale = (delta: number) => {
+  const target = Math.max(70, Math.min(130, advSliderScale.value + delta))
+  advSliderScale.value = target
+  globalSettings.uiScale = Math.round(target) / 100
+}
+
+const resetAdvScale = () => {
+  advSliderScale.value = 100
+  globalSettings.uiScale = 1.0
+}
 
 const handleBack = () => {
   if (activeTab.value === 'home') {
@@ -87,7 +115,7 @@ const {
             v-for="(tab, index) in tabs" 
             :key="tab.id"
             class="gu-catalog-item"
-            @click="activeTab = tab.id"
+            @click="tab.id === 'display_scale' ? openScaleModal() : (activeTab = tab.id)"
           >
             <div class="gu-catalog-left">
               <span class="gu-catalog-num">〇{{ index + 1 }}</span>
@@ -116,6 +144,60 @@ const {
         </div>
       </div>
     </div>
+
+    <!-- 界面缩放弹窗（滑动条 + 实时全屏预览 + 重置） -->
+    <Transition name="fade">
+      <div class="gu-modal-overlay" v-if="showScaleModal" @click.self="showScaleModal = false">
+        <div class="gu-modal" style="max-width: 330px; padding: 18px 20px;">
+          <div class="gu-modal-header" style="padding: 6px 0 14px;">
+            <h3>调节界面缩放</h3>
+          </div>
+          <div class="gu-modal-body" style="padding: 0 0 14px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px;">
+              <span style="font-size: 12px; color: #888;">实时全屏响应</span>
+              <span style="font-size: 15px; font-weight: bold; color: #1a1a1a; font-family: 'STSong', serif;">{{ advSliderScale }}%</span>
+            </div>
+
+            <div style="display: flex; align-items: center; gap: 10px;">
+              <button class="gu-scale-step" @click="adjustAdvScale(-5)">-</button>
+              <input 
+                type="range" 
+                min="70" 
+                max="130" 
+                step="1"
+                :value="advSliderScale" 
+                @input="onAdvSliderInput(Number(($event.target as HTMLInputElement).value))"
+                class="gu-scale-slider"
+              />
+              <button class="gu-scale-step" @click="adjustAdvScale(5)">+</button>
+            </div>
+
+            <div style="display: flex; justify-content: space-between; font-size: 11px; color: #999; margin-top: 6px; padding: 0 2px;">
+              <span>70% 极小</span>
+              <span :style="Math.abs(advSliderScale - 100) < 1 ? { color: '#1a1a1a', fontWeight: 'bold' } : {}">100% 标准</span>
+              <span>130% 放大</span>
+            </div>
+          </div>
+          <div style="display: flex; gap: 10px; border-top: 1px solid #f0f0f0; padding-top: 14px;">
+            <button 
+              class="gu-btn gu-btn-cancel" 
+              style="border: 1px solid #e0e0e0; border-radius: 6px; padding: 10px 0;"
+              :style="Math.abs(advSliderScale - 100) < 1 ? { opacity: 0.5, cursor: 'not-allowed' } : {}"
+              @click="resetAdvScale"
+            >
+              重置 100%
+            </button>
+            <button 
+              class="gu-btn gu-btn-primary" 
+              style="background: #1a1a1a; color: #ffffff; border-radius: 6px; padding: 10px 0;"
+              @click="showScaleModal = false"
+            >
+              完成
+            </button>
+          </div>
+        </div>
+      </div>
+    </Transition>
 
     <!-- 弹窗 -->
     <Transition name="fade">
@@ -397,6 +479,47 @@ const {
 
 .gu-btn-danger {
   color: #BE2A2A;
+}
+
+.gu-scale-step {
+  width: 30px;
+  height: 30px;
+  border-radius: 4px;
+  border: 1px solid #d9d9d9;
+  background: #ffffff;
+  color: #1a1a1a;
+  font-size: 16px;
+  font-weight: bold;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.gu-scale-step:active {
+  background: #f0f0f0;
+}
+
+.gu-scale-slider {
+  flex: 1;
+  -webkit-appearance: none;
+  appearance: none;
+  height: 4px;
+  border-radius: 2px;
+  background: #d9d9d9;
+  outline: none;
+  cursor: pointer;
+}
+
+.gu-scale-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #1a1a1a;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.25);
+  cursor: pointer;
 }
 
 .fade-enter-active, .fade-leave-active { transition: opacity 0.3s ease; }

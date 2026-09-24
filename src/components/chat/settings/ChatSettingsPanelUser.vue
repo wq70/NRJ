@@ -13,7 +13,7 @@ const props = defineProps<{
 }>()
 
 const emit = defineEmits<{
-  (e: 'open-avatar-upload', target: 'me'): void
+  (e: 'open-avatar-upload', target: 'contact' | 'me'): void
   (e: 'open-text-modal', title: string, text: string, defaultText: string, placeholder: string, target: string): void
   (e: 'open-long-text-modal', title: string, text: string, defaultText: string, placeholder: string, target: string): void
   (e: 'open-timezone-modal', target: 'user'): void
@@ -31,28 +31,36 @@ const showCallRecordsView = ref(false)
 
 <template>
   <div class="role-edit-section">
-    <div class="user-avatar-action-box" style="margin-bottom: 24px;" v-show="matchSearch('当前时间', '人设库', '账号人设', '新建人设', '更换头像', '我')">
-      <div class="action-column">
-        <div class="action-btn" @click="emit('open-timezone-modal', 'user')">
-          <span class="action-time-label">当前时间</span>
-          <span class="action-time-value">{{ userCurrentTime }}</span>
-        </div>
-        <div class="action-btn" @click="emit('use-account-persona')">账号人设</div>
-      </div>
-
-      <div class="role-edit-avatar-box">
-        <div class="role-edit-avatar" @click="emit('open-avatar-upload', 'me')" :style="myProfile.avatarUrl ? { backgroundImage: `url(${myProfile.avatarUrl})` } : {}">
-          <span v-if="!myProfile.avatarUrl">{{ myProfile.name.charAt(0) || '我' }}</span>
-          <div class="avatar-edit-overlay">
-            <svg viewBox="0 0 24 24" width="20" height="20" stroke="#fff" stroke-width="2" fill="none"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path><circle cx="12" cy="13" r="4"></circle></svg>
+    <!-- 1:1 复刻无背景小组件 (用户版) -->
+    <div class="clingy-role-custom-widget" v-show="matchSearch('更换头像', '头像', '签名', '小组件', '我', '人设库', '账号人设', '新建人设', myProfile?.name, myProfile?.remark)">
+      <!-- 上方大头像与昵称 -->
+      <div class="widget-top-section">
+        <div class="widget-main-avatar" @click="emit('open-avatar-upload', 'me')" :style="myProfile?.avatarUrl ? { backgroundImage: `url(${myProfile.avatarUrl})` } : {}" title="点击更换头像">
+          <span v-if="!myProfile?.avatarUrl">{{ myProfile?.name?.charAt(0) || '我' }}</span>
+          <div class="widget-avatar-edit-badge">
+            <svg viewBox="0 0 24 24" width="12" height="12" stroke="#fff" stroke-width="2.5" fill="none"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path><circle cx="12" cy="13" r="4"></circle></svg>
           </div>
         </div>
-        <div class="role-edit-avatar-tip">点击更换头像</div>
+        <div class="widget-name-row" @click="emit('open-text-modal', '编辑我的昵称', myProfile?.remark || myProfile?.name || '我', '', '请输入备注或昵称', 'myRemark')" title="点击修改昵称">
+          <span class="widget-name-text">♡⑅ºʚ՞{{ myProfile?.remark || myProfile?.name || '我' }}՞ɞº⑅♡</span>
+        </div>
       </div>
 
-      <div class="action-column">
-        <div class="action-btn" @click="emit('open-persona-select')">人设库选择</div>
-        <div class="action-btn" @click="emit('create-user-persona')">新建人设</div>
+      <!-- 下方小头像(角色头像)与胶囊气泡(自定义文案) -->
+      <div class="widget-bottom-section">
+        <div class="widget-sub-avatar" @click="emit('open-avatar-upload', 'contact')" :style="selectedChat?.avatarUrl ? { backgroundImage: `url(${selectedChat.avatarUrl})` } : {}" title="点击更换角色头像">
+          <span v-if="!selectedChat?.avatarUrl">{{ selectedChat?.avatarText || selectedChat?.name?.charAt(0) || '伴' }}</span>
+        </div>
+        <div class="widget-bubble-capsule" @click="emit('open-text-modal', '编辑自定义文案', myProfile?.widgetBubbleText || '自定义文案', '自定义文案', '请输入自定义文案', 'myWidgetBubbleText')" title="点击修改自定义文案">
+          <span class="widget-bubble-text">{{ myProfile?.widgetBubbleText || '自定义文案' }}</span>
+        </div>
+      </div>
+
+      <!-- 人设快捷操作入口 -->
+      <div class="widget-user-persona-actions">
+        <button type="button" class="persona-chip-btn" @click="emit('open-persona-select')">人设库选择</button>
+        <button type="button" class="persona-chip-btn" @click="emit('use-account-persona')">账号人设</button>
+        <button type="button" class="persona-chip-btn" @click="emit('create-user-persona')">新建人设</button>
       </div>
     </div>
 
@@ -125,99 +133,220 @@ const showCallRecordsView = ref(false)
 <style scoped>
 @import './ChatSettingsStyles.css';
 
-.user-avatar-action-box {
+/* 1:1 复刻无背景小组件样式 (用户版) */
+.clingy-role-custom-widget {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 100%;
+  padding: 10px 4px 6px;
+  box-sizing: border-box;
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+}
+
+.widget-top-section {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  cursor: pointer;
+}
+
+.widget-main-avatar {
+  width: 76px;
+  height: 76px;
+  border-radius: 50%;
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  background-color: #ffffff;
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 20px;
+  font-size: 26px;
+  font-weight: 500;
+  color: var(--text-secondary, #8e8e93);
+  position: relative;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.05);
+  border: 2px solid #ffffff;
+  transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.2s;
+  user-select: none;
+}
+
+.is-dark .widget-main-avatar {
+  border-color: rgba(255, 255, 255, 0.12);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+}
+
+.widget-main-avatar:active {
+  transform: scale(0.96);
+}
+
+.widget-avatar-edit-badge {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1.5px solid #fff;
+}
+
+.widget-name-row {
+  margin-top: 10px;
+  text-align: center;
+  cursor: pointer;
+  padding: 2px 8px;
+  border-radius: 8px;
+  transition: background-color 0.2s;
+}
+
+.widget-name-row:active {
+  background-color: rgba(0, 0, 0, 0.05);
+}
+
+.widget-name-text {
+  font-size: 13.5px;
+  font-weight: 500;
+  color: var(--text-secondary, #737373);
+  letter-spacing: 0.3px;
+  user-select: none;
+}
+
+.widget-bottom-section {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  width: 100%;
+  margin-top: 18px;
+  padding: 0 10px;
+  gap: 12px;
+  box-sizing: border-box;
+}
+
+.widget-sub-avatar {
+  width: 44px;
+  height: 44px;
+  min-width: 44px;
+  border-radius: 50%;
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  background-color: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  font-weight: 500;
+  color: var(--text-secondary, #8e8e93);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+  border: 1.5px solid #ffffff;
+  cursor: pointer;
+  transition: transform 0.2s ease;
+  user-select: none;
+}
+
+.is-dark .widget-sub-avatar {
+  border-color: rgba(255, 255, 255, 0.12);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
+}
+
+.widget-sub-avatar:active {
+  transform: scale(0.95);
+}
+
+.widget-bubble-capsule {
+  flex: 1;
+  max-width: 82%;
+  display: inline-flex;
+  align-items: center;
+  padding: 9px 18px;
+  border-radius: 999px;
+  background: #ffffff;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.02);
+  cursor: pointer;
+  transition: transform 0.2s ease, background-color 0.2s, border-color 0.2s;
+  box-sizing: border-box;
+}
+
+.is-dark .widget-bubble-capsule {
+  background: rgba(40, 40, 42, 0.85);
+  border-color: rgba(255, 255, 255, 0.15);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+}
+
+.widget-bubble-capsule:active {
+  transform: scale(0.98);
+  background-color: #f7f7f8;
+}
+
+.is-dark .widget-bubble-capsule:active {
+  background-color: rgba(55, 55, 58, 0.95);
+}
+
+.widget-bubble-text {
+  font-size: 13px;
+  color: var(--text-secondary, #5c5c60);
+  line-height: 1.4;
+  letter-spacing: 0.2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  user-select: none;
+}
+
+/* 人设快捷操作胶囊栏 */
+.widget-user-persona-actions {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 14px;
   width: 100%;
 }
 
-.action-column {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
+.persona-chip-btn {
+  padding: 4px 12px;
+  border-radius: 20px;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  background: rgba(255, 255, 255, 0.65);
+  color: var(--text-secondary, #666);
+  font-size: 11.5px;
+  cursor: pointer;
+  transition: all 0.2s ease;
 }
 
-.action-btn {
-  width: 80px;
-  padding: 8px 0;
-  border: 1px solid var(--border-color, #eee);
-  border-radius: 16px;
-  background: var(--sys-bg-secondary);
+.is-dark .persona-chip-btn {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.12);
   color: var(--text-primary);
-  font-size: 13px;
-  font-weight: 500;
-  text-align: center;
-  cursor: pointer;
+}
+
+.persona-chip-btn:active {
+  transform: scale(0.96);
+  background: rgba(0, 0, 0, 0.05);
 }
 
 .role-edit-section {
   display: flex;
   width: 100%;
-  margin-top: 24px;
+  margin-top: 12px;
   flex-direction: column;
-  gap: 24px;
-}
-
-.role-edit-avatar-box {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 12px;
-}
-
-.role-edit-avatar {
-  position: relative;
-  display: flex;
-  width: 80px;
-  height: 80px;
-  align-items: center;
-  justify-content: center;
-  overflow: hidden;
-  border: 1px solid var(--border-color);
-  border-radius: 50%;
-  background: var(--sys-bg-primary);
-  background-position: center;
-  background-size: cover;
-  color: var(--text-secondary);
-  font-size: 28px;
-  cursor: pointer;
-}
-
-.avatar-edit-overlay {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: rgba(0, 0, 0, 0.4);
-  opacity: 0;
-}
-
-.role-edit-avatar:hover .avatar-edit-overlay {
-  opacity: 1;
-}
-
-.role-edit-avatar-tip {
-  color: var(--text-tertiary);
-  font-size: 12px;
-}
-
-.action-time-label {
-  display: block;
-  margin-bottom: 2px;
-  font-size: 11px;
-  opacity: 0.8;
-}
-
-.action-time-value {
-  font-family: monospace;
-  font-size: 15px;
+  gap: 20px;
 }
 
 .profile-source-hint {
-  margin: -12px 4px 0;
+  margin: -10px 4px 0;
   color: var(--text-tertiary);
   font-size: 12px;
   text-align: center;

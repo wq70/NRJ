@@ -84,6 +84,14 @@ const allSettingsData = computed(() => {
       colorValue: globalSettings.accentColor
     },
     {
+      id: 'text_edit_focus_color',
+      type: 'custom_color_reset',
+      label: '输入框高亮光圈',
+      description: '通用文本编辑弹窗选中时的光圈与边框色',
+      colorValue: globalSettings.textEditFocusColor || '#3b82f6',
+      canReset: (globalSettings.textEditFocusColor || '#3b82f6') !== '#3b82f6'
+    },
+    {
       id: 'app_icons',
       type: 'link',
       label: '自定义应用图标',
@@ -183,9 +191,11 @@ const allSettingsData = computed(() => {
     }
   }
 
+  const scalePercent = Math.round((globalSettings.uiScale || 1) * 100)
   const displayItems: any[] = [
     { id: 'darkMode', type: 'toggle', label: '夜间模式', value: globalSettings.darkMode },
     { id: 'nightShift', type: 'toggle', label: '护眼模式', value: globalSettings.nightShift },
+    { id: 'uiScale', type: 'link', label: '界面缩放', valueText: `${scalePercent}%` },
     { id: 'showStatusBar', type: 'toggle', label: '显示状态栏', value: globalSettings.showStatusBar },
     { id: 'showNotch', type: 'toggle', label: '灵动岛', value: globalSettings.showNotch },
     { id: 'showDockAppNames', type: 'toggle', label: 'Dock应用名', value: globalSettings.showDockAppNames }
@@ -280,6 +290,31 @@ const applySliderIcon = (icon: string) => {
   showSliderIconModal.value = false
 }
 
+// 界面缩放弹窗（滑动条 + 实时预览 + 重置）
+const showScaleModal = ref(false)
+const sliderScalePercent = ref(100)
+
+const openScaleModal = () => {
+  sliderScalePercent.value = Math.round((globalSettings.uiScale || 1) * 100)
+  showScaleModal.value = true
+}
+
+const onScaleSliderInput = (val: number) => {
+  sliderScalePercent.value = val
+  globalSettings.uiScale = Math.round(val) / 100
+}
+
+const adjustUiScale = (delta: number) => {
+  const target = Math.max(70, Math.min(130, sliderScalePercent.value + delta))
+  sliderScalePercent.value = target
+  globalSettings.uiScale = Math.round(target) / 100
+}
+
+const resetUiScale = () => {
+  sliderScalePercent.value = 100
+  globalSettings.uiScale = 1.0
+}
+
 // 输入弹窗
 const showInputModal = ref(false)
 const inputModalTitle = ref('')
@@ -329,6 +364,8 @@ const handleItemClick = (item: any) => {
     if (['darkMode', 'nightShift', 'showStatusBar', 'showNotch', 'iosPwaFullscreen', 'chargingBoltInside', 'enableAvatarCrop', 'enableSlider', 'showDockAppNames', 'enableLockScreen', 'disableBrowserAutofill'].includes(item.id)) {
       (globalSettings as any)[item.id] = !item.value
     }
+  } else if (item.id === 'uiScale') {
+    openScaleModal()
   } else if (item.id === 'wallpaper') {
     wallpaperTarget.value = 'desktop'
     showWallpaperModal.value = true
@@ -433,6 +470,28 @@ const handleItemClick = (item: any) => {
                     <div class="color-dot" :style="{ background: item.colorValue }"></div>
                   </div>
                 </template>
+                <template v-else-if="item.type === 'custom_color_reset'">
+                  <div class="focus-color-control" @click.stop>
+                    <label class="native-color-picker-label" title="点击更改光圈颜色">
+                      <input 
+                        type="color" 
+                        class="hidden-color-input"
+                        :value="item.colorValue" 
+                        @input="e => globalSettings.textEditFocusColor = (e.target as HTMLInputElement).value"
+                      />
+                      <div class="color-circle-preview" :style="{ backgroundColor: item.colorValue }"></div>
+                    </label>
+                    <button 
+                      v-if="item.canReset"
+                      type="button" 
+                      class="color-reset-btn"
+                      title="恢复默认淡蓝色"
+                      @click="globalSettings.textEditFocusColor = '#3b82f6'"
+                    >
+                      重置
+                    </button>
+                  </div>
+                </template>
               </div>
             </div>
           </div>
@@ -462,6 +521,69 @@ const handleItemClick = (item: any) => {
       current-style="ins"
       :target="wallpaperTarget"
     />
+
+    <!-- 毛玻璃界面缩放弹窗 (滑动条 + 实时预览 + 重置) -->
+    <Transition name="soft-fade">
+      <div class="soft-modal-overlay" v-if="showScaleModal" @click="showScaleModal = false">
+        <div class="soft-modal-panel scale-slider-soft-panel" @click.stop>
+          <div class="soft-modal-header">
+            <span class="title">界面缩放</span>
+            <button class="close-btn" @click="showScaleModal = false">
+              <svg viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+                <line x1="18" y1="6" x2="6" y2="18"></line>
+                <line x1="6" y1="6" x2="18" y2="18"></line>
+              </svg>
+            </button>
+          </div>
+
+          <div class="scale-soft-content">
+            <div class="scale-soft-status">
+              <span class="scale-soft-tag">全屏实时预览中</span>
+              <span class="scale-soft-val">{{ sliderScalePercent }}%</span>
+            </div>
+
+            <!-- 滑动条区域 -->
+            <div class="scale-soft-slider-row">
+              <button class="scale-soft-btn" @click="adjustUiScale(-5)" title="缩小5%">-</button>
+              <input 
+                type="range" 
+                min="70" 
+                max="130" 
+                step="1"
+                :value="sliderScalePercent" 
+                @input="onScaleSliderInput(Number(($event.target as HTMLInputElement).value))"
+                class="scale-soft-range"
+              />
+              <button class="scale-soft-btn" @click="adjustUiScale(5)" title="放大5%">+</button>
+            </div>
+
+            <div class="scale-soft-range-labels">
+              <span>极小 70%</span>
+              <span :class="{ 'active-label': Math.abs(sliderScalePercent - 100) < 1 }">标准 100%</span>
+              <span>放大 130%</span>
+            </div>
+
+            <div class="scale-soft-hint">
+              拖动滑块时整个系统界面即刻同步缩放。
+            </div>
+
+            <!-- 按钮操作区 -->
+            <div class="scale-soft-actions">
+              <button 
+                class="scale-soft-reset-btn" 
+                :class="{ disabled: Math.abs(sliderScalePercent - 100) < 1 }"
+                @click="resetUiScale"
+              >
+                重置为 100%
+              </button>
+              <button class="scale-soft-done-btn" @click="showScaleModal = false">
+                完成
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </Transition>
 
     <!-- 毛玻璃颜色选择弹窗 -->
     <Transition name="soft-fade">
@@ -594,4 +716,56 @@ const handleItemClick = (item: any) => {
 
 <style scoped>
 @import './AppearanceSettings.css';
+
+.focus-color-control {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.native-color-picker-label {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.hidden-color-input {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+}
+
+.color-circle-preview {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 2px solid #ffffff;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.12);
+  transition: transform 0.15s ease;
+}
+
+.color-circle-preview:hover {
+  transform: scale(1.1);
+}
+
+.color-reset-btn {
+  background: transparent;
+  border: 1px solid var(--border-color, #e5e7eb);
+  border-radius: 6px;
+  padding: 3px 8px;
+  font-size: 11px;
+  color: var(--text-secondary, #6b7280);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.color-reset-btn:hover {
+  background: #f3f4f6;
+  color: var(--text-primary, #111827);
+  border-color: #d1d5db;
+}
 </style>

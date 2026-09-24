@@ -1,10 +1,19 @@
 /* WARNING: 本项目专属“粘人精”，严禁出现 Kiro、Krio、周棋洛等任何相关英文或拼音命名！ */
 import { sendCapabilityMessage } from './api'
+import type { MusicTrack } from '../types/music'
 
 export type SocialCircleCategory = 'family' | 'friend' | 'work' | 'other'
 export type SocialPrivacy = 'public' | 'limited' | 'private' | 'hidden'
 export type SocialInteractionFrequency = 'high' | 'medium' | 'low'
 export type SocialCircleManagementMode = 'readonly' | 'confirm' | 'autonomous'
+
+export interface SocialThemeSong {
+  options: { track: MusicTrack; reason: string }[]
+  selectedIndex: number
+  contextKey: string
+  pinned: boolean
+  generatedAt: number
+}
 
 export interface SocialCircleItem {
   id: string
@@ -47,6 +56,8 @@ export interface SocialCircleSettings {
   allowIncomingRequests: boolean
   managementMode: SocialCircleManagementMode
   generationCount: number
+  themeMusicEnabled: boolean
+  themeSong?: SocialThemeSong
   updatedAt: number
 }
 
@@ -60,6 +71,7 @@ export const defaultSocialCircleSettings = (): SocialCircleSettings => ({
   allowIncomingRequests: true,
   managementMode: 'confirm',
   generationCount: 5,
+  themeMusicEnabled: false,
   updatedAt: Date.now()
 })
 
@@ -76,6 +88,9 @@ export const normalizeSocialCircleSettings = (chat: any): SocialCircleSettings =
     ...saved,
     managementMode: ['readonly', 'confirm', 'autonomous'].includes(saved.managementMode) ? saved.managementMode : defaults.managementMode,
     generationCount: Math.min(10, Math.max(2, Number(saved.generationCount || defaults.generationCount))),
+    themeMusicEnabled: saved.themeMusicEnabled === true,
+    themeSong: saved.themeSong && Array.isArray(saved.themeSong.options) && saved.themeSong.options.length
+      ? saved.themeSong as SocialThemeSong : undefined,
     updatedAt: Number(saved.updatedAt || defaults.updatedAt)
   }
   if (chat) chat.socialCircleSettings = normalized

@@ -1,6 +1,6 @@
 /* WARNING: 本项目专属“粘人精”，严禁出现无关角色命名！ */
 
-export type AppearanceCategoryId = 'characterProfile'
+export type AppearanceCategoryId = 'characterProfile' | 'chatRoom'
 
 export interface AppearanceStyleDefinition {
   id: string
@@ -25,6 +25,15 @@ export const appearanceCategories: AppearanceCategoryDefinition[] = [
       { id: 'default', name: '原版主页', keywords: '编辑感 · 留白', description: '保留当前角色主页的完整结构与交互。' },
       { id: 'magazine', name: '私人杂志', keywords: '摄影集 · 冷白', description: '让封面与近况照片成为主页的主要视觉。' },
       { id: 'letter', name: '私人信笺', keywords: '纸页 · 档案', description: '以照片纸、细线和记录感整理角色资料。' }
+    ]
+  },
+  {
+    id: 'chatRoom',
+    name: '聊天界面',
+    description: '单聊、群聊、消息气泡与输入区域的呈现方式',
+    styles: [
+      { id: 'default', name: '原版聊天', keywords: '沉浸 · 完整', description: '保留当前聊天界面的完整结构、快捷入口与交互。' },
+      { id: 'softPink', name: '浅粉简讯', keywords: '留白 · 浅粉', description: '白色画布、浅粉气泡与轻量顶栏，适配单聊、群聊及深色模式。' }
     ]
   }
 ]

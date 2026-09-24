@@ -28,13 +28,13 @@ const handleSelect = (val: string) => {
 
 <template>
   <div v-if="visible" class="wb-modal-overlay" style="z-index: 10010;" @click.self="close">
-    <div class="custom-confirm-modal" style="max-width: 320px; padding-bottom: 20px;">
+    <div class="custom-confirm-modal pure-white-modal" style="max-width: 320px; padding-bottom: 20px; background: #ffffff !important;">
       <div class="confirm-title" style="margin-bottom: 16px;">选择情感风格</div>
       <div style="padding: 0 16px; display: flex; flex-direction: column; gap: 8px;">
         <div 
           v-for="opt in emotionOptions" 
           :key="opt.value" 
-          class="memory-type-item"
+          class="memory-type-item pure-white-item"
           :class="{ active: currentEmotion === opt.value }"
           @click="handleSelect(opt.value)"
           style="margin-bottom: 0;"
@@ -48,4 +48,26 @@ const handleSelect = (val: string) => {
 
 <style scoped>
 @import '../settings/ChatSettingsStyles.css';
+
+.pure-white-modal {
+  background: #ffffff !important;
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.12) !important;
+  border: 1px solid rgba(0, 0, 0, 0.08) !important;
+}
+
+.pure-white-item {
+  background: #ffffff !important;
+  border: 1px solid rgba(0, 0, 0, 0.12) !important;
+  transition: all 0.2s ease;
+}
+
+.pure-white-item:hover {
+  border-color: rgba(0, 0, 0, 0.25) !important;
+}
+
+.pure-white-item.active {
+  background: #ffffff !important;
+  border: 1.5px solid var(--text-primary) !important;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+}
 </style>

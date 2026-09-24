@@ -82,7 +82,21 @@ export interface AboutUsWidgetConfig {
   tag2: string
   slogan: string
 }
-export type WidgetConfig = DualAvatarWidgetConfig | MomentCardWidgetConfig | CustomImageWidgetConfig | FolderWidgetConfig | DualFrameWidgetConfig | CircleAvatarWidgetConfig | RectangleImageWidgetConfig | ProfileCardWidgetConfig | AboutUsWidgetConfig
+export interface DualAestheticWidgetConfig {
+  greeting: string
+  timeText: string
+  dateText: string
+  weekText: string
+  avatarUrl: string
+  batteryTitle: string
+  batteryPercent: number
+  circleAvatars: string[]
+  songTitle: string
+  songCover: string
+  duration: string
+  currentPosition: string
+}
+export type WidgetConfig = DualAvatarWidgetConfig | MomentCardWidgetConfig | CustomImageWidgetConfig | FolderWidgetConfig | DualFrameWidgetConfig | CircleAvatarWidgetConfig | RectangleImageWidgetConfig | ProfileCardWidgetConfig | AboutUsWidgetConfig | DualAestheticWidgetConfig
 export interface WidgetInstanceRecord { id: string; widgetType: WidgetType; config: WidgetConfig; updatedAt: number }
 
 const instanceStore = localforage.createInstance({ name: 'nrt-app', storeName: 'widgetInstances' })
@@ -115,13 +129,29 @@ export const defaultWidgetConfig = (widgetType: WidgetType): WidgetConfig => {
   if (widgetType === 'about-us-widget') {
     return { avatarImage: null, cachedAvatarImage: null, cardImage: null, cachedCardImage: null, title: '标题占位', tag1: '#标签一', tag2: '#标签二', slogan: '☆⁺底部签名占位文案⁺☆' }
   }
+  if (widgetType === 'dual-aesthetic') {
+    return {
+      greeting: 'Good afternoon',
+      timeText: '',
+      dateText: '',
+      weekText: '',
+      avatarUrl: '',
+      batteryTitle: 'Janice’s Phone battery',
+      batteryPercent: 100,
+      circleAvatars: [],
+      songTitle: 'Be around with you',
+      songCover: '',
+      duration: '4:50',
+      currentPosition: '2:46'
+    }
+  }
   return { imageSourceType: null, imageValue: null, cachedImageValue: null, objectFit: 'cover', objectPosition: '50% 50%', borderRadius: 22 }
 }
 
 const normalizeRecord = (value: unknown): WidgetInstanceRecord | null => {
   if (!value || typeof value !== 'object') return null
   const record = value as Partial<WidgetInstanceRecord>
-  if (typeof record.id !== 'string' || !['dual-avatar', 'moment-card', 'custom-image', 'folder-widget', 'dual-frame', 'circle-avatar-widget', 'rectangle-image', 'profile-card-widget', 'about-us-widget'].includes(String(record.widgetType))) return null
+  if (typeof record.id !== 'string' || !['dual-avatar', 'moment-card', 'custom-image', 'folder-widget', 'dual-frame', 'circle-avatar-widget', 'rectangle-image', 'profile-card-widget', 'about-us-widget', 'dual-aesthetic'].includes(String(record.widgetType))) return null
   return { id: record.id, widgetType: record.widgetType as WidgetType, config: { ...defaultWidgetConfig(record.widgetType as WidgetType), ...(record.config as object ?? {}) } as WidgetConfig, updatedAt: Number(record.updatedAt) || Date.now() }
 }
 const load = async () => {

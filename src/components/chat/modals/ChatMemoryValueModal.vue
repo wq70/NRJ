@@ -25,6 +25,11 @@ const close = () => {
   emit('update:visible', false)
 }
 
+const handleReset = () => {
+  tempMemoryValue.value = ''
+  emit('save', null)
+}
+
 const handleSave = () => {
   const val = parseInt(tempMemoryValue.value)
   emit('save', isNaN(val) ? null : val)
@@ -39,10 +44,27 @@ const handleSave = () => {
         设置AI在每次对话时，最多携带多少{{ memoryType === 'round' ? '轮' : '条' }}历史消息作为上下文。<br/>设置得太大可能会导致超出大模型的字数限制或消耗大量 Token。
       </div>
       <div style="padding: 0 24px 20px;">
-        <input type="number" class="form-input" v-model="tempMemoryValue" placeholder="留空为不限制" style="margin-bottom: 0; width: 100%; box-sizing: border-box;" />
+        <div class="input-with-clear">
+          <input
+            type="number"
+            class="form-input memory-input"
+            v-model="tempMemoryValue"
+            placeholder="留空为不限制"
+          />
+          <button
+            v-if="tempMemoryValue"
+            type="button"
+            class="input-clear-btn"
+            title="清空输入"
+            @click="tempMemoryValue = ''"
+          >
+            ✕
+          </button>
+        </div>
       </div>
       <div class="confirm-actions">
         <div class="confirm-btn cancel" @click="close">取消</div>
+        <div class="confirm-btn reset" @click="handleReset">重置</div>
         <div class="confirm-btn danger" style="color: var(--text-primary);" @click="handleSave">确认</div>
       </div>
     </div>
@@ -51,4 +73,55 @@ const handleSave = () => {
 
 <style scoped>
 @import '../settings/ChatSettingsStyles.css';
+
+.input-with-clear {
+  position: relative;
+  width: 100%;
+}
+
+.memory-input {
+  width: 100%;
+  margin-bottom: 0;
+  box-sizing: border-box;
+  padding-right: 32px;
+}
+
+.input-clear-btn {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: none;
+  background: color-mix(in srgb, var(--text-primary, #000) 10%, transparent);
+  color: var(--text-secondary, #666);
+  font-size: 11px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  padding: 0;
+  line-height: 1;
+  transition: all 0.15s ease;
+}
+
+.input-clear-btn:hover {
+  background: color-mix(in srgb, var(--text-primary, #000) 18%, transparent);
+  color: var(--text-primary, #000);
+}
+
+.confirm-btn.reset {
+  color: var(--text-secondary);
+  border-right: 1px solid var(--border-color);
+}
+
+.confirm-btn.reset:hover {
+  color: var(--text-primary);
+}
+
+.confirm-btn.reset:active {
+  background: var(--sys-bg-primary);
+}
 </style>
