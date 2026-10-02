@@ -1,5 +1,7 @@
 /* WARNING: 本项目专属“粘人精”，严禁出现 Kiro、Krio、周棋洛等任何相关英文或拼音命名！ */
 <script setup lang="ts">
+import DanmakuPanel from "../components/danmaku/DanmakuPanel.vue"
+import { emptyDanmakuSource } from "../services/danmakuSources"
 import { ref, watch, nextTick, computed } from 'vue'
 import { globalSettings } from '../store'
 import ConsolePanel from './advanced_settings/ConsolePanel.vue'
@@ -29,6 +31,7 @@ const scalePercent = computed(() => Math.round((globalSettings.uiScale || 1) * 1
 
 const tabs = computed(() => [
   { id: 'display_scale', name: '界面缩放', en: 'Display Scale', desc: `当前界面缩放比例：${scalePercent.value}%（与外观设置同步）` },
+  { id: 'danmaku', name: '弹幕与观众', en: 'Audience', desc: '虚拟观众、评论风格、显示、生成与记录' },
   { id: 'console', name: '控制台', en: 'Console', desc: '应用运行日志与调试' },
   { id: 'diagnostic', name: '诊断中心', en: 'Diagnostics', desc: '上下文轨迹、调用记录与场景回放' },
   { id: 'prompt', name: '全局提示词', en: 'Prompt', desc: '底层人设与格式规则' },
@@ -131,6 +134,7 @@ const {
         </div>
 
         <!-- 各个分页 -->
+        <DanmakuPanel v-if="activeTab === 'danmaku'" :source="emptyDanmakuSource('chat')" manager />
         <ConsolePanel v-if="activeTab === 'console'" />
         <DiagnosticPanel v-if="activeTab === 'diagnostic'" />
         <PromptPanel v-if="activeTab === 'prompt'" :showConfirm="showConfirm" />

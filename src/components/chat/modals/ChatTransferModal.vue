@@ -20,7 +20,7 @@
           </div>
 
           <div class="form-group">
-            <label class="form-label">付款方式</label>
+            <label class="form-label">付款方式</label><div class="payment-user-hint">付款 USER：{{ currentAccount?.name || '未登录钱包' }}</div>
             <select class="text-input" v-model="selectedFundingSource">
               <option value="balance">余额 (可用: {{ formatMoney(walletState?.cashCents || 0) }})</option>
               <option 
@@ -70,17 +70,10 @@
     </div>
   </transition>
 
-  <PaymentPasswordModal
-    :visible="showPasswordInput"
-    :account-id="currentChatUserId || 'guest'"
-    @close="showPasswordInput = false"
-    @success="handlePasswordSuccess"
-  />
 </template>
 
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
-import PaymentPasswordModal from './PaymentPasswordModal.vue'
 import { loadWalletState } from '../../../services/walletService'
 import { useChatAuth } from '../../../composables/useChatAuth'
 
@@ -105,7 +98,7 @@ const transferType = ref<'red_packet' | 'transfer'>('red_packet')
 const amount = ref<string>('')
 const remark = ref<string>('')
 const expireHours = ref<string>('24')
-const showPasswordInput = ref(false)
+
 
 const walletState = ref<ReturnType<typeof loadWalletState> | null>(null)
 const selectedFundingSource = ref<string>('balance')
@@ -137,7 +130,6 @@ watch(() => props.visible, (newVal) => {
     amount.value = ''
     remark.value = ''
     expireHours.value = '24'
-    showPasswordInput.value = false
     
     const accountId = currentChatUserId.value || 'guest'
     walletState.value = loadWalletState(accountId, currentAccount.value?.name || '我')
@@ -158,19 +150,6 @@ const handleClose = () => {
 const handleSubmit = () => {
   if (!isValid.value) return
 
-  // 获取钱包状态，检查是否需要支付密码
-  const accountId = currentChatUserId.value || 'guest'
-  const state = loadWalletState(accountId)
-  if (state.paymentPassword) {
-    showPasswordInput.value = true
-    return
-  }
-  
-  executeSend()
-}
-
-const handlePasswordSuccess = () => {
-  showPasswordInput.value = false
   executeSend()
 }
 
@@ -197,11 +176,11 @@ const executeSend = () => {
     fundingSourceId
   })
   
-  showPasswordInput.value = false
 }
 </script>
 
 <style scoped>
+.payment-user-hint{font-size:11px;color:var(--text-secondary);overflow:hidden;white-space:nowrap;text-overflow:ellipsis;max-width:100%}
 .modal-fade-enter-active,
 .modal-fade-leave-active {
   transition: opacity 0.3s ease;

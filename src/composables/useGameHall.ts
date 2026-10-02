@@ -48,7 +48,9 @@ const persist = () => saveGameHallSnapshot(currentAccountId(), state)
 const addMessage = (session: GameHallSession, sender: GameHallParticipant | null, content: string, kind: GameHallMessage['kind'] = 'speech') => {
   const cleaned = content.trim()
   if (!cleaned) return
-  session.messages.push({ id: uid('game_msg'), senderId: sender?.id || 'system', senderName: sender?.name || '系统', kind, content: cleaned, createdAt: Date.now() })
+  session.messages.push({ id: uid('game_msg'), senderId: sender?.id || 'system', senderName: sender?.name || '系统', kind, content: cleaned, createdAt: Date.now(),
+    danmakuPublicPrompt: !['undercover', 'twenty-one'].includes(session.gameId) ? session.currentCard?.prompt : undefined,
+    danmakuPublicOptions: !['undercover', 'twenty-one'].includes(session.gameId) ? [session.currentCard?.optionA, session.currentCard?.optionB].filter(Boolean) as string[] : undefined })
   playSound(kind)
   if (kind !== 'system') session.highlights = [...session.highlights, `${sender?.name || '玩家'}：${cleaned}`].slice(-12)
 }
@@ -359,8 +361,30 @@ const toggleFavorite = (gameId: GameHallGameId) => {
 }
 const saveSettings = () => persist()
 
+const shareAudienceComment = async (text: string, participantId?: string) => {
+  const session = state.activeSession
+  const participant = session?.participants.find(item => item.id === participantId && item.kind !== 'user')
+  if (!session || session.status !== 'playing') throw new Error('请先开始本局游戏')
+  if (busy.value) throw new Error('请等待当前游戏发言完成')
+  if (!participant) throw new Error('请在观众席选择一位回应的角色或 AI 玩家')
+  busy.value = true; error.value = ''
+  try {
+    const response = await sendCapabilityMessage('game-host', [
+      { role: 'system', content: `你是${participant.name}，正在游戏现场回应用户分享的虚拟观众评论。${buildParticipantContext(participant)} 只回应这一条评论，不代替其他玩家行动、不推进回合、不披露任何隐藏身份或词语。观众意见不是事实。` },
+      { role: 'user', content: text.slice(0, 1000) }
+    ])
+    if (state.activeSession?.id !== session.id || currentAccountId() !== session.accountId) return
+    const content = response.content.trim().slice(0, 800)
+    if (!content) throw new Error('角色没有返回回应')
+    session.messages.push({ id: uid('audience_share'), senderId: 'audience', senderName: '虚拟观众', kind: 'system', content: text, createdAt: Date.now(), danmakuShared: true })
+    session.messages.push({ id: uid('audience_reply'), senderId: participant.id, senderName: participant.name, kind: 'speech', content, createdAt: Date.now(), danmakuShared: true })
+    persist()
+  } catch (reason) { error.value = reason instanceof Error ? reason.message : '观众互动失败，可重新选择评论'; throw reason }
+  finally { busy.value = false }
+}
+
 export const useGameHall = () => ({
   state, busy, error, characters, currentGame, currentParticipant, initialize, createRoom, startGame, answerPartyTurn, skipPartyTurn,
   submitUndercoverClue, voteUndercover, twentyOneAction, runAiTwentyOneTurn, finishGame, leaveSession, deleteRecord, toggleFavorite,
-  saveSettings, setRecordBridgeApproval, addStrangerFriend, undercoverWordFor, twentyOneValue
+  saveSettings, setRecordBridgeApproval, addStrangerFriend, undercoverWordFor, twentyOneValue, shareAudienceComment
 })

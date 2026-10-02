@@ -1,5 +1,7 @@
 <!-- WARNING: 本项目专属“粘人精”，严禁出现无关角色命名！ -->
 <script setup lang="ts">
+import DanmakuPanel from "../components/danmaku/DanmakuPanel.vue"
+import { gameDanmakuSource } from "../services/danmakuSources"
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useGameHall } from '../composables/useGameHall'
 import { gameHallCatalog } from '../services/gameHallEngine'
@@ -159,6 +161,7 @@ onMounted(() => hall.initialize())
       </template>
 
       <template v-else>
+        <DanmakuPanel :source="gameDanmakuSource(activeSession, hall.busy.value, true)" :share-action="hall.shareAudienceComment" :share-targets="activeSession?.participants.filter(p => p.kind !== 'user').map(p => ({id:p.id,name:p.name}))" />
         <div class="game-section-title"><div><h3>玩家已到齐</h3><p>AI身份公开显示，不与现实真人混淆</p></div><span>{{ activeSession.participants.length }} 人</span></div>
         <section class="game-seat-grid">
           <article v-for="participant in activeSession.participants" :key="participant.id"><span>{{ participant.avatarText }}</span><strong>{{ participant.name }}</strong><small>{{ participant.kind === 'user' ? '你' : participant.kind === 'character' ? '聊天角色' : 'AI 陌生玩家' }}</small><i>已准备</i></article>
@@ -170,6 +173,7 @@ onMounted(() => hall.initialize())
     </main>
 
     <main v-else-if="view === 'play' && activeSession" class="game-play">
+      <DanmakuPanel :source="gameDanmakuSource(activeSession, hall.busy.value, true)" :share-action="hall.shareAudienceComment" :share-targets="activeSession?.participants.filter(p => p.kind !== 'user').map(p => ({id:p.id,name:p.name}))" />
       <section class="game-table">
         <div class="game-seat-strip">
           <article v-for="(participant, index) in activeSession.participants" :key="participant.id" :class="{ active: index === activeSession.turnIndex, eliminated: activeSession.undercover?.eliminatedIds.includes(participant.id) }"><span>{{ participant.avatarText }}</span><strong>{{ participant.name }}</strong><small>{{ participant.kind === 'ai-stranger' ? 'AI' : participant.kind === 'character' ? '角色' : '你' }}</small></article>

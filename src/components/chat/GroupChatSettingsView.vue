@@ -436,9 +436,11 @@ const openEditingMember = async (member: any) => {
     enableNAIImageGen: !!member.enableNAIImageGen,
     enableEmojiVision: !!member.enableEmojiVision,
     enableRoleEmojiVision: !!member.enableRoleEmojiVision,
+    allowBuiltInEmojis: member.allowBuiltInEmojis === true,
     enableImmersiveStatus: !!member.enableImmersiveStatus,
     enableMemoryBridge: !!member.enableMemoryBridge
   })
+  if (props.group.memberSettings[id].allowBuiltInEmojis === undefined) props.group.memberSettings[id].allowBuiltInEmojis = member.allowBuiltInEmojis === true
   if (props.group.memberEmojiLibraryEnabled[id] === undefined) props.group.memberEmojiLibraryEnabled[id] = true
   customAvatarData.value = loadedAvatars.value[id] || null
   if (props.group.memberNotes[id] === undefined) {
@@ -877,6 +879,7 @@ onUnmounted(() => {
           <div class="glass-list-item"><span class="item-label">允许该成员主动发起群通话</span><label class="switch"><input v-model="group.memberSettings[editingMemberId].allowIncomingGroupCall" type="checkbox"><span class="slider"></span></label></div>
           <div class="glass-list-item"><span class="item-label">群内角色真实生图</span><label class="switch"><input v-model="group.memberSettings[editingMemberId].enableNAIImageGen" type="checkbox"><span class="slider"></span></label></div>
           <div class="glass-list-item"><span class="item-label">允许查看表情包图像</span><label class="switch"><input v-model="group.memberSettings[editingMemberId].enableEmojiVision" type="checkbox"><span class="slider"></span></label></div>
+          <div class="glass-list-item"><span class="item-label">允许使用内置表情</span><label class="switch"><input v-model="group.memberSettings[editingMemberId].allowBuiltInEmojis" type="checkbox"><span class="slider"></span></label></div>
           <div class="glass-list-item"><span class="item-label">根据表情包图形发送</span><label class="switch"><input v-model="group.memberSettings[editingMemberId].enableRoleEmojiVision" type="checkbox"><span class="slider"></span></label></div>
           <div class="glass-list-item"><span class="item-label">引用该成员单人表情包</span><label class="switch"><input v-model="group.memberEmojiLibraryEnabled[editingMemberId]" type="checkbox" :disabled="!group.referenceMemberEmojiLibraries"><span class="slider"></span></label></div>
           <div class="glass-list-item"><span class="item-label">沉浸式状态与时间流逝</span><label class="switch"><input v-model="group.memberSettings[editingMemberId].enableImmersiveStatus" type="checkbox"><span class="slider"></span></label></div>

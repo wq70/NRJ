@@ -1,0 +1,12 @@
+{
+  "name": "nrj-commerce-gateway",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=22.12.0" },
+  "scripts": {
+    "start": "node --env-file=.env src/server.mjs",
+    "password": "node scripts/password.mjs",
+    "test": "node --test test/*.test.mjs"
+  },
+  "dependencies": { "pg": "8.23.1", "playwright": "1.63.0" }
+}

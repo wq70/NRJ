@@ -6,6 +6,7 @@ const props = defineProps<{
   newUserName: string
   newUserAvatar: string
   newUserDetail: string
+  canSave: boolean
   isBoundToAccount?: boolean
   isEditingPersona?: boolean
 }>()
@@ -44,7 +45,7 @@ const updateDetail = (e: Event) => {
         <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
         <span>返回</span>
       </div>
-      <div class="nav-btn save-btn" :class="{ disabled: !newUserName.trim() }" @click="emit('save')">
+      <div class="nav-btn save-btn" :class="{ disabled: !canSave }" @click="canSave && emit('save')">
         <span>保存档案</span>
         <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>
       </div>
@@ -149,11 +150,11 @@ const updateDetail = (e: Event) => {
 </template>
 
 <style scoped>
-.full-height { height: 100%; z-index: 10; background-color: var(--sys-bg-primary); }
+.full-height { height: 100%; z-index: 10; background-color: #ffffff; }
 
 .create-persona-view { 
-  background-color: var(--sys-bg-primary);
-  background-image: linear-gradient(0deg, transparent 24%, rgba(255, 255, 255, .3) 25%, rgba(255, 255, 255, .3) 26%, transparent 27%, transparent 74%, rgba(255, 255, 255, .3) 75%, rgba(255, 255, 255, .3) 76%, transparent 77%, transparent), linear-gradient(90deg, transparent 24%, rgba(255, 255, 255, .3) 25%, rgba(255, 255, 255, .3) 26%, transparent 27%, transparent 74%, rgba(255, 255, 255, .3) 75%, rgba(255, 255, 255, .3) 76%, transparent 77%, transparent);
+  background-color: #ffffff;
+  background-image: linear-gradient(0deg, transparent 24%, rgba(0, 0, 0, .03) 25%, rgba(0, 0, 0, .03) 26%, transparent 27%, transparent 74%, rgba(0, 0, 0, .03) 75%, rgba(0, 0, 0, .03) 76%, transparent 77%, transparent), linear-gradient(90deg, transparent 24%, rgba(0, 0, 0, .03) 25%, rgba(0, 0, 0, .03) 26%, transparent 27%, transparent 74%, rgba(0, 0, 0, .03) 75%, rgba(0, 0, 0, .03) 76%, transparent 77%, transparent);
   background-size: 40px 40px;
   z-index: 30; 
   display: flex;
@@ -185,9 +186,9 @@ const updateDetail = (e: Event) => {
 }
 
 .nav-btn.cancel-btn {
-  background: rgba(255, 255, 255, 0.5);
+  background: rgba(255, 255, 255, 0.85);
   color: #666;
-  border: 1px solid rgba(0, 0, 0, 0.05);
+  border: 1px solid rgba(0, 0, 0, 0.08);
 }
 .nav-btn.cancel-btn:active { background: rgba(255, 255, 255, 0.8); }
 

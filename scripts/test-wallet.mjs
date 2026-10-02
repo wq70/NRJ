@@ -9,9 +9,9 @@ globalThis.localStorage = {
   removeItem: key => memory.delete(key),
   clear: () => memory.clear()
 }
-globalThis.window = { dispatchEvent: () => true }
-globalThis.CustomEvent = class CustomEvent {
-  constructor(type, init) { this.type = type; this.detail = init?.detail }
+globalThis.window = new EventTarget()
+globalThis.CustomEvent = class CustomEvent extends Event {
+  constructor(type, init) { super(type); this.detail = init?.detail }
 }
 
 const source = await readFile('src/services/walletService.ts', 'utf8')
@@ -148,4 +148,126 @@ const duplicateMomentReceipt = wallet.creditMomentReceiptPayment({
 assert.equal(duplicateMomentReceipt.created, false, '同一朋友圈交易 ID 不得重复到账')
 assert.equal(wallet.loadWalletState('user-1').cashCents, beforeMomentReceipt + 1888, '重复到账调用不得再次增加余额')
 
-console.log('wallet service tests passed')
+{
+// Payment authorization belongs to a single USER, source and operation; cancelled
+// and stale confirmations must never debit funds or create a payment/order.
+const secured = wallet.createWalletState('secure-user', '支付用户')
+secured.cashCents = 500000
+secured.bankCards = [{ id: 'secure-card', name: '测试储蓄卡', lastFour: '1234', enabled: true, createdAt: 1, balanceCents: 100000 }]
+secured.credit.enabled = true; secured.credit.limitCents = 200000; secured.credit.usedCents = 5000
+wallet.saveWalletState(secured)
+wallet.setWalletPaymentSecurity(secured, '1234', 'pin')
+assert.equal(wallet.walletPaymentMode(wallet.loadWalletState('secure-user')), 'pin')
+assert.equal(wallet.isValidWalletCredential('pin', '123'), false)
+assert.equal(wallet.isValidWalletCredential('gesture', '1123'), false)
+assert.equal(wallet.appendWalletGesturePoint('1', 3), '123')
+assert.equal(wallet.appendWalletGesturePoint('1', 9), '159')
+assert.equal(wallet.appendWalletGesturePoint('123', 2), '123')
+assert.throws(() => wallet.setWalletPaymentSecurity(secured, '123', 'pin'))
+
+let response = '1234'
+let heldRequest = null
+let hold = false
+let requests = 0
+window.addEventListener(wallet.walletAuthorizationEventName, event => {
+  requests++
+  event.detail.accepted = true
+  if (hold) heldRequest = event.detail
+  else event.detail.finish(response)
+})
+const intent = (operation, amountCents, fundingSource = 'balance', fundingSourceId) => ({ accountId: 'secure-user', operation, title: '测试付款', amountCents, fundingSource, fundingSourceId })
+const send = amount => wallet.createOutgoingWalletPayment('secure-user', amount, 'transfer', '测试')
+const beforeProtected = localStorage.getItem(wallet.walletStorageKey('secure-user'))
+assert.throws(() => send(1000), /验证/)
+assert.throws(() => wallet.chargeWalletForMallOrder('secure-user', 'unauthorized', 1000), /验证/)
+assert.throws(() => wallet.adjustWalletBalance(wallet.loadWalletState('secure-user'), -1000, '提现', 'withdraw', '', 'secure-card'), /验证/)
+assert.throws(() => wallet.adjustWalletBalance(wallet.loadWalletState('secure-user'), 1000, '充值', 'deposit', '', 'secure-card'), /验证/)
+assert.throws(() => wallet.repayWalletCredit(wallet.loadWalletState('secure-user'), 1000), /验证/)
+assert.throws(() => wallet.placeWalletOrder(wallet.loadWalletState('secure-user'), { code: 'CLY001', side: 'buy', orderType: 'market', quantity: 1, fundingSource: 'balance' }), /验证/)
+assert.equal(localStorage.getItem(wallet.walletStorageKey('secure-user')), beforeProtected)
+
+response = null
+assert.equal(await wallet.runWalletPayment(intent('send', 1000), () => send(1000)), undefined)
+assert.equal(localStorage.getItem(wallet.walletStorageKey('secure-user')), beforeProtected)
+response = '0000'
+await assert.rejects(wallet.runWalletPayment(intent('send', 1000), () => send(1000)), /支付设置/)
+assert.equal(localStorage.getItem(wallet.walletStorageKey('secure-user')), beforeProtected)
+response = '1234'
+await assert.rejects(wallet.runWalletPayment(intent('send', 1000), () => send(1000), () => false), /已变化/)
+assert.equal(localStorage.getItem(wallet.walletStorageKey('secure-user')), beforeProtected)
+
+hold = true
+const waiting = wallet.runWalletPayment(intent('send', 1000), () => send(1000))
+await assert.rejects(wallet.runWalletPayment(intent('send', 1000), () => send(1000)), /当前支付验证/)
+wallet.setWalletPaymentSecurity(wallet.loadWalletState('secure-user'), '4567', 'pin')
+heldRequest.finish('1234')
+await assert.rejects(waiting, /支付设置/)
+hold = false; response = '4567'
+const requestsBeforeBatch = requests
+await wallet.runWalletPayment(intent('send', 3000), () => { send(1000); return send(2000) })
+assert.equal(requests, requestsBeforeBatch + 1, '批量付款只验证一次')
+assert.equal(wallet.loadWalletState('secure-user').cashCents, 497000)
+assert.throws(() => send(1000), /验证/, '验证不能授权下一笔付款')
+await assert.rejects(wallet.runWalletPayment(intent('send', 1000), () => send(2000)), /验证/, '不得扩大已确认金额')
+await assert.rejects(wallet.runWalletPayment(intent('mall', 1000), () => send(1000)), /验证/, '不得用商城授权发送转账')
+await assert.rejects(wallet.runWalletPayment(intent('send', 1000), () => wallet.createOutgoingWalletPayment('secure-user', 1000, 'transfer', '', 'bank_card', 'secure-card')), /验证/, '不得更换资金来源')
+
+await wallet.runWalletPayment(intent('deposit', 1000, 'bank_card', 'secure-card'), () => { const s = wallet.loadWalletState('secure-user'); wallet.adjustWalletBalance(s, 1000, '充值', 'deposit', '', 'secure-card'); wallet.saveWalletState(s) })
+await wallet.runWalletPayment(intent('withdraw', 1000), () => { const s = wallet.loadWalletState('secure-user'); wallet.adjustWalletBalance(s, -1000, '提现', 'withdraw', '', 'secure-card'); wallet.saveWalletState(s) })
+await wallet.runWalletPayment(intent('repay', 1000), () => { const s = wallet.loadWalletState('secure-user'); wallet.repayWalletCredit(s, 1000); wallet.saveWalletState(s) })
+await wallet.runWalletPayment(intent('mall', 1000), () => wallet.chargeWalletForMallOrder('secure-user', 'secured-order', 1000))
+const stockQuote = wallet.loadWalletState('secure-user').quotes[0]
+await wallet.runWalletPayment(intent('stock', stockQuote.priceCents), () => { const s = wallet.loadWalletState('secure-user'); wallet.placeWalletOrder(s, { code: stockQuote.code, side: 'buy', orderType: 'market', quantity: 1, fundingSource: 'balance' }); wallet.saveWalletState(s) })
+let limitOrder
+await wallet.runWalletPayment(intent('stock', stockQuote.priceCents), () => { const s = wallet.loadWalletState('secure-user'); limitOrder = wallet.placeWalletOrder(s, { code: stockQuote.code, side: 'buy', orderType: 'limit', limitPriceCents: stockQuote.priceCents, quantity: 1, fundingSource: 'balance' }); wallet.saveWalletState(s) })
+const beforeAutoFillRequests = requests
+const autoFill = wallet.loadWalletState('secure-user')
+wallet.processWalletPendingOrders(autoFill); wallet.saveWalletState(autoFill)
+assert.equal(autoFill.orders.find(item => item.id === limitOrder.id).status, 'filled')
+assert.equal(requests, beforeAutoFillRequests, '已提交委托成交不得重复验证')
+wallet.refundWalletMallOrder('secure-user', 'secured-order', 1000)
+assert.equal(requests, beforeAutoFillRequests, '退款不得重复验证')
+
+let pendingMarket = wallet.loadWalletState('secure-user')
+pendingMarket.marketSettings.mode = 'live'
+pendingMarket.liveQuotes[0].priceCents = 20000
+wallet.saveWalletState(pendingMarket)
+await wallet.runWalletPayment(intent('stock', 18888), () => {
+  const s = wallet.loadWalletState('secure-user')
+  wallet.placeWalletOrder(s, { code: s.liveQuotes[0].code, side: 'buy', orderType: 'limit', limitPriceCents: 18888, quantity: 1, fundingSource: 'balance' })
+  wallet.saveWalletState(s)
+})
+pendingMarket = wallet.loadWalletState('secure-user')
+const requestKey = wallet.walletMarketRequestKey(pendingMarket)
+const beforeConcurrentPayment = pendingMarket.cashCents
+await wallet.runWalletPayment(intent('send', 1000), () => send(1000))
+pendingMarket.liveQuotes[0].priceCents = 18888
+pendingMarket.marketSettings.status = 'ready'
+assert.equal(wallet.saveWalletMarketResult(pendingMarket, requestKey), true)
+assert.equal(wallet.loadWalletState('secure-user').cashCents, beforeConcurrentPayment - 1000, '行情返回不能覆盖期间的新扣款')
+assert.equal(wallet.loadWalletState('secure-user').liveQuotes[0].priceCents, 18888)
+assert.equal(wallet.loadWalletState('secure-user').liveOrders[0].status, 'filled', '行情同步仍须完成已授权委托')
+assert.equal(wallet.loadWalletState('secure-user').livePositions[0].quantity, 1)
+const changedMarket = wallet.loadWalletState('secure-user')
+changedMarket.marketSettings.mode = 'simulation'; wallet.saveWalletState(changedMarket)
+assert.equal(wallet.saveWalletMarketResult(pendingMarket, requestKey), false, '行情设置变化时丢弃旧请求结果')
+
+const staleFinance = wallet.loadWalletState('secure-user')
+wallet.setWalletPaymentSecurity(wallet.loadWalletState('secure-user'), '12369', 'gesture')
+wallet.saveWalletState(staleFinance)
+assert.equal(wallet.loadWalletState('secure-user').paymentPassword, '12369', '后台保存不得覆盖新密码')
+response = '12369'
+await wallet.runWalletPayment(intent('send', 1000), () => send(1000))
+assert.equal(wallet.verifyWalletCredential(wallet.loadWalletState('secure-user'), '12369'), true)
+wallet.restoreWalletFinanceSnapshot('secure-user', JSON.stringify({ ...secured, cashCents: 4200, paymentPassword: '9999', paymentPasswordType: 'pin' }))
+assert.equal(wallet.loadWalletState('secure-user').cashCents, 4200)
+assert.equal(wallet.loadWalletState('secure-user').paymentPassword, '12369', '时间线回溯保留当前手势')
+const resetState = wallet.loadWalletState('secure-user')
+wallet.resetWalletFinance(resetState); wallet.saveWalletState(resetState)
+assert.equal(wallet.loadWalletState('secure-user').paymentPasswordType, 'gesture')
+wallet.setWalletPaymentSecurity(wallet.loadWalletState('secure-user'), undefined, 'pin')
+assert.equal(wallet.walletPaymentMode(wallet.loadWalletState('secure-user')), 'off')
+assert.equal(wallet.loadWalletState('user-1').paymentPassword, undefined, '其他 USER 不得受到影响')
+console.log('wallet service and payment authorization tests passed')
+
+}

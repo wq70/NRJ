@@ -4,6 +4,7 @@ import { activeGroupReplyIds, requestGroupReply, saveGroupChat, type GroupChatRe
 import { persistActiveTimeline } from './chatTimeline'
 import { formatIdentityClockTime, formatIdentityDateTime, isConversationTimePaused } from './conversationTime'
 import { findRoleEmojiByResponse } from './chatEmojiScope'
+import { isBuiltInEmojiResponse } from './builtInChatEmojis'
 
 const inHourRange = (hour: number, start: number, end: number) => start < end
   ? hour >= start && hour < end
@@ -32,6 +33,7 @@ const appendAutonomousReplies = async (group: GroupChatRecord, result: any, allC
     const member = allChats.find(chat => chat.chatType !== 'group' && memberId(chat) === String(message.senderId))
     if (!member) return
     const effective = { ...member, ...(group.memberSettings[String(message.senderId)] || {}) }
+    if (message.messageType === 'emoji' && effective.allowBuiltInEmojis !== true && isBuiltInEmojiResponse(message.emojiId, message.content)) return
     const item: any = {
       id: now + index,
       timestamp: now + index,
@@ -47,9 +49,9 @@ const appendAutonomousReplies = async (group: GroupChatRecord, result: any, allC
       turnId: `group_autonomy_${now}`,
       sequence: index
     }
-    if (message.messageType === 'emoji' && effective.enableRoleEmojiVision) {
-      const emoji: any = findRoleEmojiByResponse(emojiItems, String(message.senderId), { id: message.emojiId, name: message.content }, { groupId: group.id, includePrivateRoleLibrary: group.referenceMemberEmojiLibraries && group.memberEmojiLibraryEnabled[String(message.senderId)] !== false })
-      if (!emoji) return
+    if (message.messageType === 'emoji' && (effective.enableRoleEmojiVision || effective.allowBuiltInEmojis)) {
+      const emoji: any = findRoleEmojiByResponse(emojiItems, String(message.senderId), { id: message.emojiId, name: message.content }, { groupId: group.id, includePrivateRoleLibrary: group.referenceMemberEmojiLibraries && group.memberEmojiLibraryEnabled[String(message.senderId)] !== false, includeBuiltIn: effective.allowBuiltInEmojis === true })
+      if (!emoji || (!emoji.builtIn && !effective.enableRoleEmojiVision)) return
       item.isEmoji = true
       item.emojiId = emoji.id
       item.emojiSummary = emoji.name

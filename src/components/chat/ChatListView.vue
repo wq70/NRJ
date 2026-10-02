@@ -1,9 +1,10 @@
 /* WARNING: 本项目专属“粘人精”，严禁出现 Kiro、Krio、周棋洛等任何相关英文或拼音命名！ */
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, onUnmounted, watch } from 'vue'
 import { useChatState } from '../../composables/useChatState'
-import { globalSettings } from '../../store'
+import { getAppearanceStyleId, globalSettings } from '../../store'
 import PersonaImportModal from '../PersonaImportModal.vue'
+import ChatListEditorialView from './ChatListEditorialView.vue'
 
 // -- 拆分出的 Composable --
 import { useChatListMultiSelect } from '../../composables/useChatListMultiSelect'
@@ -24,6 +25,7 @@ const emit = defineEmits<{
   (e: 'open-create-group'): void
   (e: 'open-chat', chat: any): void
   (e: 'account-switched'): void
+  (e: 'multi-select-change', active: boolean): void
 }>()
 
 const { 
@@ -136,6 +138,9 @@ const {
 } = useChatListGroups(customGroups, activeGroup, loadCustomContacts)
 
 const { currentChatUserId, currentAccount } = useChatAuth()
+const isEditorialStyle = computed(() => getAppearanceStyleId('chatList', currentChatUserId.value) === 'editorial')
+watch([isEditorialStyle, isMultiSelectMode], () => emit('multi-select-change', isEditorialStyle.value && isMultiSelectMode.value), { immediate: true })
+onUnmounted(() => emit('multi-select-change', false))
 const getContactsKey = () => currentChatUserId.value ? `clingy_custom_contacts_${currentChatUserId.value}` : 'clingy_custom_contacts'
 
 // === 侧边栏状态 ===
@@ -308,7 +313,32 @@ const handleImportComplete = async (personas: any[]) => {
 </script>
 
 <template>
-  <div class="view-container chat-list-view" :class="{ 'with-tabbar': !isMultiSelectMode, 'with-multi-bar': isMultiSelectMode, 'has-sidebar': !isMultiSelectMode }">
+  <div class="view-container chat-list-view" :class="{ 'with-tabbar': !isMultiSelectMode, 'with-multi-bar': isMultiSelectMode, 'has-sidebar': !isMultiSelectMode && !isEditorialStyle, 'is-editorial': isEditorialStyle }">
+    <ChatListEditorialView
+      v-if="isEditorialStyle"
+      :chats="groupFilteredChats"
+      :custom-groups="customGroups"
+      :active-group="activeGroup"
+      :is-multi-select-mode="isMultiSelectMode"
+      :selected-chat-ids="selectedChatIds"
+      @close="emit('close')"
+      @account-switch="accountSwitchModalVisible = true"
+      @open-create-contact="createChoiceModalVisible = true"
+      @open-create-group="emit('open-create-group')"
+      @open-chat="handleChatClick"
+      @start-long-press="startLongPress"
+      @clear-long-press="clearLongPress"
+      @select-group="handleGroupClick"
+      @group-menu="activeMenuGroup = $event"
+      @add-group="showAddGroupDialog(showDialog)"
+      @manage-groups="selectedManageGroups.clear(); groupManageModalVisible = true"
+      @exit-multi-select="exitMultiSelectMode"
+      @toggle-select="toggleSelectChat"
+      @select-all="toggleSelectAll"
+      @assign-groups="tempSelectedGroups.clear(); assignGroupModalVisible = true"
+      @delete-selected="deleteSelectedChats(showDialog)"
+    />
+    <template v-else>
     <header class="navbar glass-header chat-normal-header" :class="{ 'with-wallpaper': globalSettings.chatListWallpaper !== 'default' }">
       <template v-if="!isMultiSelectMode">
         <div class="nav-left chat-normal-left">
@@ -496,10 +526,11 @@ const handleImportComplete = async (personas: any[]) => {
     </main>
       </div>
     </div>
+    </template>
 
     <!-- Multi-Select Bottom Bar -->
     <Teleport to="body">
-      <div v-show="isMultiSelectMode" class="multi-select-bottom-bar glass" :class="{ 'with-wallpaper': globalSettings.chatListWallpaper !== 'default' }">
+      <div v-show="!isEditorialStyle && isMultiSelectMode" class="multi-select-bottom-bar glass" :class="{ 'with-wallpaper': globalSettings.chatListWallpaper !== 'default' }">
         <div class="bottom-btn secondary" :class="{ disabled: selectedChatIds.size === 0 }" @click="() => { tempSelectedGroups.clear(); assignGroupModalVisible = true }">移动分组</div>
         <div class="bottom-btn danger" :class="{ disabled: selectedChatIds.size === 0 }" @click="deleteSelectedChats(showDialog)">删除 ({{ selectedChatIds.size }})</div>
       </div>

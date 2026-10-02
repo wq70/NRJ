@@ -4,7 +4,6 @@ import { computed, ref, watch } from 'vue'
 import { GROUP_FINANCE_FEATURES, groupFinanceFeatureLabel, type GroupFinanceCategory, type GroupFinanceFeature } from '../../../services/groupFinance'
 import { loadWalletState } from '../../../services/walletService'
 import { useChatAuth } from '../../../composables/useChatAuth'
-import PaymentPasswordModal from './PaymentPasswordModal.vue'
 
 const props = defineProps<{ visible: boolean; group: any; members: any[] }>()
 const emit = defineEmits<{ (e: 'close'): void; (e: 'send', data: any): void }>()
@@ -24,7 +23,6 @@ const delayMinutes = ref('10')
 const memberSheet = ref(false)
 const featureSheet = ref(false)
 const fundingSheet = ref(false)
-const showPassword = ref(false)
 const selectedFunding = ref('balance')
 const { currentChatUserId, currentAccount } = useChatAuth()
 const wallet = ref<ReturnType<typeof loadWalletState> | null>(null)
@@ -80,7 +78,7 @@ const reset = () => {
   feature.value = enabledFeatures.value.find(item => item.category === firstCategory)?.id || 'packet_lucky'
   amount.value = ''; count.value = '1'; remark.value = ''; expireHours.value = '24'; selectedIds.value = []; customAmounts.value = {}
   challengePrompt.value = ''; challengeAnswer.value = ''; numberMin.value = '1'; numberMax.value = '100'; delayMinutes.value = '10'
-  memberSheet.value = false; featureSheet.value = false; fundingSheet.value = false; showPassword.value = false; selectedFunding.value = 'balance'
+  memberSheet.value = false; featureSheet.value = false; fundingSheet.value = false; selectedFunding.value = 'balance'
   wallet.value = loadWalletState(currentChatUserId.value || 'guest', currentAccount.value?.name || '我')
 }
 watch(() => props.visible, value => { if (value) reset() })
@@ -94,7 +92,6 @@ const toggleMember = (id: string) => {
 }
 const submit = () => {
   if (!isValid.value) return
-  if (!isCollection.value && wallet.value?.paymentPassword) { showPassword.value = true; return }
   executeSend()
 }
 const executeSend = () => {
@@ -107,7 +104,6 @@ const executeSend = () => {
     challenge: challengeMode.value ? { prompt: challengePrompt.value.trim(), answer: challengeAnswer.value.trim() } : numberMode.value ? { prompt: challengePrompt.value.trim() || `猜一个 ${numberMin.value} 到 ${numberMax.value} 之间的数字`, min: Number(numberMin.value), max: Number(numberMax.value), secretNumber: Math.floor(Math.random() * (Number(numberMax.value) - Number(numberMin.value) + 1)) + Number(numberMin.value) } : undefined,
     fundingSource: source, fundingSourceId: source === 'bank_card' ? selectedFunding.value.slice(5) : undefined
   })
-  showPassword.value = false
 }
 const money = (cents: number) => `¥${(cents / 100).toFixed(2)}`
 const categoryLabel = (value: GroupFinanceCategory) => ({ packet: '红包', transfer: '转账', collection: '收款' }[value])
@@ -134,7 +130,7 @@ const categoryLabel = (value: GroupFinanceCategory) => ({ packet: '红包', tran
             <template v-if="numberMode"><label class="gf-field compact"><span>活动说明</span><input v-model="challengePrompt" maxlength="120" placeholder="猜中即可领取"></label><div class="gf-range"><label><span>最小值</span><input v-model="numberMin" type="number"></label><label><span>最大值</span><input v-model="numberMax" type="number"></label></div></template>
             <label v-if="lotteryMode" class="gf-field compact"><span>开奖等待</span><div class="gf-inline"><input v-model="delayMinutes" type="number" min="1"><i>分钟</i></div></label>
             <label class="gf-field compact"><span>备注</span><input v-model="remark" maxlength="120" :placeholder="category === 'packet' ? '恭喜发财，大吉大利' : category === 'collection' ? '填写收款用途' : '填写转账说明'"></label>
-            <button v-if="!isCollection" type="button" class="gf-row" @click="fundingSheet = true"><span><small>付款方式</small><b>{{ fundingLabel }} · 可用 {{ money(availableCents) }}</b></span><i>›</i></button>
+            <button v-if="!isCollection" type="button" class="gf-row" @click="fundingSheet = true"><span><small :title="currentAccount?.name">付款 · {{ currentAccount?.name || '未登录钱包' }}</small><b>{{ fundingLabel }} · 可用 {{ money(availableCents) }}</b></span><i>›</i></button>
             <label class="gf-field compact"><span>有效期</span><div class="gf-inline"><input v-model="expireHours" type="number" min="1"><i>小时</i></div></label>
             <p v-if="!isCollection && totalCents > availableCents" class="gf-error">所选付款方式可用金额不足</p>
             <p v-else-if="category === 'packet' && feature !== 'packet_targeted' && totalCents < Math.max(1, Math.floor(Number(count) || 1))" class="gf-error">总金额不能小于红包份数（每份至少 0.01 元）</p>
@@ -147,10 +143,10 @@ const categoryLabel = (value: GroupFinanceCategory) => ({ packet: '红包', tran
         <div v-if="fundingSheet" class="gf-sub-overlay" @click.self="fundingSheet = false"><section class="gf-sub-sheet"><header><b>付款方式</b><button type="button" @click="fundingSheet = false">完成</button></header><button type="button" class="gf-choice" @click="selectedFunding = 'balance'; fundingSheet = false"><span>余额 · {{ money(wallet?.cashCents || 0) }}</span><i :class="{ active: selectedFunding === 'balance' }">✓</i></button><button v-if="wallet?.credit?.enabled" type="button" class="gf-choice" @click="selectedFunding = 'credit'; fundingSheet = false"><span>花呗 · {{ money((wallet.credit.limitCents || 0) - (wallet.credit.usedCents || 0)) }}</span><i :class="{ active: selectedFunding === 'credit' }">✓</i></button><button v-for="card in wallet?.bankCards || []" :key="card.id" type="button" class="gf-choice" :disabled="!card.enabled" @click="selectedFunding = `card_${card.id}`; fundingSheet = false"><span>{{ card.name }} ({{ card.lastFour }})</span><i :class="{ active: selectedFunding === `card_${card.id}` }">✓</i></button></section></div>
       </div>
     </transition>
-    <PaymentPasswordModal :visible="showPassword" :account-id="currentChatUserId || 'guest'" @close="showPassword = false" @success="executeSend" />
   </Teleport>
 </template>
 
 <style scoped>
+.gf-row>span{min-width:0}.gf-row small{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .gf-fade-enter-active,.gf-fade-leave-active{transition:opacity .2s}.gf-fade-enter-from,.gf-fade-leave-to{opacity:0}.gf-overlay,.gf-sub-overlay{position:fixed;inset:0;z-index:10000;display:flex;align-items:flex-end;justify-content:center;background:rgba(0,0,0,.46);backdrop-filter:blur(2px)}.gf-sheet,.gf-sub-sheet{display:flex;flex-direction:column;width:min(100%,480px);max-height:min(86vh,760px);overflow:hidden;border-radius:18px 18px 0 0;background:var(--sys-bg-primary,#fff);color:var(--text-primary);box-shadow:0 -12px 36px rgba(0,0,0,.16)}.gf-header,.gf-sub-sheet header{display:flex;align-items:center;justify-content:space-between;min-height:54px;padding:0 16px;border-bottom:1px solid var(--border-color)}.gf-header>div{display:flex;min-width:0;flex-direction:column;gap:2px}.gf-header strong{font-size:15px}.gf-header small{overflow:hidden;color:var(--text-tertiary);font-size:10px;text-overflow:ellipsis;white-space:nowrap}.gf-header button,.gf-sub-sheet header button{border:0;background:transparent;color:var(--text-secondary);font:inherit;font-size:20px;cursor:pointer}.gf-sub-sheet header button{font-size:12px}.gf-tabs{display:grid;grid-auto-flow:column;grid-auto-columns:1fr;gap:3px;margin:10px 16px 2px;padding:3px;border-radius:9px;background:var(--sys-bg-secondary)}.gf-tabs button{height:32px;border:0;border-radius:7px;background:transparent;color:var(--text-secondary);font:inherit;font-size:12px}.gf-tabs button.active{background:var(--sys-bg-primary);color:var(--text-primary);box-shadow:0 1px 4px rgba(0,0,0,.08)}.gf-body{min-height:0;overflow-y:auto;padding:10px 16px 18px}.gf-row,.gf-field,.gf-custom-list,.gf-range{box-sizing:border-box;width:100%;margin-bottom:9px;border:1px solid var(--border-color);border-radius:11px;background:var(--sys-bg-secondary);color:var(--text-primary)}.gf-row{display:flex;align-items:center;justify-content:space-between;min-height:52px;padding:9px 12px;font:inherit;text-align:left;cursor:pointer}.gf-row span{display:flex;min-width:0;flex-direction:column;gap:3px}.gf-row small{color:var(--text-tertiary);font-size:9px}.gf-row b{overflow:hidden;font-size:12px;font-weight:550;text-overflow:ellipsis;white-space:nowrap}.gf-row>i{color:var(--text-tertiary);font-size:18px;font-style:normal}.gf-field{display:flex;flex-direction:column;gap:7px;padding:10px 12px}.gf-field>span,.gf-range span{color:var(--text-secondary);font-size:10px}.gf-amount{display:flex;align-items:baseline}.gf-amount i{font-size:21px;font-style:normal}.gf-amount input{min-width:0;flex:1;border:0;background:transparent;color:var(--text-primary);font:inherit;font-size:29px;font-weight:600;outline:0}.gf-field.compact{flex-direction:row;align-items:center;justify-content:space-between;min-height:48px}.gf-field.compact>input,.gf-inline input,.gf-range input,.gf-custom-list input{min-width:0;border:0;background:transparent;color:var(--text-primary);font:inherit;font-size:12px;text-align:right;outline:0}.gf-field.compact>input{flex:1;padding-left:15px}.gf-inline{display:flex;align-items:center;gap:5px}.gf-inline input{width:64px}.gf-inline i{color:var(--text-tertiary);font-size:10px;font-style:normal}.gf-range{display:grid;grid-template-columns:1fr 1fr;gap:10px;padding:10px 12px}.gf-range label{display:flex;align-items:center;justify-content:space-between;gap:8px}.gf-range input{width:60px}.gf-custom-list{padding:2px 12px}.gf-custom-list label{display:flex;align-items:center;justify-content:space-between;min-height:45px;border-bottom:1px solid var(--border-color);font-size:11px}.gf-custom-list label:last-child{border:0}.gf-custom-list div{display:flex;align-items:center}.gf-custom-list i{color:var(--text-tertiary);font-style:normal}.gf-custom-list input{width:82px}.gf-error{margin:0 2px 8px;color:#d95b5b;font-size:10px}.gf-footer{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:10px 16px calc(10px + env(safe-area-inset-bottom));border-top:1px solid var(--border-color);background:var(--sys-bg-primary)}.gf-footer>div{display:flex;min-width:0;flex-direction:column}.gf-footer small{overflow:hidden;color:var(--text-tertiary);font-size:9px;text-overflow:ellipsis;white-space:nowrap}.gf-footer b{font-size:15px}.gf-footer>button{flex:0 0 auto;min-width:108px;height:39px;border:0;border-radius:10px;background:var(--text-primary);color:var(--sys-bg-secondary);font:inherit;font-size:13px;font-weight:600}.gf-footer>button:disabled{opacity:.35}.gf-sub-overlay{z-index:10001}.gf-sub-sheet{max-height:70vh;padding-bottom:env(safe-area-inset-bottom)}.gf-choice,.gf-member{display:flex;align-items:center;width:100%;min-height:48px;padding:7px 16px;border:0;border-bottom:1px solid var(--border-color);background:transparent;color:var(--text-primary);font:inherit;font-size:12px;text-align:left}.gf-choice span,.gf-member span{min-width:0;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.gf-choice i,.gf-member em{display:grid;place-items:center;width:20px;height:20px;border-radius:50%;background:var(--sys-bg-tertiary);color:transparent;font-size:11px;font-style:normal}.gf-choice i.active,.gf-member em.active{background:var(--text-primary);color:var(--sys-bg-secondary)}.gf-avatar{display:grid;place-items:center;width:34px;height:34px;margin-right:10px;flex:0 0 auto;border-radius:50%;background:var(--sys-bg-tertiary) center/cover;font-size:10px;font-style:normal}@media(max-width:340px){.gf-body{padding-right:10px;padding-left:10px}.gf-footer{padding-right:10px;padding-left:10px}.gf-footer>button{min-width:98px}.gf-tabs{margin-right:10px;margin-left:10px}}
 </style>

@@ -20,6 +20,9 @@ const desktopLayout = useDesktopLayout()
 const { layout, initialize, entryAt, findFolder, canMoveEntry, moveEntry, addToFolder, createFolder, hideApp, removeWidget, resizeWidget, renameFolder, reset, addPage, deletePage, addWidget, beginLayoutBatch, endLayoutBatch } = desktopLayout
 const { ensureInstances, ensureInstance, removeInstance } = useWidgetInstances()
 initialize(props.apps.map(app => app.id))
+watch(() => props.apps.filter(app => app.id.startsWith('plugin:')).map(app => app.id), (ids, previous) => {
+  desktopLayout.syncPluginApps(ids.filter(id => !previous.includes(id)), previous.filter(id => !ids.includes(id)))
+})
 
 const appsById = computed<Record<string, AppInfo>>(() => Object.fromEntries(props.apps.map(app => [app.id, app])))
 const scrollContainer = ref<HTMLElement | null>(null)

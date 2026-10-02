@@ -592,7 +592,7 @@ watch(() => props.selectedChat, calculateMomentTokens)
       </div>
     </div>
 
-    <div class="glass-panel" v-show="matchSearch('关联世界书', '分组', '角色时区', '允许角色看到表情包图像', '角色根据表情包图形发送', 'token')">
+    <div class="glass-panel" v-show="matchSearch('关联世界书', '分组', '角色时区', '允许角色看到表情包图像', '角色根据表情包图形发送', '允许使用内置表情', 'token')">
       <div class="glass-list-item" v-show="matchSearch('关联世界书', '分组')" @click="emit('show-world-book-bind-selector')">
         <div class="item-label">关联世界书/分组</div>
         <div class="item-value">
@@ -613,6 +613,15 @@ watch(() => props.selectedChat, calculateMomentTokens)
       <div class="glass-list-item" v-show="matchSearch('角色时间', '角色时区', '自定义时间')" :class="{ 'disabled-block': !selectedChat.timePerception }" @click="emit('open-timezone-modal', 'character')">
         <div class="item-label">角色独立时间</div>
         <div class="item-value"><span class="item-value-text">{{ getIdentityClockLabel(selectedChat) }}</span><span class="arrow">></span></div>
+      </div>
+      <div class="glass-list-item" v-show="matchSearch('允许使用内置表情')">
+        <div class="item-label">允许使用内置表情</div>
+        <div class="item-value">
+          <label class="switch" @click.stop>
+            <input type="checkbox" :checked="selectedChat.allowBuiltInEmojis === true" @change="(e) => { selectedChat.allowBuiltInEmojis = (e.target as HTMLInputElement).checked; handleSave(); }">
+            <span class="slider"></span>
+          </label>
+        </div>
       </div>
       <div class="glass-list-item" v-show="matchSearch('允许角色看到表情包图像')">
         <div class="item-label">允许角色看到表情包图像</div>

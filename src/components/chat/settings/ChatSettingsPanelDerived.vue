@@ -1,5 +1,7 @@
 /* WARNING: 本项目专属“粘人精”，严禁出现 Kiro、Krio、周棋洛等任何相关英文或拼音命名！ */
 <script setup lang="ts">
+import DanmakuPanel from "../../../components/danmaku/DanmakuPanel.vue"
+import { chatDanmakuSource } from "../../../services/danmakuSources"
 const props = defineProps<{
   selectedChat: any
   tokenStats: any
@@ -15,6 +17,7 @@ const emit = defineEmits<{
 
 <template>
   <div class="role-edit-section">
+    <div class="glass-panel" v-show="matchSearch('弹幕', '观众')"><div class="glass-list-item" style="min-height:44px"><div class="item-label">弹幕与观众</div><DanmakuPanel class="dm-settings-entry" :source="{...chatDanmakuSource(selectedChat, '我', false, true), ready:true}" /></div></div>
     <div class="glass-panel" v-show="matchSearch('总结', '自动已开启', '管理总结')">
       <div class="glass-list-item" v-show="matchSearch('总结', '自动已开启', '管理总结')" @click="emit('show-summary-view')">
         <div class="item-label">总结</div>

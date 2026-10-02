@@ -13,7 +13,7 @@ import { canViewMoment, canPerformMomentAction, recordMomentAction, addMomentNot
 import { applySocialProfilePatch, ensureSocialProfile, persistSocialProfile } from '../services/characterSocialProfile'
 import { getCharacterDirectoryEntry, isDirectoryOwner, saveCharacterDirectoryProfile } from '../services/characterDirectory'
 import { deleteCharacterMoment, listMomentsByAuthor, updateCharacterMoment } from '../services/momentRepository'
-import { createWalletPayment, creditMomentReceiptPayment, formatWalletMoney } from '../services/walletService'
+import { runWalletPayment, createWalletPayment, creditMomentReceiptPayment, formatWalletMoney } from '../services/walletService'
 import { resumeConversationTime } from '../services/conversationTime'
 import { appendWalletSms } from '../services/smsService'
 import { isMomentPaymentEnabledForCharacter, loadMomentPaymentSettings, loadMomentReceiptCodes } from '../services/momentPayments'
@@ -139,9 +139,10 @@ export function useChatRoomMessage(
 
     const { currentChatUserId } = useChatAuth()
     const walletAccountId = currentChatUserId.value || 'guest'
+    const targetChat = selectedChat.value
     let walletPayment
     try {
-      walletPayment = createWalletPayment({
+      walletPayment = await runWalletPayment({ accountId: walletAccountId, operation: 'send', title: data.type === 'red_packet' ? '发送红包' : '聊天转账', amountCents: Math.round(data.amount * 100), fundingSource: data.fundingSource, fundingSourceId: data.fundingSourceId, theme: 'chat' }, () => createWalletPayment({
         accountId: walletAccountId,
         senderType: 'user',
         amountCents: Math.round(data.amount * 100),
@@ -149,7 +150,8 @@ export function useChatRoomMessage(
         remark: data.remark,
         fundingSource: data.fundingSource,
         fundingSourceId: data.fundingSourceId
-      })
+      }), () => (currentChatUserId.value || 'guest') === walletAccountId && selectedChat.value === targetChat && showTransferModal.value)
+      if (!walletPayment) return
     } catch (error) {
       showToast?.(error instanceof Error ? error.message : '钱包余额不足，无法发送')
       return

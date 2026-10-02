@@ -1,6 +1,6 @@
 /* WARNING: 本项目专属“粘人精”，严禁出现 Kiro、Krio、周棋洛等任何相关英文或拼音命名！ */
 <script setup lang="ts">
-import { computed, nextTick, onMounted, onUnmounted, ref, watch, watchEffect } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, provide, ref, watch, watchEffect } from 'vue'
 import StatusBar from './components/StatusBar.vue'
 import Desktop from './components/Desktop.vue'
 import AppearanceSettings from './components/AppearanceSettings.vue'
@@ -28,6 +28,7 @@ import AppBookStore from './components/app_BookStore.vue'
 import AppMall from './components/app_Mall.vue'
 import AppTakeout from './components/app_Takeout.vue'
 import McpConfirmationHost from './components/mcp/McpConfirmationHost.vue'
+import WalletPaymentHost from './components/wallet/WalletPaymentHost.vue'
 import AppVideoHall from './components/app_VideoHall.vue'
 import AppLive from './components/app_Live.vue'
 import AppWatchTogether from './components/app_WatchTogether.vue'
@@ -36,6 +37,9 @@ import AppFate from './components/app_Fate.vue'
 import AppBubble from './components/app_Bubble.vue'
 import AppTextGame from './components/app_TextGame.vue'
 import AppGame from './components/app_Game.vue'
+import AppPlugins from './components/app_Plugins.vue'
+import PluginRunner from './components/plugins/PluginRunner.vue'
+import { findPlugin, loadPlugins, pluginDesktopApps } from './services/pluginRepository'
 import LockScreen from './components/LockScreen.vue'
 import AppWatermarkOverlay from './components/AppWatermarkOverlay.vue'
 import { globalSettings, appStats, flushAppStatsStorage } from './store'
@@ -75,6 +79,8 @@ const { setFontContext, schedulePreloadEnabledFonts } = useCustomFonts()
 }
 
 const activeApp = ref<string | null>(null)
+const handlePluginManager = () => { activeApp.value = 'plugins' }
+void loadPlugins().catch(error => console.warn('插件读取失败', error))
 const desktopRef = ref<{ installWidget: (widgetType: WidgetType, widthUnits: number, heightUnits: number) => Promise<void> } | null>(null)
 const isLocked = ref(globalSettings.enableLockScreen)
 const hasOpenedChatApp = ref(false)
@@ -239,6 +245,7 @@ onMounted(async () => {
   document.addEventListener('focusin', handleViewportFocusIn)
   document.addEventListener('focusout', handleViewportFocusOut)
   window.addEventListener('pagehide', handleAppStatsPageHide)
+  window.addEventListener('nrj-open-plugin-manager', handlePluginManager)
   syncVisualViewport()
   await loadCustomContacts()
   await loadMyProfile()
@@ -276,6 +283,7 @@ onUnmounted(() => {
   document.removeEventListener('focusin', handleViewportFocusIn)
   document.removeEventListener('focusout', handleViewportFocusOut)
   window.removeEventListener('pagehide', handleAppStatsPageHide)
+  window.removeEventListener('nrj-open-plugin-manager', handlePluginManager)
   if (viewportAnimationFrame) cancelAnimationFrame(viewportAnimationFrame)
   if (keyboardBlurTimer) clearTimeout(keyboardBlurTimer)
   if (developmentNoticeTimer) clearTimeout(developmentNoticeTimer)
@@ -350,6 +358,13 @@ const containerStyle = computed(() => {
 })
 
 const handleOpenApp = (appId: string) => {
+  if (appId.startsWith('plugin:')) {
+    returnToLiveAfterBridge.value = false
+    const plugin = findPlugin(appId.slice(7))
+    if (plugin?.enabled && plugin.manifest.app) activeApp.value = appId
+    else { activeApp.value = 'plugins' }
+    return
+  }
   if (availableAppIds.has(appId)) {
     returnToLiveAfterBridge.value = false
     if (appId === 'chat') {
@@ -485,13 +500,14 @@ const endPhoneVoiceCall = () => {
 }
 
 const baseApps = appRegistry
+provide('nrj-chat-plugin-active', computed(() => activeApp.value === 'chat' && !isLocked.value))
 
 // 计算应用列表，动态混合自定义图标
 const apps = computed(() => {
-  return baseApps.map(app => {
+  return [...baseApps, ...pluginDesktopApps.value].map(app => {
     return {
       ...app,
-      customImage: customIcons[app.id] || null
+      customImage: customIcons[app.id] || ('customImage' in app && typeof app.customImage === 'string' ? app.customImage : null)
     }
   })
 })
@@ -560,6 +576,8 @@ watch([activeApp, isLocked], ([appId, locked]) => {
     </Transition>
     
     <!-- 应用视图 -->
+    <AppPlugins v-if="activeApp === 'plugins'" data-font-app="plugins" @close="activeApp = null" />
+    <PluginRunner v-if="activeApp?.startsWith('plugin:')" :plugin-id="activeApp.slice(7)" @close="activeApp = null" @manage="activeApp = 'plugins'" />
     <Transition name="app-fade">
       <AppearanceSettings 
         v-if="activeApp === 'appearance'" 
@@ -793,6 +811,7 @@ watch([activeApp, isLocked], ([appId, locked]) => {
     <Transition name="app-fade">
       <AppLive
         v-if="hasOpenedLiveApp"
+        :is-visible="activeApp === 'live'"
         v-show="activeApp === 'live'"
         data-font-app="live"
         @close="closeLiveApp"
@@ -801,6 +820,7 @@ watch([activeApp, isLocked], ([appId, locked]) => {
     </Transition>
 
     <McpConfirmationHost />
+    <WalletPaymentHost :context-key="activeApp" />
 
     <!-- 语音通话手机级悬浮窗：桌面和其他 App 中也保持通话 -->
     <Transition name="app-fade">
@@ -902,9 +922,11 @@ export default {
  .install-prompt-skip .custom-checkbox { width: 18px; height: 18px; border: 1.5px solid #d4ccd3; border-radius: 5px; position: relative; transition: all 0.2s ease; display: flex; align-items: center; justify-content: center; background: white; }
  .install-prompt-skip input:checked + .custom-checkbox { background: #c579a4; border-color: #c579a4; }
  .install-prompt-skip input:checked + .custom-checkbox::after { content: ''; width: 4px; height: 8px; border: solid white; border-width: 0 2px 2px 0; transform: rotate(45deg); margin-bottom: 2px; }
- .install-prompt-primary, .install-prompt-secondary { width: 100%; min-height: 44px; border: 0; border-radius: 14px; font: inherit; font-size: 15px; font-weight: 700; }
- .install-prompt-primary { background: #2d3748; box-shadow: 0 7px 16px rgba(45, 55, 72, .26); color: white; }
+ .install-prompt-primary, .install-prompt-secondary { width: 100%; min-height: 44px; border: 0; border-radius: 14px; font: inherit; font-size: 15px; font-weight: 700; cursor: pointer; transition: transform 0.15s ease, box-shadow 0.15s ease; }
+ .install-prompt-primary { background: linear-gradient(135deg, #ff94b4 0%, #ffb8cd 100%); box-shadow: 0 8px 20px rgba(255, 148, 180, .38); color: #ffffff; }
+ .install-prompt-primary:active { transform: scale(0.98); box-shadow: 0 4px 12px rgba(255, 148, 180, .28); }
  .install-prompt-secondary { background: #f2eef2; color: #665564; }
+ .install-prompt-secondary:active { transform: scale(0.98); }
 /* 应用打开/关闭过渡动画 */
 .app-fade-enter-active,
 .app-fade-leave-active {

@@ -17,10 +17,13 @@ export interface BackupCatalogItem {
 }
 
 export const BACKUP_CATALOG: BackupCatalogItem[] = [
+  { id: 'wallet-data', group: '商城与钱包', name: '钱包与支付设置', description: '各 USER 的资产、账单、银行卡、收款码、支付密码和钱包选择', localKeys: ['clingy_wallet_selected_user'], localKeyPrefixes: ['clingy_wallet_state_', 'clingy_moment_receipt_', 'clingy_moment_payment_'], stores: [{ dbName: 'nrt-app', storeName: 'wallet-cards' }] },
+  { id: 'plugins', group: '外观与系统', name: '插件与插件数据', description: '已安装插件包、启用状态、权限、上一版本和各插件独立数据', stores: [{ dbName: 'nrt-app', storeName: 'plugins' }, { dbName: 'nrt-app', storeName: 'pluginData' }] },
   { id: 'mcp-settings', group: '账号与安全', name: 'MCP 连接设置', description: 'MCP 总开关、Remote MCP 连接、工具权限与运行限制', localKeys: ['clingy_mcp_settings', 'clingy_mcp_activity_v3'], localKeyPrefixes: ['clingy_mcp_secret_v3_'] },
   { id: 'api-nodes', group: '账号与安全', name: 'API 节点配置', description: '默认节点、自定义节点、功能绑定与模型参数', sensitive: true, localKeys: ['clingy_api_settings', 'clingy_api_nodes_v1'] },
   { id: 'forum-data', group: '论坛', name: '论坛结构化数据', description: '论坛账号、角色准入、圈子、帖子、关系、消息与记忆', stores: [{ dbName: 'nrt-forum', storeName: 'forumData' }] },
   { id: 'forum-media', group: '论坛', name: '论坛媒体', description: '论坛图片、语音、轻短视频素材及媒体元数据', stores: [{ dbName: 'nrt-forum', storeName: 'forumMedia' }, { dbName: 'nrt-forum', storeName: 'forumMediaMeta' }] },
+  { id: 'danmaku-data', group: '弹幕与观众', name: '观众设置与记录', description: '各账号独立观众、场景设置、评论与名场面', stores: [{ dbName: 'nrt-danmaku', storeName: 'danmakuState' }] },
   { id: 'live-data', group: '直播', name: '直播设置与记录', description: '直播开关、房间、事件、摘要与本机媒体', stores: [{ dbName: 'nrt-live', storeName: 'liveState' }, { dbName: 'nrt-live', storeName: 'liveAssets' }] },
   { id: 'watch-together-data', group: '共赏空间', name: '共赏设置与记录', description: '板块开关、内容索引、进度、会话和授权记忆', localKeyPrefixes: ['clingy_watch_together_bridge_v1_'], stores: [{ dbName: 'nrt-app', storeName: 'watchTogether' }] },
   { id: 'watch-together-media', group: '共赏空间', name: '共赏本机媒体', description: '导入的影片、音频、漫画页与其他本机文件', stores: [{ dbName: 'nrt-app', storeName: 'watchTogetherBlobs' }] },
@@ -70,7 +73,7 @@ export const BACKUP_CATALOG: BackupCatalogItem[] = [
   { id: 'chat-groups', group: '聊天内容', name: '聊天分组', description: '聊天分组与排序', localKeys: ['clingy_chat_groups'] },
   { id: 'chat-settings', group: '聊天内容', name: '聊天设置', description: '聊天显示、通话及交互设置', localKeys: ['clingy_chat_settings'] },
   { id: 'system-messages', group: '聊天内容', name: '系统消息与通知', description: '系统消息、置顶和已读状态', localKeys: ['clingy_system_messages', 'clingy_system_notice_pinned', 'clingy_system_notice_read'] },
-  { id: 'chat-emojis', group: '聊天内容', name: '聊天表情与分组', description: '表情包、表情分组', localKeys: ['emojiGroups'], stores: [{ dbName: 'nrt-app', storeName: 'chatEmojis' }] },
+  { id: 'chat-emojis', group: '聊天内容', name: '聊天表情与分组', description: '表情包、表情分组', localKeys: ['emojiGroups', 'nrj_builtin_emoji_recent'], stores: [{ dbName: 'nrt-app', storeName: 'chatEmojis' }] },
   { id: 'chat-images', group: '聊天内容', name: '聊天图片', description: '聊天内发送与保存的图片', stores: [{ dbName: 'nrt-app', storeName: 'chatImages' }] },
   { id: 'chat-files', group: '聊天内容', name: '角色真实文件', description: '角色配置和生成后在聊天中发送的真实文件', stores: [{ dbName: 'nrt-app', storeName: 'chatFileBlobs' }] },
   { id: 'chat-videos', group: '聊天内容', name: '角色真实视频', description: '角色配置和生成后在聊天中发送的真实视频', stores: [{ dbName: 'nrt-app', storeName: 'chatVideoBlobs' }] },
@@ -82,7 +85,7 @@ export const BACKUP_CATALOG: BackupCatalogItem[] = [
   { id: 'chat-voices', group: '聊天内容', name: '聊天语音与元数据', description: '语音消息及其播放信息', stores: [{ dbName: 'nrt-app', storeName: 'chatVoices' }, { dbName: 'nrt-app', storeName: 'chatVoiceMeta' }] },
   { id: 'chat-wallpapers', group: '聊天内容', name: '聊天壁纸', description: '会话专属背景', stores: [{ dbName: 'nrt-app', storeName: 'chatWallpapers' }] },
   { id: 'delivery-box', group: '投递内容', name: '投递箱与附件', description: '投递记录、文字、链接和本机附件', localKeys: ['clingy_delivery_settings_v1'], stores: [{ dbName: 'nrt-app', storeName: 'deliveryItems' }, { dbName: 'nrt-app', storeName: 'deliveryFiles' }] },
-  { id: 'mall-data', group: '商城与钱包', name: '商城与一起吃', description: '剧情商品、真实链接、购物车、愿望单、订单、角色权限和购买记录', localKeyPrefixes: ['clingy_mall_snapshot_v1_'] },
+  { id: 'mall-data', group: '商城与钱包', name: '商城与一起吃', description: '剧情商品、真实链接、购物车、愿望单、订单、角色权限、购买记录与共逛对话（不含平台登录凭据）', localKeyPrefixes: ['clingy_mall_snapshot_v1_', 'clingy_commerce_'] },
   { id: 'worldbooks', group: '世界书与记忆', name: '世界书正文与分组', description: '世界书内容和结构', localKeys: ['worldbooks'] },
   { id: 'worldbook-covers', group: '世界书与记忆', name: '世界书封面', description: '世界书封面图片', stores: [{ dbName: 'nrt-app', storeName: 'worldbook-covers' }] },
   { id: 'memory-covers', group: '世界书与记忆', name: '聊天记忆封面', description: '记忆卡封面', stores: [{ dbName: 'nrt-app', storeName: 'memoryCovers' }] },

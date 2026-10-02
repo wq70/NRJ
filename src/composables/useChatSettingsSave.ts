@@ -44,6 +44,7 @@ export function useChatSettingsSave() {
         contacts[idx].conversationTimeState = selectedChat.value.conversationTimeState || null
         contacts[idx].enableEmojiVision = selectedChat.value.enableEmojiVision ?? false
         contacts[idx].enableRoleEmojiVision = selectedChat.value.enableRoleEmojiVision ?? false
+        contacts[idx].allowBuiltInEmojis = selectedChat.value.allowBuiltInEmojis === true
         contacts[idx].timePerception = selectedChat.value.timePerception ?? true
         contacts[idx].sendCharacterTime = selectedChat.value.sendCharacterTime ?? true
         contacts[idx].showCostTime = selectedChat.value.showCostTime ?? true

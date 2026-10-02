@@ -44,6 +44,9 @@ export interface GameHallMessage {
   kind: 'speech' | 'action' | 'system'
   content: string
   createdAt: number
+  danmakuPublicPrompt?: string
+  danmakuPublicOptions?: string[]
+  danmakuShared?: boolean
 }
 
 export interface GameHallCardState {

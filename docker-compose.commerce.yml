@@ -1,0 +1,31 @@
+services:
+  commerce:
+    build: ./commerce-gateway
+    env_file: ./commerce-gateway/.env
+    restart: unless-stopped
+    init: true
+    shm_size: 1gb
+    ports:
+      - "127.0.0.1:8790:8790"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    security_opt:
+      - no-new-privileges:true
+      - seccomp=${COMMERCE_SECCOMP_PROFILE:?Set the absolute path to the Playwright sandbox seccomp profile}
+  postgres:
+    image: postgres:17
+    environment:
+      POSTGRES_DB: commerce
+      POSTGRES_USER: commerce
+      POSTGRES_PASSWORD: ${COMMERCE_DB_PASSWORD:?Set COMMERCE_DB_PASSWORD on the deployment host}
+    volumes:
+      - commerce-database:/var/lib/postgresql/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U commerce -d commerce"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+volumes:
+  commerce-database:

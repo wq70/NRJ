@@ -125,6 +125,7 @@ export interface WalletState {
   bankCards: WalletBankCard[]
   hideAmounts: boolean
   paymentPassword?: string
+  paymentPasswordType?: 'pin' | 'gesture'
   market: { tick: number; lastAdvancedAt: number }
 }
 
@@ -228,6 +229,7 @@ const normalize = (raw: any, accountId: string, accountName = '我'): WalletStat
     bankCards: Array.isArray(raw.bankCards) ? raw.bankCards.map((card: WalletBankCard) => ({ ...card, enabled: card.enabled !== false, virtualCvv: card.virtualCvv || makeVirtualCvv(card.id) })) : [],
     hideAmounts: raw.hideAmounts ?? raw.security?.hideAmounts ?? false,
     paymentPassword: raw.paymentPassword || base.paymentPassword,
+    paymentPasswordType: raw.paymentPasswordType === 'gesture' ? 'gesture' : 'pin',
     market: { ...base.market, ...(raw.market || {}) }
   }
 }
@@ -241,9 +243,135 @@ export const loadWalletState = (accountId: string, accountName = '我') => {
   } catch (_) { return createWalletState(accountId, accountName) }
 }
 
-export const saveWalletState = (state: WalletState) => {
+export const saveWalletState = (state: WalletState, updatePaymentSecurity = false) => {
+  // Background finance/market saves must not overwrite a password changed in another view.
+  if (!updatePaymentSecurity) {
+    try {
+      const stored = localStorage.getItem(walletStorageKey(state.accountId))
+      if (stored) {
+        const security = JSON.parse(stored)
+        state.paymentPassword = security.paymentPassword || undefined
+        state.paymentPasswordType = security.paymentPasswordType === 'gesture' ? 'gesture' : 'pin'
+      }
+    } catch (_) { /* Keep the existing recoverable state when storage is malformed. */ }
+  }
   localStorage.setItem(walletStorageKey(state.accountId), JSON.stringify(state))
   if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent(EVENT_NAME, { detail: { accountId: state.accountId } }))
+}
+
+// A story timeline restores finance, while the user's current payment settings stay current.
+export const restoreWalletFinanceSnapshot = (accountId: string, snapshot: string | null) => {
+  const current = loadWalletState(accountId)
+  if (snapshot === null && !current.paymentPassword) { localStorage.removeItem(walletStorageKey(accountId)); return }
+  const restored = snapshot === null ? createWalletState(accountId, current.accountName) : normalize(JSON.parse(snapshot), accountId, current.accountName)
+  restored.paymentPassword = current.paymentPassword
+  restored.paymentPasswordType = current.paymentPasswordType
+  saveWalletState(restored)
+}
+
+export const walletMarketRequestKey = (state: WalletState) => JSON.stringify([state.marketSettings.mode, state.marketSettings.source, state.marketSettings.custom, state.liveQuotes.map(quote => quote.code)])
+export const saveWalletMarketResult = (result: WalletState, requestKey: string) => {
+  const latest = loadWalletState(result.accountId, result.accountName)
+  if (walletMarketRequestKey(latest) !== requestKey) return false
+  latest.liveQuotes = result.liveQuotes
+  Object.assign(latest.marketSettings, {
+    lastAttemptedAt: result.marketSettings.lastAttemptedAt, lastUpdatedAt: result.marketSettings.lastUpdatedAt,
+    status: result.marketSettings.status, providerLabel: result.marketSettings.providerLabel, error: result.marketSettings.error
+  })
+  if (result.marketSettings.status === 'ready') processWalletPendingOrders(latest)
+  saveWalletState(latest)
+  return true
+}
+
+export type WalletPaymentOperation = 'send' | 'deposit' | 'withdraw' | 'stock' | 'repay' | 'mall'
+export interface WalletPaymentIntent {
+  accountId: string
+  operation: WalletPaymentOperation
+  title: string
+  amountCents: number
+  fundingSource: 'balance' | 'credit' | 'bank_card'
+  fundingSourceId?: string
+  theme?: 'wallet' | 'chat' | 'mall'
+}
+export interface WalletAuthorizationRequest {
+  intent: WalletPaymentIntent
+  accepted: boolean
+  finish: (credential: string | null) => void
+}
+export const walletAuthorizationEventName = 'clingy-wallet-payment-authorization'
+export const walletPaymentMode = (state: WalletState) => !state.paymentPassword ? 'off' : state.paymentPasswordType === 'gesture' ? 'gesture' : 'pin'
+export const isValidWalletCredential = (mode: 'pin' | 'gesture', value: string) => mode === 'pin'
+  ? /^\d{4}$/.test(value)
+  : /^[1-9]{4,9}$/.test(value) && new Set(value).size === value.length
+export const verifyWalletCredential = (state: WalletState, value: string) => {
+  const mode = walletPaymentMode(state)
+  return mode !== 'off' && isValidWalletCredential(mode, value) && value === state.paymentPassword
+}
+export const setWalletPaymentSecurity = (state: WalletState, password: string | undefined, type: 'pin' | 'gesture') => {
+  if (password && !isValidWalletCredential(type, password)) throw new Error(type === 'gesture' ? '手势至少连接四个不同的点' : '支付密码必须为四位纯数字')
+  state.paymentPassword = password || undefined
+  state.paymentPasswordType = type
+  saveWalletState(state, true)
+}
+export const appendWalletGesturePoint = (pattern: string, point: number) => {
+  if (point < 1 || point > 9 || pattern.includes(String(point))) return pattern
+  const last = Number(pattern.slice(-1))
+  if (last) {
+    const x = ((last - 1) % 3 + (point - 1) % 3) / 2
+    const y = (Math.floor((last - 1) / 3) + Math.floor((point - 1) / 3)) / 2
+    if (Number.isInteger(x) && Number.isInteger(y)) {
+      const middle = String(y * 3 + x + 1)
+      if (!pattern.includes(middle)) pattern += middle
+    }
+  }
+  return pattern + point
+}
+const paymentFingerprint = (state: WalletState) => JSON.stringify([state.paymentPasswordType || 'pin', state.paymentPassword || ''])
+let activeAuthorization: { intent: WalletPaymentIntent; remainingCents: number; fingerprint: string } | null = null
+let requestingAuthorization = false
+
+// Authorization only exists during this synchronous payment callback. It never unlocks another payment.
+const requireWalletAuthorization = (state: WalletState, operation: WalletPaymentOperation, amount: number, source: WalletPaymentIntent['fundingSource'], sourceId?: string) => {
+  const security = typeof localStorage !== 'undefined' && localStorage.getItem(walletStorageKey(state.accountId)) ? loadWalletState(state.accountId) : state
+  if (!security.paymentPassword) return
+  const grant = activeAuthorization
+  if (!grant || grant.intent.accountId !== state.accountId || grant.intent.operation !== operation ||
+      grant.intent.fundingSource !== source || grant.intent.fundingSourceId !== sourceId ||
+      grant.fingerprint !== paymentFingerprint(security) || grant.remainingCents < amount) {
+    throw new Error('请先验证当前付款账号的支付密码')
+  }
+  grant.remainingCents -= amount
+}
+
+export const runWalletPayment = async <T>(intent: WalletPaymentIntent, execute: () => T, isCurrent: () => boolean = () => true): Promise<T | undefined> => {
+  const frozen = { ...intent, accountId: intent.accountId || 'guest', amountCents: cents(intent.amountCents) }
+  if (!frozen.amountCents) throw new Error('请输入有效付款金额')
+  if (requestingAuthorization) throw new Error('请先完成当前支付验证')
+  const state = loadWalletState(frozen.accountId)
+  const fingerprint = paymentFingerprint(state)
+  const available = frozen.fundingSource === 'credit'
+    ? state.credit.enabled ? state.credit.limitCents - state.credit.usedCents : 0
+    : frozen.fundingSource === 'bank_card'
+      ? (() => { const card = state.bankCards.find(item => item.id === frozen.fundingSourceId && item.enabled); return card ? card.type === 'credit' ? (card.limitCents ?? Number.POSITIVE_INFINITY) - (card.usedCents || 0) : card.balanceCents || 0 : 0 })()
+      : state.cashCents
+  if (available < frozen.amountCents) throw new Error('所选付款方式可用金额不足')
+  if (state.paymentPassword) {
+    requestingAuthorization = true
+    let credential: string | null
+    try {
+      credential = await new Promise<string | null>(resolve => {
+        const request: WalletAuthorizationRequest = { intent: frozen, accepted: false, finish: resolve }
+        window.dispatchEvent(new CustomEvent(walletAuthorizationEventName, { detail: request }))
+        if (!request.accepted) resolve(null)
+      })
+    } finally { requestingAuthorization = false }
+    if (credential === null) return undefined
+    const latest = loadWalletState(frozen.accountId)
+    if (paymentFingerprint(latest) !== fingerprint || !verifyWalletCredential(latest, credential)) throw new Error('支付设置已变化，请重新确认付款')
+  }
+  if (!isCurrent()) throw new Error('付款内容或账号已变化，请重新确认')
+  activeAuthorization = { intent: frozen, remainingCents: frozen.amountCents, fingerprint }
+  try { return execute() } finally { activeAuthorization = null }
 }
 
 export const getWalletQuotes = (state: WalletState) => state.marketSettings.mode === 'live' ? state.liveQuotes : state.quotes
@@ -264,6 +392,8 @@ export const setWalletBalance = (state: WalletState, targetCents: number, note =
 export const adjustWalletBalance = (state: WalletState, amountCents: number, title: string, category = 'adjustment', note = '', bankCardId?: string) => {
   const amount = Math.round(Number(amountCents) || 0)
   if (state.cashCents + amount < 0) throw new Error('钱包可用余额不足')
+  if (amount < 0) requireWalletAuthorization(state, 'withdraw', -amount, 'balance')
+  else if (bankCardId && amount > 0) requireWalletAuthorization(state, 'deposit', amount, 'bank_card', bankCardId)
   
   if (bankCardId) {
     const card = state.bankCards.find(c => c.id === bankCardId)
@@ -306,6 +436,7 @@ export const chargeWalletForMallOrder = (accountId: string, orderId: string, amo
   const amount = cents(amountCents)
   if (!amount) throw new Error('订单金额必须大于 0')
   if (state.cashCents < amount) throw new Error('剧情钱包余额不足')
+  requireWalletAuthorization(state, 'mall', amount, 'balance')
   state.cashCents -= amount
   const entry = pushLedger(state, { category: 'mall_purchase', title: '剧情商城消费', amountCents: -amount, relatedId: orderId, note })
   saveWalletState(state)
@@ -328,6 +459,7 @@ export const refundWalletMallOrder = (accountId: string, orderId: string, amount
 export const createOutgoingWalletPayment = (accountId: string, amountCents: number, kind: 'transfer' | 'red_packet', remark = '', fundingSource: 'balance' | 'credit' | 'bank_card' = 'balance', fundingSourceId?: string) => {
   const state = loadWalletState(accountId); const amount = cents(amountCents)
   if (!amount) throw new Error('金额必须大于 0')
+  requireWalletAuthorization(state, 'send', amount, fundingSource, fundingSourceId)
 
   if (fundingSource === 'credit') {
     if (!state.credit.enabled || state.credit.limitCents - state.credit.usedCents < amount) throw new Error('花呗可用额度不足')
@@ -519,6 +651,7 @@ export const processWalletPendingOrders = (state: WalletState) => getWalletOrder
 
 export const placeWalletOrder = (state: WalletState, input: Omit<WalletOrder, 'id' | 'status' | 'createdAt'>) => {
   const quote = getWalletQuotes(state).find(item => item.code === input.code); if (!quote || quote.priceCents <= 0) throw new Error('请选择已有有效行情的股票')
+  if (input.side === 'buy') requireWalletAuthorization(state, 'stock', (input.orderType === 'limit' ? input.limitPriceCents || 0 : quote.priceCents) * Math.max(1, Math.floor(Number(input.quantity) || 0)), input.fundingSource)
   const order: WalletOrder = { ...input, quantity: Math.max(1, Math.floor(Number(input.quantity) || 0)), id: uid('order'), status: 'pending', createdAt: Date.now() }
   if (order.side === 'sell') {
     const positions = getWalletPositions(state)
@@ -574,6 +707,7 @@ export const cancelWalletOrder = (state: WalletState, orderId: string) => {
 
 export const repayWalletCredit = (state: WalletState, amountCents: number) => {
   const amount = Math.min(cents(amountCents), state.credit.usedCents); if (!amount) throw new Error('当前没有待还金额'); if (state.cashCents < amount) throw new Error('钱包余额不足')
+  requireWalletAuthorization(state, 'repay', amount, 'balance')
   state.cashCents -= amount; state.credit.usedCents -= amount; let left = amount
   for (const tx of [...state.credit.transactions].reverse()) { const applied = Math.min(left, tx.amountCents - tx.repaidCents); tx.repaidCents += applied; left -= applied; if (!left) break }
   pushLedger(state, { category: 'credit_repayment', title: '花呗还款', amountCents: -amount })
@@ -600,7 +734,7 @@ export const refreshCreditLimitIfNeeded = (state: WalletState) => {
 }
 
 export const resetWalletFinance = (state: WalletState) => {
-  const keep = { accountName: state.accountName, paymentHandle: state.paymentHandle, bankCards: state.bankCards, hideAmounts: state.hideAmounts, paymentPassword: state.paymentPassword, marketSettings: state.marketSettings }
+  const keep = { accountName: state.accountName, paymentHandle: state.paymentHandle, bankCards: state.bankCards, hideAmounts: state.hideAmounts, paymentPassword: state.paymentPassword, paymentPasswordType: state.paymentPasswordType, marketSettings: state.marketSettings }
   Object.assign(state, createWalletState(state.accountId, state.accountName), keep)
 }
 

@@ -148,6 +148,7 @@ export const loadCustomContacts = async () => {
       conversationTimeState: c.conversationTimeState || null,
       enableEmojiVision: c.enableEmojiVision ?? false,
       enableRoleEmojiVision: c.enableRoleEmojiVision ?? false,
+      allowBuiltInEmojis: c.allowBuiltInEmojis === true,
       timePerception: c.timePerception ?? true,
       sendCharacterTime: c.sendCharacterTime ?? true,
       memoryBook: c.memoryBook || [],

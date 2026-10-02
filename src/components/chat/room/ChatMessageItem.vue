@@ -1,6 +1,7 @@
 /* WARNING: 本项目专属“粘人精”，严禁出现 Kiro、Krio、周棋洛等任何相关英文或拼音命名！ */
 <script setup lang="ts">
 import { computed, ref, watchEffect } from 'vue'
+import { findBuiltInChatEmoji } from '../../../services/builtInChatEmojis'
 import ChatImageBubble from '../bubbles/ChatImageBubble.vue'
 import ChatVoiceBubble from '../bubbles/ChatVoiceBubble.vue'
 import ChatTransferBubble from '../bubbles/ChatTransferBubble.vue'
@@ -57,6 +58,8 @@ const emit = defineEmits([
   'cancel-image-generation'
 ])
 const translationExpanded = ref(false)
+const builtInEmoji = computed(() => findBuiltInChatEmoji(props.msg.emojiId))
+const emojiMessageUrl = computed(() => builtInEmoji.value?.previewUrl || props.msg.emojiUrl)
 const messageSender = computed(() => props.resolveSender?.(props.msg) || props.selectedChat || {})
 const groupFinanceInteraction = computed(() => props.msg?.financialRef?.interactionId
   ? props.selectedChat?.groupFinanceState?.interactions?.find((item: any) => String(item.id) === String(props.msg.financialRef.interactionId))
@@ -364,8 +367,8 @@ const groupBadge = (memberId: string) => {
 
           <!-- 表情包气泡 -->
           <template v-else-if="msg.isEmoji">
-            <div v-if="msg.emojiUrl" class="emoji-message-container" @click="emit('handle-emoji-click', msg.emojiUrl, msg.content === '[表情]' ? '' : msg.content)" @touchstart="emit('touch-start', msg.id)" @touchend="emit('touch-end')" @touchmove="emit('touch-move', $event)" @contextmenu.prevent>
-              <img :src="msg.emojiUrl" class="emoji-message-img" loading="lazy" />
+            <div v-if="emojiMessageUrl" class="emoji-message-container" :class="{ 'is-builtin': !!builtInEmoji }" @click="emit('handle-emoji-click', emojiMessageUrl, msg.content === '[表情]' ? '' : msg.content)" @touchstart="emit('touch-start', msg.id)" @touchend="emit('touch-end')" @touchmove="emit('touch-move', $event)" @contextmenu.prevent>
+              <img :src="emojiMessageUrl" :alt="msg.content" class="emoji-message-img" loading="lazy" />
             </div>
             <!-- 降级：图片已丢失 -->
             <div v-else class="bubble bubble-left" data-chat-bubble="other" @touchstart="emit('touch-start', msg.id)" @touchend="emit('touch-end')" @touchmove="emit('touch-move', $event)" @contextmenu.prevent>
@@ -472,8 +475,8 @@ const groupBadge = (memberId: string) => {
 
           <!-- 表情包气泡 -->
           <template v-if="msg.isEmoji">
-            <div v-if="msg.emojiUrl" class="emoji-message-container" @click="emit('handle-emoji-click', msg.emojiUrl, msg.content === '[表情]' ? '' : msg.content)" @touchstart="emit('touch-start', msg.id)" @touchend="emit('touch-end')" @touchmove="emit('touch-move', $event)" @contextmenu.prevent>
-              <img :src="msg.emojiUrl" class="emoji-message-img" loading="lazy" />
+            <div v-if="emojiMessageUrl" class="emoji-message-container" :class="{ 'is-builtin': !!builtInEmoji }" @click="emit('handle-emoji-click', emojiMessageUrl, msg.content === '[表情]' ? '' : msg.content)" @touchstart="emit('touch-start', msg.id)" @touchend="emit('touch-end')" @touchmove="emit('touch-move', $event)" @contextmenu.prevent>
+              <img :src="emojiMessageUrl" :alt="msg.content" class="emoji-message-img" loading="lazy" />
             </div>
             <!-- 降级：图片已丢失 -->
             <div v-else class="bubble bubble-right" data-chat-bubble="self" @touchstart="emit('touch-start', msg.id)" @touchend="emit('touch-end')" @touchmove="emit('touch-move', $event)" @contextmenu.prevent>

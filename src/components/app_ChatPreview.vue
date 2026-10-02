@@ -30,6 +30,7 @@ import { useRelationshipAdvance } from '../composables/useRelationshipAdvance'
 import { persistAutonomyChat } from '../services/characterAutonomy'
 import { acknowledgeAutonomyDeliveries } from '../services/autonomyDelivery'
 import { saveGroupChat, type GroupChatRecord } from '../services/groupChat'
+import { getAppearanceStyleId } from '../store'
 
 import {
   ACCOUNT_PROFILE_SOURCE_NAME,
@@ -76,6 +77,8 @@ const currentView = ref<ViewType>('list')
 const pageIsVisible = ref(document.visibilityState === 'visible')
 const activeTab = ref('消息')
 const tabs = ['消息', '联系人', '发现', '我的']
+const listMultiSelect = ref(false)
+const hasEditorialChatStyle = computed(() => getAppearanceStyleId('chatList', currentChatUserId.value) === 'editorial')
 
 const previousView = ref<ViewType>('list')
 const relationshipBackView = ref<ViewType>('chatSettings')
@@ -650,7 +653,7 @@ onUnmounted(() => {
 
     <template v-else>
       <!-- 底部 TabBar -->
-    <footer v-show="!['chat', 'groupCreate', 'groupSettings', 'personaLibrary', 'createUserPersona', 'chatSettings', 'offlineMeet', 'friendRequests', 'relationship', 'autonomy', 'characterProfile', 'userProfile'].includes(currentView)" class="floating-tabbar glass">
+    <footer v-show="!['chat', 'groupCreate', 'groupSettings', 'personaLibrary', 'createUserPersona', 'chatSettings', 'offlineMeet', 'friendRequests', 'relationship', 'autonomy', 'characterProfile', 'userProfile'].includes(currentView) && !(hasEditorialChatStyle && currentView === 'list' && listMultiSelect)" class="floating-tabbar glass" :class="{ 'editorial-tabbar': hasEditorialChatStyle }">
       <div 
         v-for="tab in tabs" 
         :key="tab"
@@ -672,6 +675,7 @@ onUnmounted(() => {
       @open-create-group="groupCreateModalVisible = true"
       @open-chat="openChat"
       @account-switched="handleAccountSwitched"
+      @multi-select-change="listMultiSelect = $event"
     />
 
     <!-- 2. 聊天视图 -->

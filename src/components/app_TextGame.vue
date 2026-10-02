@@ -1,5 +1,7 @@
 <!-- WARNING: 本项目专属“粘人精”，严禁出现无关角色命名！ -->
 <script setup lang="ts">
+import DanmakuPanel from "../components/danmaku/DanmakuPanel.vue"
+import { storyDanmakuSource } from "../services/danmakuSources"
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useTextGame } from '../composables/useTextGame'
 import { makeTextGameId, type TextGameAsset, type TextGameChoice, type TextGameNode, type TextGameSave } from '../types/textGame'
@@ -282,6 +284,7 @@ watch(() => game.activeProjectId.value, () => { if (view.value !== 'home') void 
       <img v-if="currentPortraitUrl" class="tg-stage-portrait" :src="currentPortraitUrl" :alt="node.speaker || '角色立绘'">
       <header class="tg-player-head"><button type="button" @click="leavePlayer">‹</button><div><strong>{{ project.title }}</strong><small>{{ node.chapter }} · {{ node.title }}</small></div><button type="button" @click="savesSheet=true">存读档</button></header>
       <aside v-if="project.settings.showVariableChanges && visibleVariables.length" class="tg-player-stats"><span v-for="item in visibleVariables" :key="item.id"><small>{{ item.name }}</small><b>{{ game.runtime.value.variables[item.id] }}</b></span></aside>
+      <DanmakuPanel class="dm-story-panel" :source="storyDanmakuSource(project, game.runtime.value, true, game.availableChoices.value.filter(item => item.available).map(item => item.choice.text))" :pause="savesSheet" />
       <section class="tg-player-panel">
         <audio v-if="currentAudioUrl" :key="currentAudioUrl" :src="currentAudioUrl" controls preload="metadata"></audio>
         <div class="tg-dialogue"><small v-if="node.speaker">{{ node.speaker }}</small><p>{{ node.text }}</p></div>

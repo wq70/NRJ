@@ -1,6 +1,6 @@
 /* WARNING: 本项目专属“粘人精”，严禁出现无关角色命名！ */
 
-export type AppearanceCategoryId = 'characterProfile' | 'chatRoom'
+export type AppearanceCategoryId = 'characterProfile' | 'chatRoom' | 'chatList'
 
 export interface AppearanceStyleDefinition {
   id: string
@@ -17,6 +17,15 @@ export interface AppearanceCategoryDefinition {
 }
 
 export const appearanceCategories: AppearanceCategoryDefinition[] = [
+  {
+    id: 'chatList',
+    name: '聊天列表',
+    description: '消息首页、置顶会话与列表导航的呈现方式',
+    styles: [
+      { id: 'default', name: '原版列表', keywords: '完整 · 熟悉', description: '保留当前聊天列表的布局、侧边栏与操作方式。' },
+      { id: 'editorial', name: '纯净通透', keywords: '留白 · 诗签', description: '以账号诗签、轻量搜索和无框消息流整理真实会话。' }
+    ]
+  },
   {
     id: 'characterProfile',
     name: '角色主页',

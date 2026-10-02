@@ -1,5 +1,7 @@
 /* WARNING: 本项目专属“粘人精”，严禁出现 Kiro、Krio、周棋洛等任何相关英文或拼音命名！ */
 
+import { builtInChatEmojis, findBuiltInEmojiPromptReference, roleEmojiName } from './builtInChatEmojis'
+
 export type EmojiCategory = 'user' | 'role' | 'global' | 'group'
 
 export interface EmojiScopeLike {
@@ -35,25 +37,31 @@ export const selectUserSendableEmojis = <T extends EmojiScopeLike>(items: T[], g
 export const selectRoleAvailableEmojis = <T extends EmojiScopeLike>(
   items: T[],
   characterId: string,
-  options: { groupId?: string; includePrivateRoleLibrary?: boolean } = {}
-) => items.filter(item => (
+  options: { groupId?: string; includePrivateRoleLibrary?: boolean; includeBuiltIn?: boolean } = {}
+) => [...items.filter(item => (
   item.category === 'global'
   || (item.category === 'group' && Boolean(options.groupId) && String(item.groupId || '') === String(options.groupId))
   || (options.includePrivateRoleLibrary !== false
     && item.category === 'role'
     && emojiOwnerCharacterId(item) === String(characterId))
-))
+)), ...(options.includeBuiltIn ? builtInChatEmojis as unknown as T[] : [])]
 
 export const findRoleEmojiByResponse = <T extends EmojiScopeLike>(
   items: T[],
   characterId: string,
   response: { id?: string; name?: string },
-  options: { groupId?: string; includePrivateRoleLibrary?: boolean } = {}
+  options: { groupId?: string; includePrivateRoleLibrary?: boolean; includeBuiltIn?: boolean } = {}
 ) => {
   const available = selectRoleAvailableEmojis(items, characterId, options)
   if (response.id) {
     const byId = available.find(item => String(item.id) === String(response.id))
     if (byId) return byId
+    if (options.includeBuiltIn) {
+      const builtIn = findBuiltInEmojiPromptReference(response.id)
+      if (builtIn) return builtIn as unknown as T
+    }
   }
-  return available.find(item => String(item.name || '').trim() === String(response.name || '').trim())
+  const name = String(response.name || '').trim()
+  return available.find(item => roleEmojiName(item) === name)
+    || available.find(item => String(item.name || '').trim() === name)
 }

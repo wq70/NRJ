@@ -1,0 +1,12 @@
+# Example: serve the existing built website and gateway on the same HTTPS origin.
+# Replace hostname and site root for your deployment. This does not alter music routes.
+your-nrj-site.example {
+    handle /commerce-api/* {
+        reverse_proxy 127.0.0.1:8790
+    }
+    handle {
+        root * /srv/nrj/dist
+        try_files {path} /index.html
+        file_server
+    }
+}

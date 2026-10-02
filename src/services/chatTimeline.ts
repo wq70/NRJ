@@ -2,7 +2,7 @@
 import localforage from 'localforage'
 import { cloneTimelineVectors, exportTimelineVectors, importTimelineVectors, removeTimelineVectors } from './memoryEngine'
 import { getMomentListKey, listMoments, listSharedCharacterMoments, saveMomentList, saveSharedCharacterMoments } from './momentRepository'
-import { walletStorageKey } from './walletService'
+import { walletStorageKey, restoreWalletFinanceSnapshot } from './walletService'
 import { sendCapabilityMessage } from './api'
 import { exportCharacterPhoneSnapshot, importCharacterPhoneSnapshot } from './characterPhoneRepository'
 import type { CharacterPhoneRecord } from '../types/characterPhone'
@@ -215,9 +215,7 @@ const captureCrossApp = async (chat: any, accountId?: string | null): Promise<Cr
 
 const restoreCrossApp = async (snapshot: CrossAppSnapshot | null, chat: any, accountId?: string | null) => {
   if (!snapshot) return
-  const walletKey = walletStorageKey(accountKey(accountId))
-  if (snapshot.wallet === null) localStorage.removeItem(walletKey)
-  else localStorage.setItem(walletKey, snapshot.wallet)
+  restoreWalletFinanceSnapshot(accountKey(accountId), snapshot.wallet)
   await saveMomentList(snapshot.moments || [])
   await saveSharedCharacterMoments(snapshot.sharedMoments || [])
   const groupsKey = getGroupChatsKey(accountId)

@@ -1,5 +1,7 @@
 /* WARNING: 本项目专属"粘人精"，严禁出现 Kiro、Krio、周棋洛等任何相关英文或拼音命名！ */
 <script setup lang="ts">
+import DanmakuPanel from "../../components/danmaku/DanmakuPanel.vue"
+import { chatDanmakuSource } from "../../services/danmakuSources"
 import { ref, computed, onMounted, nextTick } from 'vue'
 import { useChatState } from '../../composables/useChatState'
 import { useChatRoomAPI } from '../../composables/useChatRoomAPI'
@@ -289,6 +291,7 @@ onMounted(() => {
       </div>
     </header>
 
+    <DanmakuPanel :source="chatDanmakuSource(activeChat, myProfile.name || '我', true, displayedGenerating, true, useChatAuth().currentChatUserId.value || 'guest')" :share-action="async text => { inputMessage = text; await handleSend() }" />
     <!-- 滚动消息内容区 -->
     <main class="offline-chat-area" ref="messageAreaRef">
       <div class="offline-scene-header">

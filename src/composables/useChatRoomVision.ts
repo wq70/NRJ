@@ -2,6 +2,7 @@
 import { sendCapabilityMessage } from '../services/api'
 import { chatSettings } from '../store'
 import localforage from 'localforage'
+import { builtInEmojiVisionData, findBuiltInChatEmoji } from '../services/builtInChatEmojis'
 
 export function useChatRoomVision(
   selectedChat: any,
@@ -24,7 +25,7 @@ export function useChatRoomVision(
       if (targetMsg.emojiId) {
         const emojiStore = localforage.createInstance({ name: 'nrt-app', storeName: 'chatEmojis' })
         try {
-          const item = await emojiStore.getItem<any>(targetMsg.emojiId)
+          const item = findBuiltInChatEmoji(targetMsg.emojiId) || await emojiStore.getItem<any>(targetMsg.emojiId)
           if (item) {
             let rawData = ''
             if (item.type === 'local' && item.data instanceof Blob) {
@@ -34,7 +35,7 @@ export function useChatRoomVision(
                 reader.readAsDataURL(item.data)
               })
             } else if (item.type === 'url' && typeof item.data === 'string') {
-              rawData = item.data
+              rawData = findBuiltInChatEmoji(item.id) ? await builtInEmojiVisionData(item.id) : item.data
             }
             if (rawData) base64ToCompress = rawData
           }
@@ -100,7 +101,7 @@ export function useChatRoomVision(
            if (lastMsg.emojiId) {
              const emojiStore = localforage.createInstance({ name: 'nrt-app', storeName: 'chatEmojis' })
              try {
-                const item = await emojiStore.getItem<any>(lastMsg.emojiId)
+                const item = findBuiltInChatEmoji(lastMsg.emojiId) || await emojiStore.getItem<any>(lastMsg.emojiId)
                 if (item) {
                    let rawData = ''
                    if (item.type === 'local' && item.data instanceof Blob) {
@@ -110,7 +111,7 @@ export function useChatRoomVision(
                         reader.readAsDataURL(item.data)
                      })
                    } else if (item.type === 'url' && typeof item.data === 'string') {
-                      rawData = item.data
+                      rawData = findBuiltInChatEmoji(item.id) ? await builtInEmojiVisionData(item.id) : item.data
                    }
                    if (rawData) base64ToCompress = rawData
                 }

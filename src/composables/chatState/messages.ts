@@ -1,6 +1,7 @@
 /* WARNING: 本项目专属“粘人精”，严禁出现 Kiro、Krio、周棋洛等任何相关英文或拼音命名！ */
 import localforage from 'localforage'
 import { selectRoleAvailableEmojis } from '../../services/chatEmojiScope'
+import { builtInEmojiVisionData, findBuiltInChatEmoji, roleEmojiName } from '../../services/builtInChatEmojis'
 import { filterOnlineHistoryByOfflineSessions } from '../../services/offlineSessions'
 import { buildMemoryPacket, normalizeMemoryMode } from '../../services/memoryEngine'
 import { buildBilingualPrompt } from '../../services/bilingualChat'
@@ -90,20 +91,25 @@ export const buildChatMessages = async (
   let roleEmojisStr = '无'
   const roleEmojiImages: string[] = [] // 如果启用了视觉识别，这里将存放 Base64
   
+  const allEmojis: any[] = []
   try {
-    const allEmojis: any[] = []
     await emojiStore.iterate((value: any, _key: string) => {
       allEmojis.push(value)
     })
+  } catch (err) {
+    console.error('Failed to load custom emojis for role', err)
+  }
+  try {
     // 过滤出该角色可用的：全局(global) + 专属(role, 且 targetId 匹配)
-    const availableEmojis = selectRoleAvailableEmojis(allEmojis, String(chat.characterEntityId || chat.id))
+    const availableEmojis = selectRoleAvailableEmojis(allEmojis, String(chat.characterEntityId || chat.id), { includeBuiltIn: chat.allowBuiltInEmojis === true })
     
     if (availableEmojis.length > 0) {
-      roleEmojisStr = availableEmojis.map(e => e.name).join('、')
+      roleEmojisStr = availableEmojis.map(roleEmojiName).join('、')
       
       // 如果开启了主动发表情包的图形识别
       if (chat.enableRoleEmojiVision && options.includeMedia !== false) {
         for (const e of availableEmojis) {
+          if (findBuiltInChatEmoji(e.id)) continue
           let rawData = ''
           if (e.type === 'local' && e.data instanceof Blob) {
              rawData = await blobToBase64(e.data)
@@ -338,7 +344,7 @@ export const buildChatMessages = async (
         formattedContent = `[${msg.type === 'left' ? '角色过去发送了' : '用户过去发送了'}真实视频：${msg.videoData.name || '视频'}${msg.videoData.duration ? `，时长：${Math.round(msg.videoData.duration)}秒` : ''}]`
       } else if (msg.isEmoji) {
         isEmojiMessage = true
-        emojiName = msg.content === '[表情]' ? '未知名称' : msg.content
+        emojiName = findBuiltInChatEmoji(msg.emojiId)?.protocolName || (msg.content === '[表情]' ? '未知名称' : msg.content)
         
         if (msg.emojiSummary) {
           formattedContent = `[对方发来一个表情包，表情包内容是：${msg.emojiSummary}]`
@@ -380,13 +386,13 @@ export const buildChatMessages = async (
             if (chat.enableEmojiVision && msg.emojiId) {
                const emojiStore = localforage.createInstance({ name: 'nrt-app', storeName: 'chatEmojis' })
              try {
-                const item = await emojiStore.getItem<any>(msg.emojiId)
+                const item = findBuiltInChatEmoji(msg.emojiId) || await emojiStore.getItem<any>(msg.emojiId)
                 if (item) {
                    let rawData = ''
                    if (item.type === 'local' && item.data instanceof Blob) {
                       rawData = await blobToBase64(item.data)
                    } else if (item.type === 'url' && typeof item.data === 'string') {
-                      rawData = item.data
+                      rawData = findBuiltInChatEmoji(item.id) ? await builtInEmojiVisionData(item.id) : item.data
                    }
                    
                    if (rawData) {

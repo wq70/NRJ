@@ -1,5 +1,7 @@
 <!-- WARNING: 本项目专属“粘人精”，严禁出现 Kiro、Krio、周棋洛等任何相关英文或拼音命名！ -->
 <script setup lang="ts">
+import DanmakuPanel from "../components/danmaku/DanmakuPanel.vue"
+import { liveDanmakuSource } from "../services/danmakuSources"
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { mockChats, myProfile } from '../composables/chatState/state'
 import { useLiveStudio } from '../composables/useLiveStudio'
@@ -14,6 +16,8 @@ const emit = defineEmits<{
   (event: 'close'): void
   (event: 'open-app', appId: 'voice_access' | 'image_access' | 'video_hall' | 'music' | 'chat' | 'forum' | 'couple_space' | 'wallet'): void
 }>()
+
+const props = withDefaults(defineProps<{ isVisible?: boolean }>(), { isVisible: true })
 
 type LiveView = 'home' | 'studio' | 'room' | 'records' | 'settings'
 const live = useLiveStudio()
@@ -453,6 +457,7 @@ onBeforeUnmount(() => {
           </template>
         </section>
 
+        <DanmakuPanel :source="liveDanmakuSource(activeSession, live.busy.value, view === 'room' && props.isVisible)" :share-action="async text => { if (!live.snapshot.settings.switches.aiHost) throw new Error('请先开启 AI 主播'); await live.generateHostReply(selectedCharacter, text) }" />
         <div class="live-scene-strip">
           <button v-for="scene in activeChannel?.scenes" :key="scene.id" type="button" :class="{active:scene.id===activeChannel?.activeSceneId}" @click="selectScene(scene)"><i :style="{background:scene.color}"></i>{{ scene.name }}</button>
           <button type="button" @click="uploadSceneImage">＋图片/视频</button>

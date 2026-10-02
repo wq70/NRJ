@@ -176,6 +176,7 @@ const knownStores = [
     { name: 'nrt-forum', storeName: 'forumData', label: '论坛数据', category: 'chat_data' },
     { name: 'nrt-forum', storeName: 'forumMedia', label: '论坛媒体', category: 'chat_images' },
     { name: 'nrt-forum', storeName: 'forumMediaMeta', label: '论坛媒体索引', category: 'chat_data' },
+      { name: 'nrt-danmaku', storeName: 'danmakuState', label: '弹幕与观众', category: 'chat_data' },
       { name: 'nrt-live', storeName: 'liveState', label: '直播设置与记录', category: 'chat_data' },
       { name: 'nrt-live', storeName: 'liveAssets', label: '直播本机媒体', category: 'chat_images' },
       { name: 'nrt-app', storeName: 'watchTogether', label: '共赏设置与记录', category: 'others' },

@@ -1,6 +1,9 @@
 /* WARNING: 本项目专属“粘人精”，严禁出现 Kiro、Krio、周棋洛等任何相关英文或拼音命名！ */
 <script setup lang="ts">
-import { computed, nextTick, ref } from 'vue'
+import { computed, inject, nextTick, ref, watch } from 'vue'
+import PluginRunner from '../../plugins/PluginRunner.vue'
+import ChatEmojiPanel from './ChatEmojiPanel.vue'
+import { enabledChatPlugins, requestPluginManager } from '../../../services/pluginRepository'
 import { ensureRelationship, formatRelationshipPlan } from '../../../composables/useChatRelationship'
 
 const props = withDefaults(defineProps<{
@@ -57,6 +60,13 @@ const inputMessage = ref('')
 const inputRef = ref<HTMLInputElement | null>(null)
 const extensionSliderRef = ref<HTMLDivElement | null>(null)
 const currentExtensionPage = ref(0)
+const activePluginId = ref('')
+const pluginsActive = inject('nrj-chat-plugin-active', ref(true))
+const pluginPages = computed(() => Array.from({ length: Math.ceil(enabledChatPlugins.value.length / 8) }, (_, index) => enabledChatPlugins.value.slice(index * 8, index * 8 + 8)))
+const openPlugin = (id: string) => { activePluginId.value = id; emit('update:showExtensionPanel', false) }
+const insertPluginText = (text: string) => { inputMessage.value += `${inputMessage.value ? '\n' : ''}${text}` }
+watch([() => props.selectedChat?.id, () => pluginsActive.value], () => { activePluginId.value = '' })
+watch(() => pluginPages.value.length, () => { if (currentExtensionPage.value >= 2 + pluginPages.value.length) scrollToExtensionPage(1) })
 
 const onExtensionScroll = () => {
   if (!extensionSliderRef.value) return
@@ -263,18 +273,7 @@ const handleEnter = () => { const option = filteredMentionOptions.value.find(ite
     
     <!-- 底部表情包面板 (平滑展开) -->
     <div class="emoji-panel-wrapper" :class="{ 'is-open': showEmojiPanel }">
-      <div v-if="panelEmojis.length === 0" class="emoji-panel-empty">
-        <div class="empty-text">暂无用户表情包</div>
-        <div class="empty-sub-text" style="color: #3b82f6; cursor: pointer; text-decoration: underline;" @click="emit('open-settings')">前往“表情包管理”添加</div>
-      </div>
-      <div v-else class="emoji-panel-grid">
-        <div v-for="item in panelEmojis" :key="item.id" class="emoji-panel-item" @click="emit('handle-send-emoji', item)">
-          <div class="emoji-img-wrapper">
-            <img :src="item.previewUrl" :alt="item.name" loading="lazy" />
-          </div>
-          <span class="emoji-item-name">{{ item.name }}</span>
-        </div>
-      </div>
+      <ChatEmojiPanel :personal-emojis="panelEmojis" :visible="showEmojiPanel" @send="emit('handle-send-emoji', $event)" @manage="emit('open-settings')" />
     </div>
 
     <!-- 底部拓展面板 (平滑展开) -->
@@ -437,6 +436,14 @@ const handleEnter = () => { const option = filteredMentionOptions.value.find(ite
             </div>
           </div>
         </div>
+        <div v-for="(page, index) in pluginPages" :key="`plugins-${index}`" class="extension-page">
+          <div class="extension-grid">
+            <button v-for="plugin in page" :key="plugin.manifest.id" type="button" class="extension-item is-active plugin-extension-button" @click="openPlugin(plugin.manifest.id)">
+              <div class="extension-icon-box"><svg viewBox="0 0 24 24" width="26" height="26" stroke="currentColor" stroke-width="1.6" fill="none"><rect x="4" y="4" width="16" height="16" rx="5"/><path d="M8 12h8M12 8v8"/></svg></div>
+              <span class="extension-label plugin-extension-label">{{ plugin.manifest.extensions[0]?.label || plugin.manifest.name }}</span>
+            </button>
+          </div>
+        </div>
       </div>
 
       <!-- 分页指示器 -->
@@ -451,13 +458,17 @@ const handleEnter = () => { const option = filteredMentionOptions.value.find(ite
           :class="{ active: currentExtensionPage === 1 }"
           @click="scrollToExtensionPage(1)"
         ></div>
+        <div v-if="pluginPages.length" class="plugin-pagination-pages"><button v-for="(_, index) in pluginPages" :key="`plugin-page-${index}`" type="button" class="pagination-dot plugin-page-dot" :class="{ active: currentExtensionPage === index + 2 }" :aria-label="`插件第 ${index + 1} 页`" @click="scrollToExtensionPage(index + 2)"></button></div>
+        <button v-if="pluginPages.length" type="button" class="plugin-page-link" @click="scrollToExtensionPage(2)">插件</button>
       </div>
     </div>
   </footer>
+  <Teleport to="body"><PluginRunner v-if="activePluginId" :plugin-id="activePluginId" :chat="selectedChat" @close="activePluginId = ''" @insert-text="insertPluginText" @manage="activePluginId = ''; requestPluginManager()" /></Teleport>
 </template>
 
 <style scoped>
 @import '../ChatRoomView.css';
+.plugin-pagination-pages{display:flex;gap:8px;align-items:center;min-width:0;max-width:140px;overflow:auto;padding:3px 0}.plugin-page-dot{padding:0;border:0;flex-shrink:0}.plugin-page-link{border:0;background:transparent;color:var(--text-secondary);font:inherit;font-size:10px;padding:2px 6px;border-radius:6px;flex-shrink:0}.plugin-extension-label{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.plugin-extension-button{font:inherit;color:inherit;background:transparent;border:0;padding:0;min-width:0}
 
 .offline-context-indicator {
   width: 100%;

@@ -1,10 +1,11 @@
 /* WARNING: 本项目专属“粘人精”，严禁出现 Kiro、Krio、周棋洛等任何相关英文或拼音命名！ */
 import { ref } from 'vue'
+import { markDanmakuChatComplete } from '../services/danmakuSignals'
 import { sendChatMessage, isMomentApiReady, type ChatApiPurpose } from '../services/api'
 import { chatSettings, webSearchSettings, worldBooks } from '../store'
 import { appendRelationshipEvent, characterBlocksUser, createFriendRequest, deleteFriendByCharacter, ensureRelationship, setRelationshipPlan } from './useChatRelationship'
 import localforage from 'localforage'
-import { selectRoleAvailableEmojis } from '../services/chatEmojiScope'
+import { findRoleEmojiByResponse } from '../services/chatEmojiScope'
 import { useNovelAI } from './useNovelAI'
 import { useGptImage } from './useGptImage'
 import { useGeminiImage } from './useGeminiImage'
@@ -268,6 +269,7 @@ export function useChatRoomAPI(
     typingTimers.length = 0
     
     const currentChatId = selectedChat.value.id
+    const danmakuRequestAccountId = currentChatUserId.value || 'guest'
     const targetChat = mockChats.value.find((c: any) => c.id === currentChatId)
     const requestTimelineId = String(targetChat?.timelineState?.activeTimelineId || targetChat?.activeTimelineId || 'main')
     const requestTimelineIsActive = () => String(targetChat?.timelineState?.activeTimelineId || targetChat?.activeTimelineId || 'main') === requestTimelineId
@@ -585,7 +587,10 @@ export function useChatRoomAPI(
                console.log(`[调试] 聊天结束，用户已离开 ${chatToUpdate.name} 房间，准备将最新状态写入硬盘`)
                saveCustomContacts(chatToUpdate)
             }
-            if (chatToUpdate) triggerOptions.onComplete?.(chatToUpdate, turnId)
+            if (chatToUpdate) {
+              triggerOptions.onComplete?.(chatToUpdate, turnId)
+              markDanmakuChatComplete(chatToUpdate, turnId, danmakuRequestAccountId)
+            }
             return
           }
           
@@ -968,17 +973,19 @@ export function useChatRoomAPI(
             const emojiStore = localforage.createInstance({ name: 'nrt-app', storeName: 'chatEmojis' })
             let matchedEmoji = null
             
-            if (emojiStore && requestedName) {
+            if (emojiStore && (requestedName || action.attrs?.match(/\bemoji_id=/))) {
+              const allEmojis: any[] = []
               try {
-                const allEmojis: any[] = []
                 await emojiStore.iterate((value: any) => {
                   allEmojis.push(value)
                 })
-                matchedEmoji = selectRoleAvailableEmojis(allEmojis, String(currentChatId))
-                  .find(e => e.name === requestedName)
               } catch(e) {
                 console.error('查询表情包失败', e)
               }
+              matchedEmoji = findRoleEmojiByResponse(allEmojis, String(currentChatId), {
+                id: action.attrs?.match(/\bemoji_id=["']([^"']+)["']/)?.[1],
+                name: requestedName
+              }, { includeBuiltIn: chatToUpdate?.allowBuiltInEmojis === true })
             }
 
             if (!matchedEmoji) {

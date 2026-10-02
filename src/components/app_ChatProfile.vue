@@ -16,6 +16,14 @@ const props = defineProps<{
   currentView: 'profile' | 'createUserPersona' | 'personaLibrary' | 'chatAppearance' | 'notificationSettings'
 }>()
 
+const profileViewRef = ref<any>(null)
+
+watch(() => props.currentView, (newVal) => {
+  if (newVal === 'profile') {
+    profileViewRef.value?.restoreScroll?.()
+  }
+})
+
 const emit = defineEmits<{
   (e: 'update:currentView', view: 'profile' | 'createUserPersona' | 'personaLibrary' | 'chatAppearance' | 'notificationSettings' | 'list' | 'discover' | 'contacts' | 'chat'): void
   (e: 'open-user-profile'): void
@@ -249,6 +257,7 @@ const newNetworkName = ref('')
 const newUserAvatar = ref('')
 const newUserName = ref('')
 const newUserDetail = ref('')
+const canSaveUserPersona = computed(() => Boolean(newUserName.value.trim() || newNetworkName.value.trim()))
 const uploadModalVisible = ref(false)
 const importModalVisible = ref(false)
 const importModalMode = ref<'card'|'doc'>('card')
@@ -524,7 +533,7 @@ const handleAvatarSaved = (url: string | null) => {
 const { updateAccount } = useChatAuth()
 
 const saveUserPersona = async () => {
-  if (!newUserName.value.trim() && !newNetworkName.value.trim()) return
+  if (!canSaveUserPersona.value) return
 
   if (editingPersonaId.value !== null) {
     const index = personas.value.findIndex(p => p.id === editingPersonaId.value)
@@ -659,7 +668,8 @@ const handleUnbindPersonaFromAccount = (personaId: string | number) => {
   <div>
     <!-- ================== 3. 极简我的界面 (Profile) ================== -->
     <ProfileView
-      v-if="props.currentView === 'profile'"
+      v-show="props.currentView === 'profile'"
+      ref="profileViewRef"
       :activePersona="activePersona"
       :activePersonaIndex="activePersonaIndex"
       :personas="personas"
@@ -676,24 +686,25 @@ const handleUnbindPersonaFromAccount = (personaId: string | number) => {
 
     <!-- ================== 通知偏好视图 ================== -->
     <NotificationSettingsView
-      v-else-if="props.currentView === 'notificationSettings'"
+      v-if="props.currentView === 'notificationSettings'"
       @back="emit('update:currentView', 'profile')"
     />
 
     <!-- ================== 聊天外观视图 ================== -->
     <ChatAppearanceView
-      v-else-if="props.currentView === 'chatAppearance'"
+      v-if="props.currentView === 'chatAppearance'"
       @back="emit('update:currentView', 'profile')"
     />
 
     <!-- ================== 6. 新建用户人设视图 ================== -->
     <CreatePersonaView
-      v-else-if="props.currentView === 'createUserPersona'"
+      v-if="props.currentView === 'createUserPersona'"
       v-model:newUserId="newUserId"
       v-model:newNetworkName="newNetworkName"
       v-model:newUserName="newUserName"
       v-model:newUserDetail="newUserDetail"
       :newUserAvatar="newUserAvatar"
+      :canSave="canSaveUserPersona"
       :isBoundToAccount="editingPersonaId !== null && personas.find(p => p.id === editingPersonaId)?.boundAccountId === currentChatUserId"
       :isEditingPersona="editingPersonaId !== null"
       @back="backFromPersonaCreate"
@@ -705,7 +716,7 @@ const handleUnbindPersonaFromAccount = (personaId: string | number) => {
 
     <!-- ================== 7. 人设库视图 ================== -->
     <PersonaLibraryView
-      v-else-if="props.currentView === 'personaLibrary'"
+      v-if="props.currentView === 'personaLibrary'"
       :isPersonaManageMode="isPersonaManageMode"
       :activeGroupId="activeGroupId"
       :personaGroups="personaGroups"

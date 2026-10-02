@@ -1,7 +1,7 @@
 /* WARNING: 本项目专属“粘人精”，严禁出现 Kiro、Krio、周棋洛等任何相关英文或拼音命名！ */
 <template>
   <transition name="modal-fade">
-    <div v-if="visible" class="payment-password-overlay" @click.self="handleClose">
+    <div v-if="visible" class="payment-password-overlay" :class="{ 'wallet-payment-style': theme === 'wallet' }" @click.self="handleClose">
       <div class="payment-password-container">
         <div class="modal-header">
           <h3 class="modal-title">验证支付密码</h3>
@@ -14,8 +14,15 @@
         </div>
 
         <div class="modal-body">
-          <label class="form-label">输入4位支付密码</label>
+          <div v-if="intent" class="payment-summary">
+            <span>付款 USER：{{ accountName }}</span>
+            <strong>{{ intent.title }} · ¥{{ formatWalletMoney(intent.amountCents) }}</strong>
+            <span>付款方式：{{ fundingLabel }}</span>
+          </div>
+          <label class="form-label">{{ mode === 'gesture' ? '绘制支付手势' : '输入4位支付密码' }}</label>
+          <WalletGestureInput v-if="mode === 'gesture'" v-model="paymentPasswordInput" @drawing="drawing = $event" />
           <input
+            v-else
             type="password"
             class="text-input password-input"
             v-model="paymentPasswordInput"
@@ -30,7 +37,8 @@
 
         <div class="modal-footer">
           <button class="cancel-btn" @click="handleClose">取消</button>
-          <button class="verify-btn" :disabled="paymentPasswordInput.length !== 4" @click="verifyPassword">确认支付</button>
+          <p v-if="invalidCredential" class="error-text">原支付密码格式异常，请到此 USER 的钱包支付安全中重新设置。</p>
+          <button class="verify-btn" :disabled="drawing || !validInput" @click="verifyPassword">确认支付</button>
         </div>
       </div>
     </div>
@@ -38,28 +46,43 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch } from 'vue'
-import { loadWalletState } from '../../../services/walletService'
+import { computed, ref, watch } from 'vue'
+import { formatWalletMoney, isValidWalletCredential, loadWalletState, verifyWalletCredential, walletPaymentMode, type WalletPaymentIntent } from '../../../services/walletService'
+import { useChatAuth } from '../../../composables/useChatAuth'
+import WalletGestureInput from '../../wallet/WalletGestureInput.vue'
 
 const props = defineProps<{
   visible: boolean
   accountId: string
+  intent?: WalletPaymentIntent
+  theme?: 'wallet' | 'chat' | 'mall'
 }>()
 
 const emit = defineEmits<{
   (e: 'close'): void
-  (e: 'success'): void
+  (e: 'success', credential: string): void
 }>()
 
 const paymentPasswordInput = ref('')
 const passwordError = ref('')
+const drawing = ref(false)
+const state = ref(loadWalletState(props.accountId || 'guest'))
+const { chatAccounts } = useChatAuth()
+const accountName = computed(() => chatAccounts.value.find(item => item.id === props.accountId)?.name || state.value.accountName)
+const mode = computed(() => walletPaymentMode(state.value))
+const validInput = computed(() => mode.value !== 'off' && isValidWalletCredential(mode.value, paymentPasswordInput.value))
+const invalidCredential = computed(() => mode.value !== 'off' && !isValidWalletCredential(mode.value, state.value.paymentPassword || ''))
+const fundingLabel = computed(() => props.intent?.fundingSource === 'credit' ? '花呗' : props.intent?.fundingSource === 'bank_card' ? state.value.bankCards.find(item => item.id === props.intent?.fundingSourceId)?.name || '银行卡' : '钱包余额')
 
-watch(() => props.visible, (newVal) => {
-  if (newVal) {
+watch(() => [props.visible, props.accountId], () => {
+  if (props.visible) {
+    state.value = loadWalletState(props.accountId || 'guest')
     paymentPasswordInput.value = ''
     passwordError.value = ''
+    drawing.value = false
   }
-})
+}, { immediate: true })
+watch(paymentPasswordInput, () => { passwordError.value = '' }, { flush: 'sync' })
 
 const handleClose = () => {
   emit('close')
@@ -67,12 +90,12 @@ const handleClose = () => {
 
 const verifyPassword = () => {
   const state = loadWalletState(props.accountId || 'guest')
-  if (paymentPasswordInput.value !== state.paymentPassword) {
-    passwordError.value = '支付密码错误'
+  if (!verifyWalletCredential(state, paymentPasswordInput.value)) {
     paymentPasswordInput.value = ''
+    passwordError.value = '支付密码错误'
     return
   }
-  emit('success')
+  emit('success', paymentPasswordInput.value)
 }
 </script>
 
@@ -101,7 +124,7 @@ const verifyPassword = () => {
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 10001; /* 确保在 TransferModal 之上 */
+  z-index: 12000;
   backdrop-filter: blur(2px);
 }
 
@@ -111,6 +134,8 @@ const verifyPassword = () => {
   background: var(--sys-bg-primary, #ffffff);
   border-radius: 16px;
   overflow: hidden;
+  max-height: calc(100dvh - 32px);
+  overflow-y: auto;
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
 }
 .is-dark .payment-password-container {
@@ -216,4 +241,5 @@ const verifyPassword = () => {
 .verify-btn:not(:disabled):active {
   opacity: 0.9;
 }
+.payment-summary{width:100%;min-width:0;display:flex;flex-direction:column;gap:5px;font-size:11px;color:var(--text-secondary,#4b5563)}.payment-summary>*{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.payment-summary strong{font-size:13px;font-weight:500}.wallet-payment-style{--w-text-secondary:#4b5563;--w-border:#e8ecef;--w-accent-gold:#c59b27}.wallet-payment-style .payment-password-container{border-radius:0;background:#fff;color:#111827}.wallet-payment-style .modal-title{font-family:'Noto Serif SC',serif;font-size:15px;color:#111827}.wallet-payment-style .text-input,.wallet-payment-style button{border-radius:0}.wallet-payment-style .verify-btn{background:#111827}.wallet-payment-style .form-label{font-size:12px;color:#4b5563}.modal-footer{flex-wrap:wrap}.modal-footer .error-text{flex:0 0 100%;margin:0;font-size:11px}.verify-btn:disabled{opacity:.4;cursor:not-allowed}
 </style>

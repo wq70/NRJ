@@ -7,6 +7,7 @@ import type { CharacterPhoneApp, CharacterPhoneAppEntry, CharacterPhoneConversat
 const uid = (prefix: string) => `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
 const now = () => Date.now()
 const safeText = (value: unknown, length = 1000) => String(value || '').trim().slice(0, length)
+const entryMetadataGuide = '记录可在 meta 中附加结构字段：calendar 使用 startAt、endAt（ISO 时间）、location；calls 使用 direction（incoming/outgoing/missed）、duration（秒）；sms 使用 sender；clock 使用 alarmTime（HH:mm）、enabled；browser/files 使用 url、fileType；maps 使用 location、url；photos/gallery 使用 imageUrl。只有提供了真实可用资源时才填写 URL，不得编造图片或文件地址；没有图片时保留文字描述。标题与正文始终保留。'
 const color = (value: unknown, fallback: string) => /^#[0-9a-f]{6}$/i.test(String(value || '')) ? String(value) : fallback
 
 const appDefinitions: Array<Pick<CharacterPhoneApp, 'id' | 'name' | 'kind' | 'icon' | 'color'>> = [
@@ -64,8 +65,9 @@ const normalizeEntry = (raw: any): CharacterPhoneAppEntry => ({
 })
 
 const normalizeGeneratedApp = (raw: any, index: number): CharacterPhoneApp => {
+  const generatedEntries = Array.isArray(raw?.entries) ? raw.entries.map(normalizeEntry).map((entry: CharacterPhoneAppEntry) => ({ ...entry, meta: { ...entry.meta, generated: true } })) : []
   const builtIn = appDefinitions.find(item => item.id === raw?.id)
-  if (builtIn) return { ...makeBuiltInApp(builtIn.id), hidden: raw?.hidden === true, badge: Math.max(0, Number(raw?.badge || 0)), entries: Array.isArray(raw?.entries) ? raw.entries.map(normalizeEntry) : [] }
+  if (builtIn) return { ...makeBuiltInApp(builtIn.id), hidden: raw?.hidden === true, badge: Math.max(0, Number(raw?.badge || 0)), entries: generatedEntries }
   const allowedKinds = new Set(['feed', 'records', 'gallery', 'dashboard', 'list', 'page'])
   return {
     id: safeText(raw?.id || `custom_${index}_${Math.random().toString(36).slice(2, 6)}`, 80).replace(/[^a-zA-Z0-9_-]/g, '_'),
@@ -74,7 +76,7 @@ const normalizeGeneratedApp = (raw: any, index: number): CharacterPhoneApp => {
     hidden: raw?.hidden === true, badge: Math.max(0, Number(raw?.badge || 0)), allowCharacterUse: raw?.allowCharacterUse !== false,
     allowBackgroundUse: raw?.allowBackgroundUse !== false, managementMode: 'autonomous', refreshMode: 'manual',
     refreshIntervalMinutes: Math.max(15, Number(raw?.refreshIntervalMinutes || 180)), lastRefreshedAt: 0,
-    entries: Array.isArray(raw?.entries) ? raw.entries.map(normalizeEntry) : []
+    entries: generatedEntries
   }
 }
 
@@ -93,27 +95,27 @@ const normalizeGeneratedDevice = (raw: any, index: number): CharacterPhoneDevice
   }
 }
 
-export const generateCharacterPhone = async (chat: any, accountId: string, options: { includeRecentChat?: boolean } = {}) => {
+export const generateCharacterPhone = async (chat: any, accountId: string, options: { includeRecentChat?: boolean; previewOnly?: boolean } = {}) => {
   const characterId = String(chat.characterEntityId || chat.id)
   const timelineId = String(chat.timelineState?.activeTimelineId || chat.activeTimelineId || 'main')
   const existing = await loadCharacterPhone(accountId, characterId, chat.id, timelineId)
   const people = (chat.socialCircle || []).slice(0, 12).map((item: any) => ({ id: item.entityId || item.id, name: item.name, relation: item.relation, persona: safeText(item.persona, 500) }))
   const recent = options.includeRecentChat ? (chat.messages || []).filter((item: any) => ['left', 'right'].includes(item.type)).slice(-12).map((item: any) => `${item.type === 'left' ? chat.name : '用户'}：${safeText(item.content, 500)}`).join('\n') : ''
   const prompt = `你负责为一个虚构角色建立真实、克制、长期可持续的个人设备档案。只返回合法 JSON，不要 Markdown、解释或思维过程。\n角色：${chat.realName || chat.name}\n角色人设：${safeText(chat.persona, 9000)}\n社交资料：${JSON.stringify(chat.socialProfile || {})}\n生活人脉：${JSON.stringify(people)}\n${recent ? `近期聊天原文（只用于合理贴合当前生活，不得照搬隐私）：\n${recent}` : '不要读取近期单聊。'}\n设备数量必须符合人设，可以为 0、1 或多台；不要默认两台。每台设备可以无锁，也可以使用 pin、password、pattern、biometric。密码可以是数字、英文或混合，必须给出符合人物经历的 lockReason；无锁时凭据和原因留空。APP 除系统能力外应根据职业、兴趣和生活生成，保留普通、闲置和意外但合理的应用，不要让每个 APP 都藏秘密。每个 APP 最多给 3 条简短初始记录。\nJSON：{"devices":[{"id":"","name":"","type":"phone|tablet|other","purpose":"","active":true,"wallpaper":"","battery":76,"storageUsedPercent":38,"silent":false,"doNotDisturb":false,"lockType":"none|pin|password|pattern|biometric","lockCredential":"","lockReason":"","apps":[{"id":"内置可用 chat|contacts|moments|calls|sms|photos|files|notes|calendar|browser|maps|clock|settings；动态APP自定ID","name":"","kind":"feed|records|gallery|dashboard|list|page","icon":"一个汉字","color":"#RRGGBB","hidden":false,"badge":0,"entries":[{"title":"","subtitle":"","content":""}]}]}]}`
-  const response: any = await sendCapabilityMessage('character-phone', [{ role: 'system', content: prompt }, { role: 'user', content: `生成${chat.realName || chat.name}当前真实使用的设备。` }])
+  const response: any = await sendCapabilityMessage('character-phone', [{ role: 'system', content: `${prompt}\n${entryMetadataGuide}` }, { role: 'user', content: `生成${chat.realName || chat.name}当前真实使用的设备。` }])
   const parsed = parseJson(typeof response === 'string' ? response : response.content)
   existing.devices = Array.isArray(parsed?.devices) ? parsed.devices.slice(0, 5).map(normalizeGeneratedDevice) : []
   existing.generated = true
   existing.generationSource = 'ai'
   addCharacterPhoneEvent(existing, { type: 'phone_created', title: '设备档案已建立', detail: existing.devices.length ? `建立了 ${existing.devices.length} 台设备` : '角色当前没有设备', deviceId: existing.devices[0]?.id || '', actualActor: 'system', characterKnowledge: 'character_known', importance: 2, unresolved: false, bridgeEligible: false })
-  await saveCharacterPhone(existing)
+  if (!options.previewOnly) await saveCharacterPhone(existing)
   return existing
 }
 
 export const refreshCharacterPhoneApp = async (record: CharacterPhoneRecord, device: CharacterPhoneDevice, app: CharacterPhoneApp, chat: any, mode: 'incremental' | 'replace-generated' = 'incremental') => {
   const oldEntries = app.entries.slice(-12)
   const prompt = `你负责刷新虚构角色手机中的一个 APP。只返回合法 JSON，不要 Markdown。不得改变角色核心人设，不得重写项目现有单聊、群聊、朋友圈或论坛。角色：${chat.realName || chat.name}\n人设：${safeText(chat.persona, 7000)}\n设备：${device.name}（${device.purpose}）\nAPP：${app.name}，类型：${app.kind}\n已有记录：${JSON.stringify(oldEntries)}\n请生成 1～5 条自然、不过度戏剧化的新记录，避免重复。JSON：{"entries":[{"title":"","subtitle":"","content":"","contactId":"","read":false,"meta":{}}]}`
-  const response: any = await sendCapabilityMessage('character-phone', [{ role: 'system', content: prompt }, { role: 'user', content: mode === 'incremental' ? '增量刷新。' : '替换该 APP 中由 AI 生成的背景记录。' }])
+  const response: any = await sendCapabilityMessage('character-phone', [{ role: 'system', content: `${prompt}\n${entryMetadataGuide}` }, { role: 'user', content: mode === 'incremental' ? '增量刷新。' : '替换该 APP 中由 AI 生成的背景记录。' }])
   const parsed = parseJson(typeof response === 'string' ? response : response.content)
   const entries: CharacterPhoneAppEntry[] = Array.isArray(parsed?.entries) ? parsed.entries.slice(0, 8).map(normalizeEntry).map((entry: CharacterPhoneAppEntry) => ({ ...entry, meta: { ...(entry.meta || {}), generated: true } })) : []
   app.entries = mode === 'replace-generated' ? [...app.entries.filter(item => item.meta?.generated !== true), ...entries] : [...app.entries, ...entries]

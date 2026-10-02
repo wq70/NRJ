@@ -10,6 +10,7 @@ import localforage from 'localforage'
 import type { OfflineModelProfile } from './offlinePresets'
 import type { GroupMembershipRequest } from '../types/groupManagement'
 import { selectRoleAvailableEmojis } from './chatEmojiScope'
+import { builtInEmojiPromptCatalogue, builtInEmojiVisionData, findBuiltInChatEmoji, roleEmojiName } from './builtInChatEmojis'
 import { buildGroupManagementPrompt, ensureGroupManagementState, getSpeakableCharacterIds } from './groupManagementService'
 import { buildSingleToGroupBridgeContext, normalizeMemoryBridgeMemberSettings } from './memoryBridge'
 import { loadTimelineChatView } from './chatTimeline'
@@ -397,10 +398,11 @@ export const buildGroupChatMessages = async (group: GroupChatRecord, allChats: a
     }
     const offlineMode = group.offlineMeetEnabled && (group.offlineMeetMode === 'separate' || group.isMixedOfflineActive) ? group.offlineMeetMode : false
     const includePrivateRoleLibrary = group.referenceMemberEmojiLibraries && group.memberEmojiLibraryEnabled[id] !== false
-    const roleEmojiItems = selectRoleAvailableEmojis(emojiItems, id, { groupId: group.id, includePrivateRoleLibrary })
-    const roleEmojiNames = isolatedMember.enableRoleEmojiVision
-      ? roleEmojiItems.map(item => `${item.name}（emoji_id=${item.id}）`).filter(Boolean).join('、')
-      : ''
+    const roleEmojiItems = selectRoleAvailableEmojis(emojiItems, id, { groupId: group.id, includePrivateRoleLibrary, includeBuiltIn: isolatedMember.allowBuiltInEmojis === true })
+    const customEmojiNames = roleEmojiItems.filter(item => isolatedMember.enableRoleEmojiVision && !findBuiltInChatEmoji(item.id))
+      .map(item => `${roleEmojiName(item)}（emoji_id=${item.id}）`).filter(Boolean)
+    if (isolatedMember.allowBuiltInEmojis === true) customEmojiNames.push('内置表情（名称与 ID 见下方共享内置表情目录）')
+    const roleEmojiNames = customEmojiNames.join('、')
     const basePrompt = buildSystemPrompt(isolatedMember, roleEmojiNames || '无', false, offlineMode as any, undefined, 'group', memoryQuery)
     const bilingualPrompt = buildBilingualPrompt(isolatedMember)
     const thoughtContext = buildInnerThoughtContext(isolatedMember, group.pendingUserThought || '', turnId)
@@ -450,6 +452,8 @@ export const buildGroupChatMessages = async (group: GroupChatRecord, allChats: a
   if ((group.activeCallType && group.disableMediaDuringCall) || (offlineActive && group.disableMediaDuringOffline)) system += `\n\n【当前场景功能限制】\n本轮禁止发送 image、voice、emoji、transfer、red_packet、file、video 或 call 类型，只能输出文字或叙事。`
   if ((group.activeCallType && group.disableThoughtDuringCall) || (offlineActive && group.disableThoughtDuringOffline)) system += `\n\n【当前场景心声限制】\n本轮禁止输出 group_inner_thought。`
   system += `\n\n【群表情精确协议】\n发送表情时必须使用 <group_msg sender="成员ID" kind="emoji" emoji_id="表情ID">表情名称</group_msg>。只能使用该成员上下文中列出的表情；同名时必须依 emoji_id 区分。`
+  const builtInAuthorizedIds = members.filter(member => ({ ...member, ...(group.memberSettings[memberIdentity(member)] || {}) }).allowBuiltInEmojis === true).map(memberIdentity)
+  if (builtInAuthorizedIds.length) system += `\n\n【共享内置表情目录】\n仅授权成员 ID：${builtInAuthorizedIds.join('、')}。其他成员禁止发送内置表情。以下为“平台·名称=emoji_id”，选择适合语境的表情即可，不必为了使用表情而发送：\n${builtInEmojiPromptCatalogue()}`
   if (group.emojiVisionScope === 'enabled_members') system += `\n表情图像按成员授权隔离；标注为某成员专属视觉的图片，其他成员不得据此形成认知或反应。`
   if (group.groupContext.trim()) system += `\n\n【可选群背景】\n${group.groupContext.trim()}`
   if ((group as any).pendingAutonomyDirective) system += `\n\n【本轮群成员自主活动】\n${escapeXml((group as any).pendingAutonomyDirective)}\n本轮由群成员自行决定是否发言；不得假装用户刚刚发送了新消息。${group.autonomyAllowMentions ? '允许自然提及用户或其他成员。' : '禁止使用 mentions 主动提及任何人。'}`
@@ -502,8 +506,11 @@ export const buildGroupChatMessages = async (group: GroupChatRecord, allChats: a
       }
       const emojiVisionMembers = members.filter(member => ({ ...member, ...(group.memberSettings[memberIdentity(member)] || {}) }).enableEmojiVision)
       if (message.type === 'right' && message.isEmoji && message.emojiId && emojiVisionMembers.length) {
-        const emoji = emojiItems.find(item => String(item.id) === String(message.emojiId))
+        const emoji = findBuiltInChatEmoji(message.emojiId) || emojiItems.find(item => String(item.id) === String(message.emojiId))
         let emojiUrl = emoji?.type === 'url' && typeof emoji.data === 'string' ? emoji.data : ''
+        if (findBuiltInChatEmoji(message.emojiId)) {
+          try { emojiUrl = await builtInEmojiVisionData(String(message.emojiId)) } catch { emojiUrl = '' }
+        }
         if (!emojiUrl && emoji?.type === 'local' && emoji.data instanceof Blob) {
           try { emojiUrl = await blobToDataUrl(emoji.data) } catch { emojiUrl = '' }
         }

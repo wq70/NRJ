@@ -1,10 +1,14 @@
 /* WARNING: 本项目专属“粘人精”，严禁出现 Kiro、Krio、周棋洛等任何相关英文或拼音命名！ */
 <script setup lang="ts">
+import DanmakuPanel from '../danmaku/DanmakuPanel.vue'
+import { chatDanmakuSource } from '../../services/danmakuSources'
+import { markDanmakuChatComplete } from '../../services/danmakuSignals'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import localforage from 'localforage'
 import { useChatAuth } from '../../composables/useChatAuth'
 import { useChatState } from '../../composables/useChatState'
 import { useChatEmoji } from '../../composables/useChatEmoji'
+import { recordBuiltInEmojiUsage } from '../../composables/useBuiltInEmojiRecent'
 import { useChatMessageSelection } from '../../composables/useChatMessageSelection'
 import { useChatRoomMultiSelect } from '../../composables/useChatRoomMultiSelect'
 import { useChatRoomMessage } from '../../composables/useChatRoomMessage'
@@ -42,7 +46,7 @@ import ChatVideoCallView from './ChatVideoCallView.vue'
 import ChatVoiceCallWidget from './room/ChatVoiceCallWidget.vue'
 import ChatOfflineMeetView from './ChatOfflineMeetView.vue'
 import { createTransferData } from '../../services/transferLifecycle'
-import { createIncomingWalletPayment } from '../../services/walletService'
+import { createIncomingWalletPayment, runWalletPayment } from '../../services/walletService'
 import { actOnGroupFinance, createGroupFinanceEventNotice, createGroupFinanceInteraction, groupFinanceSummary, GROUP_FINANCE_FEATURES, settleExpiredGroupFinance, type GroupFinanceFeature } from '../../services/groupFinance'
 import { findRoleEmojiByResponse, selectUserSendableEmojis } from '../../services/chatEmojiScope'
 import { useGroupManagement } from '../../composables/useGroupManagement'
@@ -297,6 +301,7 @@ const runReply = async (regenerationSession?: ReplyRegenerationSession | ReplyRe
   const targetMemberAvatar = (id: string) => mockChats.value.find(chat => chat.chatType !== 'group' && String(chat.characterEntityId || chat.id) === id)?.avatarUrl || ''
   const requestController = new AbortController()
   activeGroupReplyIds.add(targetId); groupReplyControllers.set(targetId, requestController); targetGroup.isTyping = true; persist(targetGroup)
+  const danmakuRequestAccountId = currentChatUserId.value || 'guest'
   const requestStartedAt = Date.now()
   let replyCompleted = false
   try {
@@ -406,10 +411,10 @@ const runReply = async (regenerationSession?: ReplyRegenerationSession | ReplyRe
       if (message.messageType === 'image') item.imageData = { text: message.content, summary: message.content }
       if (message.messageType === 'emoji') {
         const emojiMember: any = memberMap.value.get(String(message.senderId))
-        const matchedEmoji: any = emojiMember?.enableRoleEmojiVision
-          ? findRoleEmojiByResponse(emojis.value as any[], String(message.senderId), { id: message.emojiId, name: message.content.trim() }, { groupId: String(targetGroup.id), includePrivateRoleLibrary: targetGroup.referenceMemberEmojiLibraries && targetGroup.memberEmojiLibraryEnabled?.[String(message.senderId)] !== false })
+        const matchedEmoji: any = (emojiMember?.enableRoleEmojiVision || emojiMember?.allowBuiltInEmojis)
+          ? findRoleEmojiByResponse(emojis.value as any[], String(message.senderId), { id: message.emojiId, name: message.content.trim() }, { groupId: String(targetGroup.id), includePrivateRoleLibrary: targetGroup.referenceMemberEmojiLibraries && targetGroup.memberEmojiLibraryEnabled?.[String(message.senderId)] !== false, includeBuiltIn: emojiMember?.allowBuiltInEmojis === true })
           : null
-        if (!matchedEmoji) return
+        if (!matchedEmoji || (!matchedEmoji.builtIn && !emojiMember?.enableRoleEmojiVision)) return
         item.isEmoji = true
         item.emojiSummary = matchedEmoji.name
         item.content = matchedEmoji.name
@@ -517,6 +522,7 @@ const runReply = async (regenerationSession?: ReplyRegenerationSession | ReplyRe
       else restorePreviousReplyAfterFailure(targetGroup, regenerationSession)
     }
     targetGroup.isTyping = false
+    if (replyCompleted) markDanmakuChatComplete(targetGroup, String(targetGroup.messages?.at(-1)?.turnId || ''), danmakuRequestAccountId)
     activeGroupReplyIds.delete(targetId)
     groupReplyControllers.delete(targetId)
     persist(targetGroup)
@@ -595,7 +601,7 @@ const forkFromReplyVariant = async () => {
 const stopReply = () => groupReplyControllers.get(String(props.group.id))?.abort()
 const sceneDisablesMedia = () => Boolean((props.group.activeCallType && props.group.disableMediaDuringCall) || (props.group.isMixedOfflineActive && props.group.disableMediaDuringOffline))
 const canUserSend = () => { if (isGroupMemberMuted(props.group, 'user')) { showToast('当前处于禁言状态，无法发送消息'); return false } return true }
-const handleSendEmoji = async (item: any) => { if (!canUserSend()) return; if (sceneDisablesMedia()) return showToast('当前场景已禁用多媒体与互动功能'); const now = Date.now(); const turnId = `user_group_turn_${now}`; props.group.messages.push({ id: now, timestamp: now, type: 'right', senderId: 'user', senderType: 'user', turnId, content: item.name || '[表情]', messageType: 'emoji', isEmoji: true, emojiUrl: item.previewUrl, emojiId: item.id }); awardGroupActivity(props.group, 'user', turnId, now); showEmojiPanel.value = false; persist(); await scrollBottom() }
+const handleSendEmoji = async (item: any) => { if (!canUserSend()) return; if (sceneDisablesMedia()) return showToast('当前场景已禁用多媒体与互动功能'); const now = Date.now(); const turnId = `user_group_turn_${now}`; props.group.messages.push({ id: now, timestamp: now, type: 'right', senderId: 'user', senderType: 'user', turnId, content: item.name || '[表情]', messageType: 'emoji', isEmoji: true, emojiUrl: item.previewUrl, emojiId: item.id }); recordBuiltInEmojiUsage(item.id); awardGroupActivity(props.group, 'user', turnId, now); showEmojiPanel.value = false; persist(); await scrollBottom() }
 const handleSendImage = (data: any) => { if (!canUserSend()) return; if (sceneDisablesMedia()) return showToast('当前场景已禁用多媒体与互动功能'); awardGroupActivity(props.group, 'user', `user_group_media_${Date.now()}`); return media.handleSendImage(data, showExtensionPanel) }
 const handleSendVoice = (data: any) => { if (!canUserSend()) return; if (sceneDisablesMedia()) return showToast('当前场景已禁用多媒体与互动功能'); awardGroupActivity(props.group, 'user', `user_group_media_${Date.now()}`); return media.handleSendVoice(data, showExtensionPanel) }
 const handleSendTransfer = (data: any) => { if (!canUserSend()) return; if (sceneDisablesMedia()) return showToast('当前场景已禁用多媒体与互动功能'); awardGroupActivity(props.group, 'user', `user_group_media_${Date.now()}`); return media.handleSendTransfer(data, showExtensionPanel) }
@@ -603,7 +609,12 @@ const handleCreateGroupFinance = async (data: any) => {
   if (!canUserSend()) return
   if (sceneDisablesMedia()) return showToast('当前场景已禁用多媒体与互动功能')
   try {
-    const interaction = createGroupFinanceInteraction(props.group, { ...data, creatorId: 'user', creatorName: groupUserProfile.value.name || '我', walletAccountId: currentChatUserId.value || 'guest' })
+    const ownerId = currentChatUserId.value || 'guest'
+    const targetGroup = props.group
+    const execute = () => createGroupFinanceInteraction(targetGroup, { ...data, creatorId: 'user', creatorName: groupUserProfile.value.name || '我', walletAccountId: ownerId })
+    const isCollection = String(data.feature).startsWith('collection_')
+    const interaction = isCollection ? execute() : await runWalletPayment({ accountId: ownerId, operation: 'send', title: '群红包 / 群转账', amountCents: data.amountCents, fundingSource: data.fundingSource || 'balance', fundingSourceId: data.fundingSourceId, theme: 'chat' }, execute, () => props.group === targetGroup && (currentChatUserId.value || 'guest') === ownerId && showGroupFinanceModal.value)
+    if (!interaction) return
     const now = Date.now()
     props.group.messages.push({ id: now, timestamp: now, type: 'right', senderId: 'user', senderType: 'user', messageType: 'group_finance', content: groupFinanceSummary(interaction), financialRef: { interactionId: interaction.id } })
     showGroupFinanceModal.value = false; showExtensionPanel.value = false
@@ -612,7 +623,15 @@ const handleCreateGroupFinance = async (data: any) => {
 }
 const handleGroupFinanceAction = async (payload: any) => {
   try {
-    const result = actOnGroupFinance(props.group, { ...payload, actorId: 'user', walletAccountId: currentChatUserId.value || 'guest' })
+    const ownerId = currentChatUserId.value || 'guest'
+    const targetGroup = props.group
+    const interaction = targetGroup.groupFinanceState?.interactions?.find((item: any) => item.id === payload.interactionId)
+    const allocation = interaction?.allocations.find((item: any) => item.memberId === 'user' && item.status === 'pending')
+    const execute = () => actOnGroupFinance(targetGroup, { ...payload, actorId: 'user', walletAccountId: ownerId })
+    const result = payload.action === 'pay' && interaction?.category === 'collection' && allocation
+      ? await runWalletPayment({ accountId: ownerId, operation: 'send', title: '支付群收款', amountCents: allocation.amountCents, fundingSource: 'balance', theme: 'chat' }, execute, () => props.group === targetGroup && (currentChatUserId.value || 'guest') === ownerId)
+      : execute()
+    if (!result) return
     if (!result.ok) return showToast(({ wrong_answer: '答案不正确', duplicate: '你已经参与过了', ineligible: '你不在参与范围内', closed: '活动已经结束', no_allocation: '已没有可领取份额' } as any)[result.reason] || '当前无法完成操作')
     const now = Date.now()
     const notice = createGroupFinanceEventNotice({ interaction: result.interaction, allocation: result.allocation, action: payload.action, actorId: 'user', actorName: groupUserProfile.value.name || '我', createdAt: now })
@@ -818,6 +837,7 @@ onMounted(async () => { await loadEmojis(); updateTimeStr(); if (settleExpiredGr
       @click="handleBannerClick"
     />
 
+    <DanmakuPanel v-if="props.isVisible" :source="chatDanmakuSource(group, groupUserProfile.name || '我', Boolean(group.isMixedOfflineActive), isGenerating, Boolean(props.isVisible), currentChatUserId || 'guest')" :pause="showExtensionPanel || showEmojiPanel || Boolean(selectionMode)" :share-action="async text => { if (isGroupMemberMuted(group, 'user')) throw new Error('当前禁言，无法分享'); await handleAddMessage(text); await runReply() }" />
     <ChatRoomMessageList ref="messageListRef" :displayMessages="displayMessages" :selectedChat="group" :myProfile="groupUserProfile" :selectionMode="selectionMode" :isSelected="isSelected" :justMarkedIds="multi.justMarkedIds.value" :expandedImageIds="media.expandedImageIds.value" :expandedVoiceIds="expandedVoiceIds" :currentMediaThumb="currentMediaThumb" :voicePlayingId="voicePlayingId" :isVoiceSynthesizing="isVoiceSynthesizing" :is-generating="isGenerating" :resolveSender="resolveSender" @click-overlay="showExtensionPanel = false; showEmojiPanel = false" @click-message="multi.handleMessageClick" @toggle-selection="toggleMessageSelection" @touch-start="multi.handleTouchStart" @touch-end="multi.handleTouchEnd" @touch-move="multi.handleTouchMove" @toggle-image-text="media.toggleImageText" @toggle-voice-text="toggleVoiceText" @play-voice="handlePlayVoice" @handle-left-transfer-click="transfer.handleLeftTransferClick" @handle-group-finance-action="handleGroupFinanceAction" @open-character-profile="emit('open-character-profile', $event)" @switch-reply-variant="handleReplyVariantSwitch" @regenerate-reply="regenerate" @open-reply-variant-actions="openReplyVariantActions" />
 
     <ChatReplyVariantForkModal :visible="Boolean(pendingVariantSwitch)" :preview-messages="pendingVariantSwitch?.previewMessages || []" @close="pendingVariantSwitch = null" @fork="forkFromReplyVariant" />

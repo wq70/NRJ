@@ -2,12 +2,15 @@
 <script setup lang="ts">
 import { computed, ref, onMounted, onBeforeUnmount, watch } from 'vue'
 import localforage from 'localforage'
-import { globalSettings } from '../store'
 import { useWallet } from '../composables/useWallet'
 import {
   adjustWalletBalance,
+  runWalletPayment,
+  saveWalletMarketResult,
+  walletMarketRequestKey,
+  setWalletPaymentSecurity,
+  type WalletPaymentIntent,
   cancelWalletOrder,
-  formatWalletMoney,
   getWalletOrders,
   getWalletWatchlist,
   placeWalletOrder,
@@ -29,94 +32,84 @@ import {
   type MomentReceiptCode
 } from '../services/momentPayments'
 
+import WalletOverviewTab from './wallet/tabs/WalletOverviewTab.vue'
+import WalletMarketTab from './wallet/tabs/WalletMarketTab.vue'
+import WalletServicesTab from './wallet/tabs/WalletServicesTab.vue'
+
+import WalletDepositWithdrawModal from './wallet/modals/WalletDepositWithdrawModal.vue'
+import WalletLedgerModal from './wallet/modals/WalletLedgerModal.vue'
+import WalletTradeModal from './wallet/modals/WalletTradeModal.vue'
+import WalletCardModal from './wallet/modals/WalletCardModal.vue'
+import WalletCreditModal from './wallet/modals/WalletCreditModal.vue'
+import WalletReceiptModal from './wallet/modals/WalletReceiptModal.vue'
+import WalletMarketSettingsModal from './wallet/modals/WalletMarketSettingsModal.vue'
+import WalletPasswordModal from './wallet/modals/WalletPasswordModal.vue'
+import WalletAccountModal from './wallet/modals/WalletAccountModal.vue'
+import { useChatAuth } from '../composables/useChatAuth'
+import { globalSettings } from '../store/global'
+
+import './wallet/walletTheme.css'
+
 const emit = defineEmits<{ (event: 'close'): void; (event: 'open-moments'): void }>()
-const { accountId, state, currentAccount, activeQuotes, activePositions, stockMarketValueCents, stockCostCents, bankAssetCents, liabilityCents, totalAssetCents, netAssetCents, persist } = useWallet()
+const { accountId, state, currentAccount, chatAccounts, selectAccount, reload, activeQuotes, activePositions, stockMarketValueCents, stockCostCents, bankAssetCents, liabilityCents, totalAssetCents, netAssetCents, persist } = useWallet()
 
-type Tab = 'wallet' | 'stocks' | 'mine'
-type Panel = '' | 'bills' | 'payments' | 'receipt' | 'cards' | 'security' | 'credit' | 'orders' | 'positions' | 'watchlist' | 'marketSettings' | 'help'
-type Dialog = '' | 'balance' | 'deposit' | 'withdraw' | 'card' | 'trade' | 'repay' | 'reset' | 'deleteBills' | 'creditSettings' | 'removeCard' | 'cardDetails' | 'cardBalanceEdit' | 'paymentPassword'
+type MainTab = 'wallet' | 'stocks' | 'services'
+type DialogType = '' | 'deposit' | 'withdraw' | 'balance' | 'ledger' | 'trade' | 'card' | 'credit' | 'receipt' | 'marketSettings' | 'password' | 'account'
 
-const activeTab = ref<Tab>('wallet')
-const panel = ref<Panel>('')
+const currentTab = ref<MainTab>('wallet')
+const activeDialog = ref<DialogType>('')
+const paymentBusy = ref(false)
+const { currentChatUserId } = useChatAuth()
+const pay = async (intent: Omit<WalletPaymentIntent, 'accountId' | 'theme'>, execute: () => void) => {
+  if (paymentBusy.value) return false
+  const ownerId = accountId.value
+  const dialog = activeDialog.value
+  paymentBusy.value = true
+  try {
+    return await runWalletPayment({ ...intent, accountId: ownerId, theme: 'wallet' }, () => { reload(); execute(); return true }, () => accountId.value === ownerId && activeDialog.value === dialog) || false
+  } finally { paymentBusy.value = false }
+}
 
-// 在打开面板时刷新额度
-watch(panel, (newPanel) => {
-  if (newPanel === 'credit') {
-    refreshCreditLimitIfNeeded(state.value)
-    persist()
-  }
-  if (newPanel === 'receipt') void loadOrCreateReceiptCode()
-})
 
-watch(activeTab, (tab) => {
-  if (tab === 'stocks' && state.value.marketSettings.mode === 'live' && shouldRefreshWalletLiveMarket(state.value)) void refreshLiveMarket(false)
-})
-
-const dialog = ref<Dialog>('')
-const amountInput = ref('')
-const noteInput = ref('')
-const paymentPasswordInput = ref('')
-const selectedBankCardId = ref<string>('')
-const activeCardDetailsId = ref<string | null>(null)
-const cardNameInput = ref('')
-const cardNumberInput = ref('')
-const cardBalanceInput = ref('')
-const selectedCode = ref('CLY001')
-const liveSymbolInput = ref('')
 const tradeSide = ref<'buy' | 'sell'>('buy')
-const tradeType = ref<'market' | 'limit'>('market')
-const tradeQuantity = ref('100')
-const tradeLimit = ref('')
-const tradeFunding = ref<WalletFundingSource>('balance')
+const selectedTradeCode = ref('CLY001')
+const editingCard = ref<any>(null)
 const marketRefreshing = ref(false)
 let marketRefreshTimer: number | undefined
 const toast = ref<{ text: string; error: boolean } | null>(null)
-const receiptAmountInput = ref('')
-const receiptRemarkInput = ref('')
+
+// 银行卡封面存储
+const cardStore = localforage.createInstance({ name: 'nrt-app', storeName: 'wallet-cards' })
+const cardCovers = ref<Record<string, { front?: string; back?: string }>>({})
+
+// 收款码相关
 const receiptCode = ref<MomentReceiptCode | null>(null)
 const receiptPoster = ref('')
 const receiptGenerating = ref(false)
+const isActivatingCredit = ref(false)
 
-// 银行卡相关
-const cardFilterType = ref<'all' | 'debit' | 'credit' | 'favorite'>('all')
-const cardSearchQuery = ref('')
-const cardSortBy = ref<'timeDesc' | 'timeAsc' | 'name'>('timeDesc')
+const availableCreditCents = computed(() => Math.max(0, state.value.credit.limitCents - state.value.credit.usedCents))
+const activeOrders = computed(() => getWalletOrders(state.value))
+const activeWatchlist = computed(() => getWalletWatchlist(state.value))
+const recentLedger = computed(() => state.value.ledger.slice(0, 5))
 
-const filteredAndSortedCards = computed(() => {
-  let result = state.value.bankCards.filter(card => {
-    if (cardFilterType.value === 'favorite' && !card.isFavorite) return false
-    if (cardFilterType.value === 'debit' && card.type !== 'debit') return false
-    if (cardFilterType.value === 'credit' && card.type !== 'credit') return false
-    if (cardSearchQuery.value) {
-      const q = cardSearchQuery.value.toLowerCase()
-      return card.name.toLowerCase().includes(q) || (card.fullNumber && card.fullNumber.includes(q)) || (card.lastFour && card.lastFour.includes(q))
-    }
-    return true
-  })
-
-  result.sort((a, b) => {
-    if (cardSortBy.value === 'timeDesc') return (b.createdAt || 0) - (a.createdAt || 0)
-    if (cardSortBy.value === 'timeAsc') return (a.createdAt || 0) - (b.createdAt || 0)
-    if (cardSortBy.value === 'name') return a.name.localeCompare(b.name)
-    return 0
-  })
-
-  return result
+const marketStatusText = computed(() => {
+  if (state.value.marketSettings.mode === 'simulation') return '本地离线模拟行情'
+  if (state.value.marketSettings.status === 'loading') return '真实行情更新中...'
+  if (state.value.marketSettings.status === 'stale') return '已过期 · 显示缓存'
+  if (state.value.marketSettings.status === 'error') return '真实行情暂不可用'
+  return state.value.marketSettings.providerLabel || '内置A股网络行情'
 })
 
-const cardStore = localforage.createInstance({ name: 'nrt-app', storeName: 'wallet-cards' })
-const cardCovers = ref<Record<string, { front?: string; back?: string }>>({})
-const cardTypeInput = ref<'debit' | 'credit'>('debit')
-const cardExpiryInput = ref('')
-const cardCoverInput = ref<string>('')
-const cardBackCoverInput = ref<string>('')
-const coverBlurInput = ref(0)
-const backCoverBlurInput = ref(0)
-const cardIsFavoriteInput = ref(false)
-const editingCardId = ref<string | null>(null)
-const flippedCardId = ref<string | null>(null)
-const removingCardId = ref<string | null>(null)
-const pendingRemoveCardId = ref<string | null>(null)
+const marketUpdatedText = computed(() => state.value.marketSettings.lastUpdatedAt 
+  ? new Date(state.value.marketSettings.lastUpdatedAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) 
+  : '尚未更新'
+)
+
+const notify = (text: string, error = false) => {
+  toast.value = { text, error }
+  window.setTimeout(() => { if (toast.value?.text === text) toast.value = null }, 2400)
+}
 
 onMounted(async () => {
   try {
@@ -124,20 +117,13 @@ onMounted(async () => {
     for (const key of keys) {
       const data = await cardStore.getItem<any>(key)
       if (data) {
-        if (typeof data === 'string') {
-          // 兼容老数据
-          cardCovers.value[key] = { front: data }
-        } else {
-          cardCovers.value[key] = data
-        }
+        cardCovers.value[key] = typeof data === 'string' ? { front: data } : data
       }
     }
   } catch (e) {
     console.error('Failed to load card covers', e)
   }
-})
 
-onMounted(() => {
   marketRefreshTimer = window.setInterval(() => {
     if (shouldRefreshWalletLiveMarket(state.value)) void refreshLiveMarket(false)
   }, 5000)
@@ -147,1310 +133,502 @@ onBeforeUnmount(() => {
   if (marketRefreshTimer !== undefined) window.clearInterval(marketRefreshTimer)
 })
 
-const triggerCoverUpload = (isBack = false) => {
-  const input = document.createElement('input')
-  input.type = 'file'
-  input.accept = 'image/*'
-  input.onchange = (e) => {
-    const file = (e.target as HTMLInputElement).files?.[0]
-    if (!file) return
-    if (file.size > 5 * 1024 * 1024) return notify('图片不能超过 5MB', true)
-    const reader = new FileReader()
-    reader.onload = (ev) => {
-      if (ev.target?.result) {
-        if (isBack) {
-          cardBackCoverInput.value = ev.target.result as string
-        } else {
-          cardCoverInput.value = ev.target.result as string
-        }
-      }
-    }
-    reader.readAsDataURL(file)
-  }
-  input.click()
-}
-
-const generateRandomCard = () => {
-  cardTypeInput.value = Math.random() > 0.5 ? 'debit' : 'credit'
-  const banks = ['招商银行', '工商银行', '建设银行', '农业银行', '中国银行', '交通银行', '平安银行', '浦发银行', '中信银行', '光大银行', '广发银行', '民生银行']
-  cardNameInput.value = banks[Math.floor(Math.random() * banks.length)]
-  let num = ''
-  const length = cardTypeInput.value === 'debit' ? 19 : 16
-  for (let i = 0; i < length; i++) num += Math.floor(Math.random() * 10)
-  cardNumberInput.value = num
-  const now = new Date()
-  const year = now.getFullYear() + Math.floor(Math.random() * 5) + 3
-  const month = String(Math.floor(Math.random() * 12) + 1).padStart(2, '0')
-  cardExpiryInput.value = `${month}/${String(year).slice(-2)}`
-}
-
-const formatCardNumberFront = (num: string) => {
-  if (!num) return ''
-  const first = num.slice(0, 4)
-  const last = num.slice(-4)
-  return `${first} •••• •••• ${last}`
-}
-
-const formatCardNumber = (num: string) => {
-  if (!num) return ''
-  return num.replace(/(.{4})/g, '$1 ').trim()
-}
-
-const confirmRemoveCard = (id: string) => {
-  if (state.value.payments.some(payment => payment.status === 'pending' && payment.fundingSource === 'bank_card' && payment.fundingSourceId === id)) {
-    return notify('该卡仍有待领取或待退款款项，暂时无法解绑', true)
-  }
-  pendingRemoveCardId.value = id
-  dialog.value = 'removeCard'
-}
-
-const executeRemoveCard = () => {
-  const id = pendingRemoveCardId.value
-  if (!id) return
-  closeDialog()
-  removingCardId.value = id
-  setTimeout(async () => {
-    state.value.bankCards = state.value.bankCards.filter(card => card.id !== id)
-    persist()
-    await cardStore.removeItem(id)
-    delete cardCovers.value[id]
-    removingCardId.value = null
-    flippedCardId.value = null
-    pendingRemoveCardId.value = null
-    notify('银行卡已移除')
-  }, 600)
-}
-
-const money = (value: number) => state.value.hideAmounts ? '••••••' : formatWalletMoney(value)
-const signedMoney = (value: number) => `${value > 0 ? '+' : value < 0 ? '-' : ''}${formatWalletMoney(Math.abs(value))}`
-const stockProfitCents = computed(() => stockMarketValueCents.value - stockCostCents.value)
-const stockRate = computed(() => stockCostCents.value ? stockProfitCents.value / stockCostCents.value * 100 : 0)
-const availableCreditCents = computed(() => Math.max(0, state.value.credit.limitCents - state.value.credit.usedCents))
-const activeOrders = computed(() => getWalletOrders(state.value))
-const activeWatchlist = computed(() => getWalletWatchlist(state.value))
-const recentLedger = computed(() => state.value.ledger.slice(0, 5))
-const selectedQuote = computed(() => activeQuotes.value.find(item => item.code === selectedCode.value) || activeQuotes.value[0])
-const positionRows = computed(() => activePositions.value.map(position => {
-  const quote = activeQuotes.value.find(item => item.code === position.code)
-  const price = quote?.priceCents || 0
-  const profit = (price - position.averageCostCents) * position.quantity
-  return { ...position, quote, value: price * position.quantity, profit, rate: position.averageCostCents ? (price - position.averageCostCents) / position.averageCostCents * 100 : 0 }
-}))
-const paymentRows = computed(() => state.value.payments.slice().sort((a, b) => b.createdAt - a.createdAt))
-const assetParts = computed(() => {
-  const total = Math.max(1, totalAssetCents.value)
-  return [
-    { label: '现金', amount: state.value.cashCents, color: '#d1d1d6' },
-    { label: '银行卡', amount: bankAssetCents.value, color: '#5f6368' },
-    { label: '股票', amount: stockMarketValueCents.value, color: '#8e8e93' }
-  ].map(item => ({ ...item, percent: item.amount / total * 100 }))
-})
-const donutStyle = computed(() => {
-  const cash = assetParts.value[0]?.percent || 0
-  const bank = assetParts.value[1]?.percent || 0
-  return { background: `conic-gradient(#d1d1d6 0 ${cash}%, #5f6368 ${cash}% ${cash + bank}%, #8e8e93 ${cash + bank}% 100%)` }
-})
-
-const marketStatusText = computed(() => {
-  if (state.value.marketSettings.mode === 'simulation') return '本地模拟行情'
-  if (state.value.marketSettings.status === 'loading') return '真实行情更新中'
-  if (state.value.marketSettings.status === 'stale') return '真实行情已过期 · 显示缓存'
-  if (state.value.marketSettings.status === 'error') return '真实行情暂不可用'
-  return state.value.marketSettings.providerLabel || '内置网络行情'
-})
-
-const marketUpdatedText = computed(() => state.value.marketSettings.lastUpdatedAt ? new Date(state.value.marketSettings.lastUpdatedAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '尚未更新')
-
-const notify = (text: string, error = false) => {
-  toast.value = { text, error }
-  window.setTimeout(() => { if (toast.value?.text === text) toast.value = null }, 2400)
-}
-
-const renderReceiptPoster = async (code: MomentReceiptCode) => {
-  receiptGenerating.value = true
-  try {
-    receiptPoster.value = await createMomentReceiptPoster(code)
-  } finally {
-    receiptGenerating.value = false
-  }
-}
-
-const loadOrCreateReceiptCode = async () => {
-  let code = getActiveMomentReceiptCode(accountId.value)
-  if (!code) {
-    code = createMomentReceiptCode({
-      accountId: accountId.value,
-      ownerName: currentAccount.value?.name || state.value.accountName || '我',
-      paymentHandle: state.value.paymentHandle,
-      remark: ''
-    })
-  }
-  receiptCode.value = code
-  receiptAmountInput.value = code.amountCents ? (code.amountCents / 100).toFixed(2) : ''
-  receiptRemarkInput.value = code.remark || ''
-  try { await renderReceiptPoster(code) } catch (error) { notify(error instanceof Error ? error.message : '收款码生成失败', true) }
-}
-
-const generateReceiptCode = async () => {
-  const amount = receiptAmountInput.value.trim() ? Number(receiptAmountInput.value) : 0
-  if (!Number.isFinite(amount) || amount < 0 || amount > 99999.99) return notify('请输入 0.01 至 99999.99 元的金额，或留空', true)
-  if (receiptAmountInput.value.trim() && amount < 0.01) return notify('指定金额不能低于 0.01 元', true)
-  const code = createMomentReceiptCode({
-    accountId: accountId.value,
-    ownerName: currentAccount.value?.name || state.value.accountName || '我',
-    paymentHandle: state.value.paymentHandle,
-    amountCents: amount ? Math.round(amount * 100) : undefined,
-    remark: receiptRemarkInput.value.trim().slice(0, 40)
-  })
-  receiptCode.value = code
-  try {
-    await renderReceiptPoster(code)
-    notify('新的收款码已生成')
-  } catch (error) {
-    notify(error instanceof Error ? error.message : '收款码生成失败', true)
-  }
-}
-
-const downloadReceiptCode = async () => {
-  if (!receiptPoster.value) return
-  try { await saveReceiptPoster(receiptPoster.value) } catch (error) { notify(error instanceof Error ? error.message : '保存失败', true) }
-}
-
-const shareReceiptToMoments = () => {
-  if (!receiptCode.value || !receiptPoster.value) return
-  savePendingReceiptShare(accountId.value, { code: receiptCode.value, posterDataUrl: receiptPoster.value })
-  window.dispatchEvent(new CustomEvent('clingy:open-receipt-share'))
-  emit('open-moments')
-}
-
-watch(accountId, () => {
-  receiptCode.value = null
-  receiptPoster.value = ''
-  if (panel.value === 'receipt') void loadOrCreateReceiptCode()
-})
 const refreshLiveMarket = async (showResult = true) => {
   if (state.value.marketSettings.mode !== 'live' || marketRefreshing.value) return false
   marketRefreshing.value = true
+  const target = state.value
+  const requestKey = walletMarketRequestKey(target)
   try {
-    await refreshWalletLiveMarket(state.value)
-    persist()
-    if (!activeQuotes.value.some(quote => quote.code === selectedCode.value)) selectedCode.value = activeQuotes.value[0]?.code || ''
-    if (showResult) notify('真实行情已更新')
+    await refreshWalletLiveMarket(target)
+    if (!saveWalletMarketResult(target, requestKey) || target.accountId !== accountId.value) return false
+    if (!activeQuotes.value.some(quote => quote.code === selectedTradeCode.value)) {
+      selectedTradeCode.value = activeQuotes.value[0]?.code || ''
+    }
+    if (showResult) notify('实时行情已同步')
     return true
   } catch (error) {
-    persist()
-    if (showResult) notify(error instanceof Error ? error.message : '真实行情刷新失败', true)
+    if (!saveWalletMarketResult(target, requestKey) || target.accountId !== accountId.value) return false
+    if (showResult) notify(error instanceof Error ? error.message : '行情刷新失败', true)
     return false
   } finally {
     marketRefreshing.value = false
   }
 }
 
-const chooseMarket = async (mode: 'simulation' | 'live', source: 'builtin' | 'custom' = 'builtin') => {
-  state.value.marketSettings.source = source
-  setWalletMarketMode(state.value, mode)
-  selectedCode.value = activeQuotes.value[0]?.code || ''
-  persist()
-  if (mode === 'live') await refreshLiveMarket(false)
-}
-
-const saveCustomMarket = async () => {
-  if (!state.value.marketSettings.custom.url.trim()) return notify('请填写自定义行情地址', true)
-  state.value.marketSettings.source = 'custom'
-  setWalletMarketMode(state.value, 'live')
-  persist()
-  if (await refreshLiveMarket(false)) notify('自定义行情连接成功')
-  else notify(state.value.marketSettings.error || '自定义行情连接失败', true)
-}
-
-const addLiveSymbol = async () => {
-  const code = liveSymbolInput.value.replace(/\D/g, '').slice(0, 6)
-  if (code.length !== 6) return notify('请输入6位A股代码', true)
-  if (state.value.liveQuotes.some(item => item.code === code)) return notify('该股票已在真实行情列表中', true)
-  const isShanghai = code.startsWith('6')
-  state.value.liveQuotes.push({ code, name: code, sector: '股票', market: isShanghai ? '沪市' : '深市', marketCode: `${isShanghai ? 1 : 0}.${code}`, priceCents: 0, previousCloseCents: 0, history: [], source: 'eastmoney' })
-  state.value.liveWatchlist.push(code)
-  liveSymbolInput.value = ''
-  persist()
-  if (state.value.marketSettings.mode === 'live') await refreshLiveMarket(true)
-}
-
-const removeLiveSymbol = (code: string) => {
-  if (state.value.livePositions.some(item => item.code === code) || state.value.liveOrders.some(item => item.code === code && item.status === 'pending')) return notify('该股票仍有持仓或待处理委托，无法移除', true)
-  state.value.liveQuotes = state.value.liveQuotes.filter(item => item.code !== code)
-  state.value.liveWatchlist = state.value.liveWatchlist.filter(item => item !== code)
-  persist()
-  notify('已从真实行情列表移除')
-}
-
-const toggleWatchlist = (code: string) => {
-  const list = activeWatchlist.value
-  const index = list.indexOf(code)
-  if (index >= 0) list.splice(index, 1)
-  else list.push(code)
-  persist()
-}
-const parseAmount = () => Math.round(Number(amountInput.value) * 100)
-const openDialog = (name: Dialog) => {
-  dialog.value = name
-  amountInput.value = name === 'balance' ? formatWalletMoney(state.value.cashCents) : ''
-  noteInput.value = ''
-  selectedBankCardId.value = ''
-}
-const closeDialog = () => { dialog.value = ''; amountInput.value = ''; noteInput.value = ''; paymentPasswordInput.value = ''; cardNameInput.value = ''; cardNumberInput.value = ''; cardBalanceInput.value = ''; cardTypeInput.value = 'debit'; cardExpiryInput.value = ''; cardCoverInput.value = ''; cardBackCoverInput.value = ''; coverBlurInput.value = 0; backCoverBlurInput.value = 0; cardIsFavoriteInput.value = false; editingCardId.value = null; pendingRemoveCardId.value = null; activeCardDetailsId.value = null }
-const submitMoney = () => {
-  const cents = parseAmount()
-  if (!Number.isFinite(cents) || cents < 0 || (['balance', 'cardBalanceEdit'].includes(dialog.value) === false && cents <= 0)) return notify('请输入有效金额', true)
-  if (dialog.value === 'withdraw' && !selectedBankCardId.value) return notify('请选择提现到哪张银行卡', true)
-  
+// 资金操作
+const handleMoneySubmit = async ({ cents, note, cardId }: { cents: number; note: string; cardId?: string }) => {
+  if (paymentBusy.value) return
+  const action = activeDialog.value
   try {
-    if (dialog.value === 'balance') setWalletBalance(state.value, cents, noteInput.value || '用户自定义余额')
-    if (dialog.value === 'deposit') adjustWalletBalance(state.value, cents, '余额充值', 'deposit', noteInput.value, selectedBankCardId.value || undefined)
-    if (dialog.value === 'withdraw') adjustWalletBalance(state.value, -cents, '余额提现', 'withdraw', noteInput.value, selectedBankCardId.value)
-    if (dialog.value === 'cardBalanceEdit' && activeCardDetailsId.value) {
-      const card = state.value.bankCards.find(c => c.id === activeCardDetailsId.value)
-      if (card) {
-        if (card.type === 'credit') {
-          card.usedCents = cents
-        } else {
-          card.balanceCents = cents
-        }
-      }
+    const execute = () => {
+      if (action === 'balance') setWalletBalance(state.value, cents, note || '用户自定余额调整')
+      if (action === 'deposit') adjustWalletBalance(state.value, cents, '资金注资', 'deposit', note, cardId)
+      if (action === 'withdraw') adjustWalletBalance(state.value, -cents, '资金调拨', 'withdraw', note, cardId)
+      persist()
     }
-    persist(); closeDialog(); notify('操作成功')
-  } catch (error) { notify(error instanceof Error ? error.message : '操作失败', true) }
+    if (action === 'withdraw' || (action === 'deposit' && cardId)) {
+      if (!await pay({ operation: action, title: action === 'withdraw' ? '钱包提现' : '银行卡充值', amountCents: cents, fundingSource: action === 'withdraw' ? 'balance' : 'bank_card', fundingSourceId: action === 'withdraw' ? undefined : cardId }, execute)) return
+    } else execute()
+    activeDialog.value = ''
+    notify('资金操作执行成功')
+  } catch (err) { notify(err instanceof Error ? err.message : '操作失败', true) }
 }
 
-const resetCardBalance = () => {
-  if (!activeCardDetailsId.value) return
-  const card = state.value.bankCards.find(c => c.id === activeCardDetailsId.value)
-  if (card) {
-    if (card.type === 'credit') {
-      card.usedCents = 0
-    } else {
-      card.balanceCents = 0
-    }
-    persist()
-    notify(card.type === 'credit' ? '欠款已清零' : '余额已清零')
-  }
+// 证券下单
+const handleTradeSubmit = async (order: { code: string; side: 'buy' | 'sell'; orderType: 'market' | 'limit'; quantity: number; limitPriceCents?: number; fundingSource: WalletFundingSource }) => {
+  if (paymentBusy.value) return
+  try {
+    const execute = () => { placeWalletOrder(state.value, order); persist() }
+    if (order.side === 'buy') {
+      const quote = activeQuotes.value.find(item => item.code === order.code)
+      const amount = (order.orderType === 'limit' ? order.limitPriceCents || 0 : quote?.priceCents || 0) * order.quantity
+      if (!await pay({ operation: 'stock', title: `买入${quote?.name || order.code}`, amountCents: amount, fundingSource: order.fundingSource }, execute)) return
+    } else execute()
+    activeDialog.value = ''
+    notify(order.orderType === 'market' ? '交易已立即成交' : '挂单委托已提交')
+  } catch (err) { notify(err instanceof Error ? err.message : '下单失败', true) }
 }
 
-const openCardBalanceEdit = () => {
-  if (!activeCardDetailsId.value) return
-  const card = state.value.bankCards.find(c => c.id === activeCardDetailsId.value)
-  if (card) {
-    amountInput.value = formatWalletMoney(card.type === 'credit' ? (card.usedCents || 0) : (card.balanceCents || 0))
-    dialog.value = 'cardBalanceEdit'
-  }
-}
-const openEditCard = (card: typeof state.value.bankCards[0]) => {
-  editingCardId.value = card.id
-  cardNameInput.value = card.name
-  cardTypeInput.value = card.type || 'debit'
-  cardNumberInput.value = card.fullNumber || card.lastFour
-  cardExpiryInput.value = card.expiryDate || ''
-  cardBalanceInput.value = card.type === 'credit' ? ((card.limitCents || 0) / 100).toString() : ((card.balanceCents || 0) / 100).toString()
-  coverBlurInput.value = card.coverBlur || 0
-  backCoverBlurInput.value = card.backCoverBlur || 0
-  cardIsFavoriteInput.value = !!card.isFavorite
-  cardCoverInput.value = cardCovers.value[card.id]?.front || ''
-  cardBackCoverInput.value = cardCovers.value[card.id]?.back || ''
-  dialog.value = 'card'
-}
+// 银行卡操作
+const handleCardSubmit = async (payload: any) => {
+  const ownerId = accountId.value
+  const id = payload.id || `card_${Date.now()}`
+  const covers: { front?: string; back?: string } = {}
+  if (payload.coverFront) covers.front = payload.coverFront
+  if (payload.coverBack) covers.back = payload.coverBack
 
-const addOrUpdateCard = async () => {
-  const digits = cardNumberInput.value.replace(/\D/g, '')
-  if (!cardNameInput.value.trim() || digits.length < 4) return notify('请填写卡片名称和至少四位卡号', true)
-  
-  const id = editingCardId.value || `card_${Date.now()}`
-  
-  const coversToSave: { front?: string; back?: string } = {}
-  if (cardCoverInput.value) coversToSave.front = cardCoverInput.value
-  if (cardBackCoverInput.value) coversToSave.back = cardBackCoverInput.value
-  
-  if (Object.keys(coversToSave).length > 0) {
-    await cardStore.setItem(id, coversToSave)
-    cardCovers.value[id] = coversToSave
+  if (Object.keys(covers).length > 0) {
+    await cardStore.setItem(id, covers)
+    cardCovers.value[id] = covers
   } else {
     await cardStore.removeItem(id)
     delete cardCovers.value[id]
   }
 
-  const cardData = {
-    id, 
-    name: cardNameInput.value.trim(), 
-    type: cardTypeInput.value,
-    fullNumber: digits,
-    lastFour: digits.slice(-4), 
-    expiryDate: cardExpiryInput.value,
-    virtualCvv: editingCardId.value ? state.value.bankCards.find(card => card.id === id)?.virtualCvv || String(Math.floor(Math.random() * 900) + 100) : String(Math.floor(Math.random() * 900) + 100),
-    hasCover: !!cardCoverInput.value,
-    hasBackCover: !!cardBackCoverInput.value,
-    coverBlur: coverBlurInput.value,
-    backCoverBlur: backCoverBlurInput.value,
-    isFavorite: cardIsFavoriteInput.value,
-    enabled: true,
-  }
-
-  const isCredit = cardData.type === 'credit'
-  let parsedBalance = cardBalanceInput.value.trim() !== '' ? Math.max(0, Math.round(Number(cardBalanceInput.value) * 100)) : null
-  let isReward = false
-  const wasEditing = Boolean(editingCardId.value)
-  
+  if (ownerId !== accountId.value) return
+  const isCredit = payload.type === 'credit'
+  let parsedBalance = payload.limitOrBalance
   if (parsedBalance === null || isNaN(parsedBalance)) {
-    if (Math.random() < 0.1) {
-      isReward = true
-      parsedBalance = (Math.floor(Math.random() * 900000) + 100000) * 100
-    } else {
-      parsedBalance = isCredit ? Math.floor(Math.random() * 50000) * 100 + 500000 : Math.floor(Math.random() * 500000) * 100 + 50000
-    }
+    parsedBalance = isCredit ? 5000000 : 2000000
   }
 
-  if (wasEditing) {
-    const index = state.value.bankCards.findIndex(c => c.id === id)
-    if (index !== -1) {
-      const existingCard = state.value.bankCards[index]
-      if (isCredit) {
-        existingCard.limitCents = parsedBalance
-      } else {
-        existingCard.balanceCents = parsedBalance
-      }
-      state.value.bankCards[index] = { ...existingCard, ...cardData }
-    }
+  const existingIdx = state.value.bankCards.findIndex(c => c.id === id)
+  const cardData = {
+    id,
+    name: payload.name,
+    type: payload.type,
+    fullNumber: payload.digits,
+    lastFour: payload.digits.slice(-4),
+    expiryDate: payload.expiryDate,
+    virtualCvv: String(Math.floor(Math.random() * 900) + 100),
+    hasCover: !!payload.coverFront,
+    hasBackCover: !!payload.coverBack,
+    coverBlur: payload.coverBlur,
+    backCoverBlur: payload.backCoverBlur,
+    isFavorite: payload.isFavorite,
+    enabled: true
+  }
+
+  if (existingIdx !== -1) {
+    const existing = state.value.bankCards[existingIdx]
+    if (isCredit) existing.limitCents = parsedBalance
+    else existing.balanceCents = parsedBalance
+    state.value.bankCards[existingIdx] = { ...existing, ...cardData }
   } else {
-    state.value.bankCards.push({ 
-      ...cardData, 
+    state.value.bankCards.push({
+      ...cardData,
       createdAt: Date.now(),
       balanceCents: isCredit ? undefined : parsedBalance,
       limitCents: isCredit ? parsedBalance : undefined,
       usedCents: isCredit ? 0 : undefined
     })
   }
-  
+
   persist()
-  closeDialog()
-  
-  if (isReward && !wasEditing) {
-    notify('触发作者专属资金奖励，获得额外资金')
-  } else {
-    notify(wasEditing ? '银行卡已更新' : '银行卡已添加')
+  activeDialog.value = ''
+  notify('银行卡底册已保存')
+}
+
+const handleRemoveCard = (id: string) => {
+  if (state.value.payments.some(p => p.status === 'pending' && p.fundingSource === 'bank_card' && p.fundingSourceId === id)) {
+    return notify('该卡存在未决流转款项，暂时无法解绑', true)
   }
+  state.value.bankCards = state.value.bankCards.filter(c => c.id !== id)
+  persist()
+  void cardStore.removeItem(id)
+  delete cardCovers.value[id]
+  notify('银行卡已解除绑定')
 }
-const openTrade = (side: 'buy' | 'sell', code = selectedCode.value) => {
-  tradeSide.value = side; selectedCode.value = activeQuotes.value.some(item => item.code === code) ? code : (activeQuotes.value[0]?.code || ''); tradeType.value = 'market'; tradeQuantity.value = '100'; tradeLimit.value = ''; if (!state.value.credit.enabled) tradeFunding.value = 'balance'; dialog.value = 'trade'
-}
-const submitTrade = () => {
-  const quote = selectedQuote.value
-  if (!quote) return notify('暂无可交易股票', true)
-  const quantity = Math.floor(Number(tradeQuantity.value))
+
+// 花呗还款与开通
+const handleRepayCredit = async (amount: number) => {
+  if (paymentBusy.value) return
   try {
-    placeWalletOrder(state.value, {
-      code: quote.code, side: tradeSide.value, orderType: tradeType.value, quantity,
-      limitPriceCents: tradeType.value === 'limit' ? Math.round(Number(tradeLimit.value) * 100) : undefined,
-      fundingSource: tradeFunding.value
-    })
-    persist(); closeDialog(); notify(tradeType.value === 'market' ? '交易已成交' : '委托已提交')
-  } catch (error) { notify(error instanceof Error ? error.message : '下单失败', true) }
-}
-const cancelOrder = (order: WalletOrder) => {
-  try { cancelWalletOrder(state.value, order.id); persist(); notify('委托已撤销') }
-  catch (error) { notify(error instanceof Error ? error.message : '撤单失败', true) }
-}
-const repay = () => {
-  try { repayWalletCredit(state.value, parseAmount()); persist(); closeDialog(); notify('还款成功') }
-  catch (error) { notify(error instanceof Error ? error.message : '还款失败', true) }
-}
-const resetFinance = () => { resetWalletFinance(state.value); persist(); closeDialog(); notify('钱包数据已重置') }
-
-const openCreditSettings = () => {
-  dialog.value = 'creditSettings'
-}
-
-const disableCredit = () => {
-  if (state.value.credit.usedCents > 0) {
-    return notify('请先还清花呗欠款再尝试关闭', true)
+    if (!await pay({ operation: 'repay', title: '花呗还款', amountCents: Math.min(amount, state.value.credit.usedCents), fundingSource: 'balance' }, () => { repayWalletCredit(state.value, amount); persist() })) return
+    notify('还款结清成功')
+  } catch (err) {
+    notify(err instanceof Error ? err.message : '还款失败', true)
   }
-  state.value.credit.enabled = false
-  state.value.credit.limitCents = 0
-  state.value.credit.baseLimitCents = 0
-  state.value.credit.evaluationMethod = 'none'
-  state.value.credit.evaluationSummary = ''
-  state.value.credit.transactions = []
-  state.value.credit.lastRefreshMonth = ''
-  persist()
-  closeDialog()
-  notify('花呗已关闭')
 }
 
-// 开通花呗逻辑
-const isActivatingCredit = ref(false)
-const creditActivationMethod = ref<'random' | 'ai' | 'local' | 'custom'>('random')
-const creditRepaymentDay = ref(15)
-const customCreditLimitInput = ref('')
-
-const activateCredit = async () => {
+const handleActivateCredit = async ({ method, customAmount, repaymentDay }: any) => {
+  if (isActivatingCredit.value) return
+  const ownerId = accountId.value
   isActivatingCredit.value = true
   try {
     let finalLimit = 0
-    if (creditActivationMethod.value === 'random') {
-      finalLimit = Math.floor(Math.random() * 50001) * 100 // 0到50000元随机
-      await new Promise(resolve => setTimeout(resolve, 800)) // 模拟一点延迟
-      state.value.credit.evaluationSummary = '系统随机分配的娱乐额度'
-    } else if (creditActivationMethod.value === 'ai') {
+    if (method === 'random') {
+      finalLimit = (Math.floor(Math.random() * 500) + 100) * 10000
+      state.value.credit.evaluationSummary = '系统随机分配的私享信用额度'
+    } else if (method === 'ai') {
       const accountName = currentAccount.value?.name || state.value.accountName || '用户'
-      const userPersona = currentAccount.value?.persona?.trim() || '未填写用户人设'
-      const prompt = `请只根据用户账户资料评估其虚拟信用额度，不得引用任何聊天角色、角色关系或角色钱包。用户名称：${accountName}。用户人设：${userPersona}。当前钱包余额：${formatWalletMoney(state.value.cashCents)}元；银行卡资产：${formatWalletMoney(bankAssetCents.value)}元；已有账单记录：${state.value.ledger.length}条。现实常识：学生或无稳定收入群体通常为0到500元；普通上班族约2000到30000元；明确的高净值设定可更高。只返回一个人民币元整数，不要返回其他文字。`
-      
+      const prompt = `评估用户虚拟信用额度。名称：${accountName}。当前可用现金：${state.value.cashCents/100}元。仅返回一个人民币元整数。`
       const res = await sendCapabilityMessage('chat-auxiliary', [{ role: 'user', content: prompt }])
-      const numberMatch = res.content.match(/\d+/)
-      if (numberMatch) {
-        finalLimit = Math.min(500000000, Math.max(0, parseInt(numberMatch[0]) * 100)) // 转换为分
-      } else {
-        throw new Error('评估失败，未获取到有效额度')
-      }
-      state.value.credit.evaluationSummary = userPersona === '未填写用户人设' ? '根据当前用户钱包资料评估' : '根据当前用户人设与钱包资料评估'
-    } else if (creditActivationMethod.value === 'local') {
-      const assetBase = state.value.cashCents + bankAssetCents.value
-      const activityBoost = Math.min(1_000_000, state.value.ledger.length * 20_000)
-      finalLimit = Math.max(5_000, Math.min(5_000_000, Math.round(assetBase * 0.08 + activityBoost)))
-      state.value.credit.evaluationSummary = '根据用户本地资产与钱包使用记录评估'
+      if (ownerId !== accountId.value) return
+      const match = res.content.match(/\d+/)
+      finalLimit = match ? parseInt(match[0]) * 100 : 3000000
+      state.value.credit.evaluationSummary = '根据用户身份设定AI核定'
+    } else if (method === 'local') {
+      finalLimit = Math.max(1000000, Math.round((state.value.cashCents + bankAssetCents.value) * 0.15))
+      state.value.credit.evaluationSummary = '根据本地资金与往来流水底册综合测算'
     } else {
-      const customValue = Math.round(Number(customCreditLimitInput.value) * 100)
-      if (!Number.isFinite(customValue) || customValue < 0) throw new Error('请输入有效的自定义额度')
-      finalLimit = customValue
-      state.value.credit.evaluationSummary = '用户自定义额度'
+      finalLimit = Math.round(Number(customAmount) * 100) || 5000000
+      state.value.credit.evaluationSummary = '私享定制核准额度'
     }
 
     state.value.credit.enabled = true
-    state.value.credit.evaluationMethod = creditActivationMethod.value
-    state.value.credit.repaymentDay = creditRepaymentDay.value
-    state.value.credit.billingDay = creditRepaymentDay.value - 10 > 0 ? creditRepaymentDay.value - 10 : 28 + (creditRepaymentDay.value - 10)
+    state.value.credit.evaluationMethod = method
+    state.value.credit.repaymentDay = repaymentDay
+    state.value.credit.billingDay = repaymentDay - 10 > 0 ? repaymentDay - 10 : 28 + (repaymentDay - 10)
     state.value.credit.baseLimitCents = finalLimit
     state.value.credit.limitCents = finalLimit
     refreshCreditLimitIfNeeded(state.value)
     persist()
-    notify('花呗开通成功！')
-  } catch (error) {
-    notify(error instanceof Error ? error.message : '开通失败', true)
+    notify('信用账户授信开通成功')
+  } catch (err) {
+    notify('开通失败: ' + (err instanceof Error ? err.message : '未知异常'), true)
   } finally {
     isActivatingCredit.value = false
   }
 }
-const toggleHidden = () => { state.value.hideAmounts = !state.value.hideAmounts; persist() }
-const dateText = (value: number) => new Date(value).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
-const orderStatus = (status: WalletOrder['status']) => ({ pending: '待成交', filled: '已成交', cancelled: '已撤销', rejected: '已失败' })[status]
-const paymentStatus = (status: string) => ({ pending: '待处理', claimed: '已领取', rejected: '已退回', expired: '已过期' }[status] || status)
-const paymentTitle = (item: any) => item.source === 'moment_receipt'
-  ? `收到${item.sourceActorName || '好友'}的朋友圈转账`
-  : `${item.direction === 'incoming' ? '收到' : '发出'}${item.kind === 'red_packet' ? '红包' : '转账'}`
-const fundingSourceLabel = (source?: string, sourceId?: string) => {
-  if (source === 'credit') return '花呗'
-  if (source === 'bank_card') {
-    const card = state.value.bankCards.find(item => item.id === sourceId)
-    return card ? `${card.name} (${card.lastFour})` : '已解绑银行卡'
-  }
-  return '钱包余额'
-}
 
-const billFilterType = ref<'all' | 'income' | 'expense'>('all')
-const billFilterMonth = ref<string>('')
-const billSearchQuery = ref<string>('')
-const availableBillMonths = computed(() => {
-  const months = new Set<string>()
-  state.value.ledger.forEach(entry => {
-    const d = new Date(entry.createdAt)
-    const m = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
-    months.add(m)
-  })
-  return Array.from(months).sort((a, b) => b.localeCompare(a))
-})
-const filteredBills = computed(() => {
-  const query = billSearchQuery.value.trim().toLowerCase()
-  return state.value.ledger.filter(entry => {
-    const typeMatch = billFilterType.value === 'all' ? true : billFilterType.value === 'income' ? entry.amountCents > 0 : entry.amountCents < 0
-    let monthMatch = true
-    if (billFilterMonth.value) {
-      const d = new Date(entry.createdAt)
-      const m = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
-      monthMatch = m === billFilterMonth.value
-    }
-    let queryMatch = true
-    if (query) {
-      const amountStr = (Math.abs(entry.amountCents) / 100).toString()
-      queryMatch = entry.title.toLowerCase().includes(query) || 
-                   (entry.note && entry.note.toLowerCase().includes(query)) ||
-                   amountStr.includes(query)
-    }
-    return typeMatch && monthMatch && queryMatch
-  })
-})
-const groupedBills = computed(() => {
-  const groups: Record<string, typeof state.value.ledger> = {}
-  filteredBills.value.forEach(entry => {
-    const d = new Date(entry.createdAt)
-    const m = `${d.getFullYear()}年${d.getMonth() + 1}月`
-    if (!groups[m]) groups[m] = []
-    groups[m].push(entry)
-  })
-  return Object.keys(groups).map(month => ({ month, entries: groups[month] }))
-})
-const billStats = computed(() => {
-  let income = 0
-  let expense = 0
-  filteredBills.value.forEach(entry => {
-    if (entry.amountCents > 0) income += entry.amountCents
-    else expense += entry.amountCents
-  })
-  return { income, expense: Math.abs(expense) }
-})
-
-const isEditingBills = ref(false)
-const selectedBillIds = ref<string[]>([])
-const toggleEditBills = () => { isEditingBills.value = !isEditingBills.value; if (!isEditingBills.value) selectedBillIds.value = [] }
-const toggleBillSelection = (id: string) => {
-  const index = selectedBillIds.value.indexOf(id)
-  if (index > -1) selectedBillIds.value.splice(index, 1)
-  else selectedBillIds.value.push(id)
-}
-const isAllFilteredBillsSelected = computed(() => filteredBills.value.length > 0 && selectedBillIds.value.length === filteredBills.value.length)
-const toggleSelectAllBills = () => { selectedBillIds.value = isAllFilteredBillsSelected.value ? [] : filteredBills.value.map(b => b.id) }
-const confirmDeleteBills = () => { if (selectedBillIds.value.length) dialog.value = 'deleteBills' }
-const executeDeleteBills = () => { state.value.ledger = state.value.ledger.filter(b => !selectedBillIds.value.includes(b.id)); persist(); selectedBillIds.value = []; isEditingBills.value = false; closeDialog(); notify('已删除选中账单') }
-
-const showCardDetails = (id: string, e: Event) => {
-  e.stopPropagation()
-  activeCardDetailsId.value = id
-  dialog.value = 'cardDetails'
-}
-
-const openPaymentPasswordSetting = () => {
-  dialog.value = 'paymentPassword'
-  paymentPasswordInput.value = state.value.paymentPassword || ''
-}
-
-const savePaymentPassword = () => {
-  if (paymentPasswordInput.value && !/^\d{4}$/.test(paymentPasswordInput.value)) {
-    return notify('支付密码必须为4位纯数字', true)
-  }
-  state.value.paymentPassword = paymentPasswordInput.value || undefined
+const handleDisableCredit = () => {
+  if (state.value.credit.usedCents > 0) return notify('请先结清欠款再关闭', true)
+  state.value.credit.enabled = false
+  state.value.credit.limitCents = 0
   persist()
-  closeDialog()
-  notify(state.value.paymentPassword ? '支付密码设置成功' : '支付密码已关闭')
+  activeDialog.value = ''
+  notify('信用功能已注销')
+}
+
+// 收款码
+const handleGenerateReceipt = async ({ amount, remark }: { amount: string; remark: string }) => {
+  if (receiptGenerating.value) return
+  receiptGenerating.value = true
+  try {
+    const amt = amount ? Math.round(Number(amount) * 100) : undefined
+    const code = createMomentReceiptCode({
+      accountId: accountId.value,
+      ownerName: currentAccount.value?.name || state.value.accountName || '我',
+      paymentHandle: state.value.paymentHandle,
+      amountCents: amt,
+      remark: remark || ''
+    })
+    receiptCode.value = code
+    const poster = await createMomentReceiptPoster(code)
+    if (code.accountId !== accountId.value || receiptCode.value?.id !== code.id) return
+    receiptPoster.value = poster
+    notify('收款码凭据已重新生成')
+  } catch (err) {
+    notify('生成失败', true)
+  } finally {
+    receiptGenerating.value = false
+  }
+}
+
+const handleSaveReceiptPoster = async () => {
+  if (!receiptPoster.value) return
+  try {
+    await saveReceiptPoster(receiptPoster.value)
+    notify('凭证图片已存入设备')
+  } catch (err) {
+    notify('保存失败', true)
+  }
+}
+
+const handleShareMoments = () => {
+  if (!receiptCode.value || !receiptPoster.value) return
+  if (accountId.value !== (currentChatUserId.value || 'guest')) return notify('钱包 USER 与朋友圈账号不同，请切回对应钱包后分享', true)
+  savePendingReceiptShare(accountId.value, { code: receiptCode.value, posterDataUrl: receiptPoster.value })
+  window.dispatchEvent(new CustomEvent('clingy:open-receipt-share'))
+  emit('open-moments')
+}
+
+// 账单批量移除
+const handleDeleteBills = (ids: string[]) => {
+  state.value.ledger = state.value.ledger.filter(b => !ids.includes(b.id))
+  persist()
+  notify('选定账单已从底册移除')
+}
+
+const toggleWatchlist = (code: string) => {
+  const list = activeWatchlist.value
+  const idx = list.indexOf(code)
+  if (idx >= 0) list.splice(idx, 1)
+  else list.push(code)
+  persist()
+}
+
+watch(accountId, () => {
+  activeDialog.value = ''; editingCard.value = null; receiptCode.value = null; receiptPoster.value = ''
+}, { flush: 'sync' })
+const handleSelectAccount = (id: string) => {
+  if (paymentBusy.value) return
+  selectAccount(id); activeDialog.value = ''; notify('钱包 USER 已切换')
+}
+const savePassword = (password: string | undefined, type: 'pin' | 'gesture') => {
+  setWalletPaymentSecurity(state.value, password, type)
+  activeDialog.value = ''; notify(password ? '支付验证已启用' : '支付验证已关闭')
+}
+const toggleAmountHide = () => {
+  state.value.hideAmounts = !state.value.hideAmounts
+  persist()
 }
 </script>
 
 <template>
-  <div class="wallet-app" :class="{ 'dark-theme': globalSettings.darkMode }">
-    <template v-if="!panel">
-      <main v-show="activeTab === 'wallet'" class="tab-content">
-        <header class="page-header">
-          <h2><button class="title-button" @click="emit('close')">钱包 <span>Wallet</span></button></h2>
-          <button class="icon-button" aria-label="自定义余额" title="自定义余额" @click="openDialog('balance')">
-            <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 8v8M8 12h8"/></svg>
+  <div class="wallet-pure-white" :class="{ 'dark-mode': globalSettings.darkMode }">
+    <!-- 开放式编辑排版顶栏 (Editorial Masthead) -->
+    <header class="w-top-header">
+      <div class="w-top-status-row">
+        <!-- 退出落款与防伪标记 -->
+        <button class="w-back-btn" @click="emit('close')">
+          <span class="back-arrow">‹</span>
+          <span class="back-text">PORTFOLIO</span>
+        </button>
+
+        <!-- 中部微型水印标记 (Private Banking Archival Mark) -->
+        <div class="w-header-stamp">
+          <span class="stamp-dot"></span>
+          <span class="stamp-text">PRIVATE LEDGER · VERIFIED</span>
+        </div>
+
+        <!-- 右侧专属控制：脱敏眼眸 + 优雅私印席位 -->
+        <div class="w-top-action-group">
+          <!-- 隐私脱敏开关 -->
+          <button class="w-header-icon-btn" :title="state.hideAmounts ? '显示明细金额' : '隐去明细金额'" @click="toggleAmountHide">
+            <svg v-if="!state.hideAmounts" viewBox="0 0 24 24"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+            <svg v-else viewBox="0 0 24 24"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
           </button>
-        </header>
 
-        <section class="asset-card">
-          <button class="card-title visibility-button" @click="toggleHidden">总资产 (CNY)
-            <svg viewBox="0 0 24 24"><path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6S2 12 2 12Z"/><circle cx="12" cy="12" r="2.5"/></svg>
-          </button>
-          <div class="card-main"><strong class="asset-amount">{{ money(totalAssetCents) }}</strong><div class="sparkline"><svg viewBox="0 0 100 35" preserveAspectRatio="none"><path d="M0 29 14 25 27 27 42 18 58 21 74 11 88 14 100 5"/></svg></div></div>
-          <div class="card-stats">
-            <div><span>可用余额</span><strong>{{ money(state.cashCents) }}</strong></div>
-            <div><span>冻结金额</span><strong>{{ money(state.heldCents) }}</strong></div>
-            <div><span>总负债</span><strong>{{ money(liabilityCents) }}</strong></div>
-            <div><span>净资产</span><strong>{{ money(netAssetCents) }}</strong></div>
-          </div>
-        </section>
-
-        <div class="action-grid">
-          <button class="action-item" @click="openDialog('deposit')"><i><svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M12 8v8M8 12h8"/></svg></i><span>充值</span></button>
-          <button class="action-item" @click="openDialog('withdraw')"><i><svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M12 7v9m-4-4 4 4 4-4"/></svg></i><span>提现</span></button>
-          <button class="action-item" @click="panel = 'payments'"><i><svg viewBox="0 0 24 24"><path d="M16 4h5v5M8 20H3v-5M21 4 13 12M3 20l8-8"/></svg></i><span>转账</span></button>
-          <button class="action-item" @click="panel = 'bills'"><i><svg viewBox="0 0 24 24"><path d="M6 2h9l4 4v16H6z"/><path d="M14 2v5h5M9 12h7M9 16h7"/></svg></i><span>账单</span></button>
-        </div>
-
-        <section class="section-block">
-          <div class="section-header"><h3>资产分布</h3><button @click="activeTab = 'stocks'">更多 <span>›</span></button></div>
-          <div class="distribution-content">
-            <div class="donut-chart" :style="donutStyle"><div></div></div>
-            <div class="dist-list">
-              <div v-for="item in assetParts" :key="item.label" class="dist-item"><i :style="{ background: item.color }"></i><span>{{ item.label }}</span><strong>{{ money(item.amount) }}</strong><em>{{ item.percent.toFixed(1) }}%</em></div>
-            </div>
-          </div>
-        </section>
-
-        <section class="section-block">
-          <h3>快捷功能</h3>
-          <div class="quick-funcs">
-            <button class="quick-card" @click="panel = 'receipt'"><i><svg viewBox="0 0 24 24"><path d="M3 3h7v7H3zM14 3h7v7h-7zM3 14h7v7H3zM14 14h3v3h-3zM19 14h2v7h-7v-2"/></svg></i><span><strong>收款码</strong><small>保存并发到朋友圈</small></span></button>
-            <button class="quick-card" @click="panel = 'cards'"><i><svg viewBox="0 0 24 24"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/></svg></i><span><strong>银行卡</strong><small>管理绑定卡片</small></span></button>
-            <button class="quick-card" @click="panel = 'security'"><i><svg viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z"/></svg></i><span><strong>安全中心</strong><small>金额显示设置</small></span></button>
-            <button class="quick-card" @click="panel = 'payments'"><i><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 10h18M8 2v4M16 2v4"/></svg></i><span><strong>红包</strong><small>查看收发记录</small></span></button>
-            <button class="quick-card" @click="panel = 'credit'"><i><svg viewBox="0 0 24 24"><path d="M4 8h16M6 4h12a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Z"/><path d="M8 14h4"/></svg></i><span><strong>花呗</strong><small>额度与还款</small></span></button>
-            <button class="quick-card disabled" disabled><i><svg viewBox="0 0 24 24"><path d="M5 9h14l-1 12H6L5 9Z"/><path d="M9 9V6a3 3 0 0 1 6 0v3"/></svg></i><span><strong>小荷包</strong><small>暂未开放</small></span></button>
-            <button class="quick-card" @click="panel = 'help'"><i><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M9.5 9a2.7 2.7 0 1 1 4.3 2.2c-1 .7-1.8 1.2-1.8 2.8M12 18h.01"/></svg></i><span><strong>帮助与反馈</strong><small>功能使用说明</small></span></button>
-          </div>
-        </section>
-
-        <section class="section-block">
-          <div class="section-header"><h3>最近交易</h3><button @click="panel = 'bills'">更多 <span>›</span></button></div>
-          <div v-if="!recentLedger.length" class="empty-state"><svg viewBox="0 0 24 24"><path d="M6 2h12v20l-3-2-3 2-3-2-3 2V2Z"/><path d="M9 8h6M9 12h6"/></svg><strong>暂无交易记录</strong><span>充值、提现或聊天收发款后会显示在这里</span></div>
-          <div v-else class="row-list"><div v-for="entry in recentLedger" :key="entry.id" class="data-row"><span><strong>{{ entry.title }}</strong><small>{{ dateText(entry.createdAt) }}</small></span><em :class="{ income: entry.amountCents > 0 }">{{ signedMoney(entry.amountCents) }}</em></div></div>
-        </section>
-      </main>
-
-      <main v-show="activeTab === 'stocks'" class="tab-content">
-        <header class="page-header"><h2><button class="title-button" @click="emit('close')">股票 <span>Stocks</span></button></h2><div class="header-actions"><button class="icon-button" aria-label="行情设置" @click="panel = 'marketSettings'"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19 13.5a7 7 0 0 0 0-3l2-1.5-2-3.4-2.5 1A7 7 0 0 0 14 5l-.4-3h-4L9 5a7 7 0 0 0-2.5 1.5l-2.5-1L2 9l2 1.5a7 7 0 0 0 0 3L2 15l2 3.5 2.5-1A7 7 0 0 0 9 19l.5 3h4l.5-3a7 7 0 0 0 2.5-1.5l2.5 1 2-3.5-2-1.5Z"/></svg></button><button class="icon-button" aria-label="自选股票" @click="panel = 'watchlist'"><svg viewBox="0 0 24 24"><path d="m12 2 3 6 7 .9-5 4.8 1.2 6.8L12 17.3l-6.2 3.2L7 13.7 2 8.9 9 8l3-6Z"/></svg></button></div></header>
-        <button class="market-status" :class="state.marketSettings.status" @click="panel = 'marketSettings'"><span><strong>{{ marketStatusText }}</strong><small>{{ state.marketSettings.mode === 'live' ? `更新于 ${marketUpdatedText}` : '完全本地运行，可随时切换真实行情' }}</small></span><em>{{ state.marketSettings.mode === 'live' ? '真实行情 · 模拟资金' : '模拟行情' }}</em></button>
-        <section class="section-block"><h3>我的持仓</h3><div class="asset-card"><div class="card-title">总市值 (CNY)</div><div class="card-main"><strong class="asset-amount">{{ money(stockMarketValueCents) }}</strong><div class="sparkline"><svg viewBox="0 0 100 35" preserveAspectRatio="none"><path d="M0 30 13 26 28 28 40 20 55 23 71 13 86 16 100 7"/></svg></div></div><div class="card-stats"><div><span>持仓盈亏</span><strong :class="stockProfitCents >= 0 ? 'up' : 'down'">{{ signedMoney(stockProfitCents) }}</strong></div><div><span>收益率</span><strong :class="stockProfitCents >= 0 ? 'up' : 'down'">{{ stockRate.toFixed(2) }}%</strong></div></div></div></section>
-        <div class="action-grid"><button class="action-item" @click="openTrade('buy')"><i><svg viewBox="0 0 24 24"><path d="M12 3v14M7 12l5 5 5-5M4 21h16"/></svg></i><span>买入</span></button><button class="action-item" @click="openTrade('sell')"><i><svg viewBox="0 0 24 24"><path d="M12 21V7M7 12l5-5 5 5M4 3h16"/></svg></i><span>卖出</span></button><button class="action-item" @click="panel = 'orders'"><i><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="m9 9 6 6m0-6-6 6"/></svg></i><span>撤单</span></button><button class="action-item" @click="panel = 'positions'"><i><svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 9v12"/></svg></i><span>持仓</span></button></div>
-        <section class="section-block"><div class="section-header"><h3>持仓列表</h3><button @click="panel = 'positions'">全部 <span>›</span></button></div><div class="stock-list"><div class="stock-head"><span>名称/代码</span><span>市值</span><span>盈亏/收益率</span></div><div v-if="!positionRows.length" class="empty-state compact"><strong>暂无持仓</strong><span>选择下方股票开始模拟交易</span></div><button v-for="row in positionRows.slice(0, 4)" :key="row.code" class="stock-row" @click="openTrade('sell', row.code)"><span><strong>{{ row.quote?.name }}</strong><small>{{ row.code }} · {{ row.quantity }} 股</small></span><strong>{{ formatWalletMoney(row.value) }}</strong><em :class="row.profit >= 0 ? 'up' : 'down'">{{ signedMoney(row.profit) }}<small>{{ row.rate.toFixed(2) }}%</small></em></button></div></section>
-        <section class="section-block"><h3>市场概览</h3><div class="market-scroll"><button v-for="quote in activeQuotes" :key="quote.code" class="market-card" :disabled="quote.priceCents <= 0" @click="openTrade('buy', quote.code)"><small>{{ quote.name }}</small><strong>{{ quote.priceCents > 0 ? formatWalletMoney(quote.priceCents) : '--' }}</strong><em v-if="quote.previousCloseCents > 0" :class="quote.priceCents >= quote.previousCloseCents ? 'up' : 'down'">{{ ((quote.priceCents - quote.previousCloseCents) / quote.previousCloseCents * 100).toFixed(2) }}%</em><em v-else>等待行情</em><svg viewBox="0 0 50 20" preserveAspectRatio="none"><polyline :points="quote.history.length > 1 ? quote.history.map((value, index) => `${index / Math.max(1, quote.history.length - 1) * 50},${18 - (value - Math.min(...quote.history)) / Math.max(1, Math.max(...quote.history) - Math.min(...quote.history)) * 16}`).join(' ') : '0,16 50,16'"/></svg></button></div></section>
-        <section class="section-block"><div class="section-header"><h3>热门板块</h3><button @click="panel = 'watchlist'">自选 <span>›</span></button></div><div class="tag-list"><div v-for="sector in ['科技', '消费', '医药', '金融']" :key="sector"><strong>{{ sector }}</strong><span>{{ state.marketSettings.mode === 'live' ? '网络行情' : '模拟行情' }}</span></div></div></section>
-      </main>
-
-      <main v-show="activeTab === 'mine'" class="tab-content">
-        <header class="page-header"><h2><button class="title-button" @click="emit('close')">我的 <span>Mine</span></button></h2><button class="icon-button" aria-label="安全设置" @click="panel = 'security'"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19 13.5a7 7 0 0 0 0-3l2-1.5-2-3.4-2.5 1A7 7 0 0 0 14 5l-.4-3h-4L9 5a7 7 0 0 0-2.5 1.5l-2.5-1L2 9l2 1.5a7 7 0 0 0 0 3L2 15l2 3.5 2.5-1A7 7 0 0 0 9 19l.5 3h4l.5-3a7 7 0 0 0 2.5-1.5l2.5 1 2-3.5-2-1.5Z"/></svg></button></header>
-        <section class="profile-card"><div class="avatar"><svg viewBox="0 0 24 24"><path d="M20 21a8 8 0 0 0-16 0M12 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8Z"/></svg></div><span><strong>{{ currentAccount?.name || state.accountName || '用户' }}</strong><small>钱包号：{{ state.paymentHandle }}</small></span><em>本地账户</em></section>
-        <section class="asset-card compact"><button class="card-title visibility-button" @click="toggleHidden">资产总览 <svg viewBox="0 0 24 24"><path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6S2 12 2 12Z"/><circle cx="12" cy="12" r="2.5"/></svg></button><div class="card-main"><strong class="asset-amount">{{ money(totalAssetCents) }}</strong></div><div class="card-sub">总资产 (CNY)</div></section>
-        <section class="section-block"><h3>我的服务</h3><div class="service-list"><button @click="panel = 'credit'"><i><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18M8 15h4"/></svg></i><span>花呗</span><em>可用 {{ formatWalletMoney(availableCreditCents) }}</em><b>›</b></button><button @click="panel = 'orders'"><i><svg viewBox="0 0 24 24"><path d="M6 2h12v20l-3-2-3 2-3-2-3 2V2Z"/></svg></i><span>我的订单</span><b>›</b></button><button @click="panel = 'cards'"><i><svg viewBox="0 0 24 24"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/></svg></i><span>银行卡</span><em>{{ state.bankCards.length }} 张</em><b>›</b></button><button @click="panel = 'watchlist'"><i><svg viewBox="0 0 24 24"><path d="m12 2 3 6 7 .9-5 4.8 1.2 6.8L12 17.3l-6.2 3.2L7 13.7 2 8.9 9 8l3-6Z"/></svg></i><span>我的自选</span><b>›</b></button><button disabled class="disabled"><i><svg viewBox="0 0 24 24"><path d="M5 9h14l-1 12H6L5 9Z"/><path d="M9 9V6a3 3 0 0 1 6 0v3"/></svg></i><span>小荷包</span><em>暂未开放</em></button></div></section>
-        <section class="section-block"><h3>设置与帮助</h3><div class="service-list"><button @click="panel = 'security'"><i><svg viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z"/></svg></i><span>安全与显示</span><b>›</b></button><button @click="openDialog('reset')"><i><svg viewBox="0 0 24 24"><path d="M4 4v6h6M20 20v-6h-6"/><path d="M5 15a8 8 0 0 0 13 3l2-4M19 9A8 8 0 0 0 6 6l-2 4"/></svg></i><span>重置钱包</span><b>›</b></button><button @click="panel = 'help'"><i><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M9.5 9a2.7 2.7 0 1 1 4.3 2.2c-1 .7-1.8 1.2-1.8 2.8M12 18h.01"/></svg></i><span>帮助与反馈</span><b>›</b></button></div></section>
-      </main>
-
-      <nav class="bottom-tab-bar" aria-label="钱包导航"><button :class="{ active: activeTab === 'wallet' }" aria-label="钱包" @click="activeTab = 'wallet'"><svg viewBox="0 0 24 24"><path d="M4 5h16v16H4a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2Z"/><path d="M16 11h6v6h-6a3 3 0 0 1 0-6Z"/></svg></button><button :class="{ active: activeTab === 'stocks' }" aria-label="股票" @click="activeTab = 'stocks'"><svg viewBox="0 0 24 24"><path d="M2 12h4l3-9 6 18 3-9h4"/></svg></button><button :class="{ active: activeTab === 'mine' }" aria-label="我的" @click="activeTab = 'mine'"><svg viewBox="0 0 24 24"><path d="M20 21a8 8 0 0 0-16 0M12 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8Z"/></svg></button></nav>
-    </template>
-
-    <main v-else class="tab-content detail-page">
-      <header class="detail-header"><button class="back-button" aria-label="返回" @click="panel = ''">‹</button><h2>{{ ({ bills: '账单', payments: '转账与红包', receipt: '我的收款码', cards: '银行卡', security: '安全中心', credit: '花呗', orders: '委托订单', positions: '我的持仓', watchlist: '我的自选', marketSettings: '行情设置', help: '帮助与反馈' } as Record<string, string>)[panel] }}</h2><button v-if="panel === 'cards'" class="text-button" @click="dialog = 'card'">添加</button><button v-else-if="panel === 'bills'" class="text-button" @click="toggleEditBills">{{ isEditingBills ? '完成' : '管理' }}</button><button v-else-if="panel === 'marketSettings' && state.marketSettings.mode === 'live'" class="text-button" :disabled="marketRefreshing" @click="refreshLiveMarket()">刷新</button><span v-else></span></header>
-      <section v-if="panel === 'bills'" class="detail-section elegant-bills">
-        <div class="eb-header">
-          <div class="eb-stats">
-            <div class="eb-stat-item">
-              <span class="eb-label">支出 (CNY)</span>
-              <strong class="eb-value">{{ formatWalletMoney(billStats.expense) }}</strong>
-            </div>
-            <div class="eb-stat-item">
-              <span class="eb-label">收入 (CNY)</span>
-              <strong class="eb-value">{{ formatWalletMoney(billStats.income) }}</strong>
-            </div>
-          </div>
-          <div class="eb-filters">
-            <div class="eb-month-picker">
-              <button class="eb-picker-btn">
-                {{ billFilterMonth ? billFilterMonth.replace('-', '年') + '月' : '全部时间' }}
-                <svg viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg>
-              </button>
-              <select v-model="billFilterMonth" class="eb-real-select">
-                <option value="">全部时间</option>
-                <option v-for="m in availableBillMonths" :key="m" :value="m">{{ m.replace('-', '年') + '月' }}</option>
-              </select>
-            </div>
-            <div class="eb-type-tabs">
-              <button :class="{ active: billFilterType === 'all' }" @click="billFilterType = 'all'">全部</button>
-              <button :class="{ active: billFilterType === 'expense' }" @click="billFilterType = 'expense'">支出</button>
-              <button :class="{ active: billFilterType === 'income' }" @click="billFilterType = 'income'">收入</button>
-            </div>
-          </div>
-          <div class="eb-search-bar">
-            <svg viewBox="0 0 24 24"><path d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
-            <input v-model="billSearchQuery" type="text" placeholder="搜索账单、备注或金额" />
-            <button v-show="billSearchQuery" @click="billSearchQuery = ''" class="eb-search-clear">
-              <svg viewBox="0 0 24 24"><path d="M18 6L6 18M6 6l12 12"/></svg>
-            </button>
-          </div>
-        </div>
-        <div v-if="!groupedBills.length" class="empty-state">
-          <svg viewBox="0 0 24 24"><path d="M4 22V6c0-1.1.9-2 2-2h12a2 2 0 0 1 2 2v16l-3-2-3 2-3-2-3 2-3-2-3 2z"/><path d="M14 8h2M8 8h2M8 12h8M8 16h6"/></svg>
-          <strong>没有账单记录</strong>
-          <span>当前筛选条件下暂无账单数据</span>
-        </div>
-        <div v-else class="eb-group-list" :style="isEditingBills ? 'padding-bottom: 24vw' : ''">
-          <div v-for="group in groupedBills" :key="group.month" class="eb-group">
-            <div class="eb-group-title">{{ group.month }}</div>
-            <div class="eb-list">
-              <div v-for="entry in group.entries" :key="entry.id" class="eb-item" :class="{ 'is-editing': isEditingBills }" @click="isEditingBills ? toggleBillSelection(entry.id) : null">
-                <div v-if="isEditingBills" class="eb-checkbox" :class="{ 'is-checked': selectedBillIds.includes(entry.id) }">
-                  <svg v-if="selectedBillIds.includes(entry.id)" viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5" stroke-width="2"/></svg>
-                </div>
-                <div class="eb-icon">
-                  <svg v-if="entry.amountCents > 0" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
-                  <svg v-else viewBox="0 0 24 24"><path d="M5 12h14"/></svg>
-                </div>
-                <div class="eb-content">
-                  <div class="eb-main-line">
-                    <strong class="eb-title">{{ entry.title }}</strong>
-                    <strong class="eb-amount" :class="entry.amountCents > 0 ? 'inc' : 'exp'">
-                      {{ entry.amountCents > 0 ? '+' : '-' }}{{ formatWalletMoney(Math.abs(entry.amountCents)) }}
-                    </strong>
-                  </div>
-                  <div class="eb-sub-line">
-                    <span class="eb-time">{{ dateText(entry.createdAt) }}</span>
-                    <span v-if="entry.note" class="eb-note">{{ entry.note }}</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-        <div v-if="isEditingBills && groupedBills.length" class="eb-batch-actions">
-          <button class="eb-select-all" @click="toggleSelectAllBills">
-            <div class="eb-checkbox" :class="{ 'is-checked': isAllFilteredBillsSelected }">
-              <svg v-if="isAllFilteredBillsSelected" viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5" stroke-width="2"/></svg>
-            </div>
-            全选
-          </button>
-          <button class="eb-delete-btn" :disabled="!selectedBillIds.length" @click="confirmDeleteBills">
-            删除 ({{ selectedBillIds.length }})
+          <!-- 账号头像入口 (点击切换金库席位) -->
+          <button 
+            type="button"
+            class="w-identity-seal" 
+            :disabled="paymentBusy"
+            :title="`当前账号：${currentAccount?.name || '私享席位'} (点击切换)`"
+            @click="activeDialog = 'account'"
+          >
+            <img v-if="currentAccount?.avatarUrl" :src="currentAccount.avatarUrl" alt="" class="w-seal-avatar" />
+            <div v-else class="w-seal-avatar-blank">{{ (currentAccount?.name || '私').slice(0, 1) }}</div>
           </button>
         </div>
-      </section>
-      <section v-if="panel === 'payments'" class="detail-section"><div class="info-card"><strong>聊天与朋友圈收付款记录</strong><span>聊天转账、红包以及朋友圈收款码到账都会保留在这里。</span></div><div v-if="!paymentRows.length" class="empty-state"><strong>暂无转账或红包</strong><span>在聊天或朋友圈中使用后会显示在这里</span></div><div v-else class="row-list card-list"><div v-for="item in paymentRows" :key="item.id" class="data-row"><span><strong>{{ paymentTitle(item) }}</strong><small>{{ dateText(item.createdAt) }} · {{ paymentStatus(item.status) }}</small><small v-if="item.remark">{{ item.remark }}</small><small v-if="item.direction === 'outgoing'">付款方式：{{ fundingSourceLabel(item.fundingSource, item.fundingSourceId) }}</small></span><em :class="{ income: item.direction === 'incoming' }">{{ item.direction === 'incoming' ? '+' : '-' }}{{ formatWalletMoney(item.amountCents) }}</em></div></div></section>
-      <section v-if="panel === 'receipt'" class="detail-section receipt-section">
-        <div class="receipt-poster-wrap">
-          <div v-if="receiptGenerating" class="receipt-loading">正在生成收款码…</div>
-          <img v-else-if="receiptPoster" :src="receiptPoster" alt="我的收款二维码" class="receipt-poster" />
-        </div>
-        <div class="receipt-fields">
-          <label>指定金额（可选）<input v-model="receiptAmountInput" inputmode="decimal" placeholder="不填写则由好友输入金额"></label>
-          <label>收款备注（可选）<input v-model="receiptRemarkInput" maxlength="40" placeholder="例如：请我喝奶茶"></label>
-          <button class="secondary-button wide" :disabled="receiptGenerating" @click="generateReceiptCode">生成新的收款码</button>
-        </div>
-        <div class="receipt-actions">
-          <button class="secondary-button" :disabled="!receiptPoster || receiptGenerating" @click="downloadReceiptCode">保存图片</button>
-          <button class="primary-button" :disabled="!receiptPoster || receiptGenerating" @click="shareReceiptToMoments">发到朋友圈</button>
-        </div>
-        <div class="info-card"><strong>虚拟收款码</strong><span>好友角色看到你发布的收款码后，会依据关系、情境和自己的意愿决定是否转账。收款行为受朋友圈中的全局默认和角色独立设置控制。</span></div>
-      </section>
-      <section v-if="panel === 'cards'" class="detail-section cards-panel-redesign">
-        <div class="cards-toolbar">
-          <div class="cards-search">
-            <svg viewBox="0 0 24 24"><path d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
-            <input v-model="cardSearchQuery" type="text" placeholder="搜索银行或尾号" />
-          </div>
-          <div class="cards-filters-row">
-            <div class="cards-tabs">
-              <button :class="{ active: cardFilterType === 'all' }" @click="cardFilterType = 'all'">全部</button>
-              <button :class="{ active: cardFilterType === 'favorite' }" @click="cardFilterType = 'favorite'">常用</button>
-              <button :class="{ active: cardFilterType === 'debit' }" @click="cardFilterType = 'debit'">储蓄卡</button>
-              <button :class="{ active: cardFilterType === 'credit' }" @click="cardFilterType = 'credit'">信用卡</button>
-            </div>
-            <div class="cards-sort">
-              <select v-model="cardSortBy">
-                <option value="timeDesc">最新添加</option>
-                <option value="timeAsc">最早添加</option>
-                <option value="name">按名称</option>
-              </select>
-            </div>
-          </div>
-        </div>
+      </div>
+    </header>
 
-        <div v-if="!filteredAndSortedCards.length" class="empty-state">
-          <strong>未找到银行卡</strong><span>暂无符合条件的卡片</span>
-          <button class="primary-button" @click="dialog = 'card'">添加银行卡</button>
-        </div>
-        
-        <div v-else class="minimal-card-grid">
-          <div v-for="card in filteredAndSortedCards" :key="card.id" class="m-card-container" :class="{ 'is-flipped': flippedCardId === card.id, 'is-removing': removingCardId === card.id }">
-            <div class="m-card-flipper">
-              <div class="m-card-front" :style="cardCovers[card.id]?.front ? { backgroundImage: `url(${cardCovers[card.id]?.front})` } : {}" @click="flippedCardId = card.id">
-                 <div class="m-card-overlay" :style="card.coverBlur !== undefined ? { backdropFilter: `blur(${card.coverBlur}px)` } : {}">
-                   <div class="m-card-header">
-                     <span class="m-card-bank">{{ card.name }}</span>
-                     <span class="m-card-type">{{ card.type === 'credit' ? 'CREDIT' : 'DEBIT' }}</span>
-                   </div>
-                   <button class="m-card-qr-top-btn" @click.stop="showCardDetails(card.id, $event)">
-                     <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M3 3h8v8H3V3zm2 2v4h4V5H5zm8-2h8v8h-8V3zm2 2v4h4V5h-4zM3 13h8v8H3v-8zm2 2v4h4v-4H5zm13-2h3v2h-3v-2zm-3 3h3v2h-3v-2zm3 3h3v2h-3v-2zm-3 3h3v2h-3v-2zm-3-9h2v3h-2v-3zm0 4h2v5h-2v-5z" fill="currentColor"/></svg>
-                   </button>
-                   <div class="m-card-chip-row">
-                     <div class="m-card-chip"></div>
-                   </div>
-                   <div class="m-card-number">•••• {{ card.lastFour }}</div>
-                 </div>
-              </div>
-              <div class="m-card-back" :style="cardCovers[card.id]?.back ? { backgroundImage: `url(${cardCovers[card.id]?.back})` } : {}" @click="flippedCardId = null">
-                 <div class="m-card-overlay" :style="card.backCoverBlur !== undefined ? { backdropFilter: `blur(${card.backCoverBlur}px)` } : {}">
-                   <div class="m-card-stripe"></div>
-                   <div class="m-card-cvv-row">
-                     <span>CVV</span>
-                     <em>{{ card.virtualCvv || '•••' }}</em>
-                   </div>
-                   <div class="m-card-actions">
-                     <button class="m-btn-edit" @click.stop="openEditCard(card)">编 辑</button>
-                     <button class="m-btn-remove" @click.stop="confirmRemoveCard(card.id)">解 绑</button>
-                   </div>
-                 </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
-      <section v-if="panel === 'security'" class="detail-section">
-        <div class="settings-card">
-          <button @click="toggleHidden"><span><strong>隐藏金额</strong><small>在钱包页面用圆点代替资产数字</small></span><i :class="{ on: state.hideAmounts }"><b></b></i></button>
-        </div>
-        <div class="settings-card">
-          <button @click="openPaymentPasswordSetting">
-            <span>
-              <strong>支付密码</strong>
-              <small>{{ state.paymentPassword ? '已设置（发送红包转账需验证）' : '未设置' }}</small>
-            </span>
-            <b style="color:var(--sub); font-weight:300; font-size:5vw; margin-right:2vw;">›</b>
-          </button>
-        </div>
-        <div class="info-card"><strong>数据说明</strong><span>钱包数据只保存在当前用户的本地账户中，不会把余额加入聊天提示词，也不会为角色创建钱包。</span></div>
-      </section>
-      <section v-if="panel === 'credit'" class="detail-section">
-        <template v-if="state.credit.enabled">
-          <div class="credit-card">
-            <small>可用额度 (CNY)</small><strong>{{ formatWalletMoney(availableCreditCents) }}</strong>
-            <div><span>总额度 {{ formatWalletMoney(state.credit.limitCents) }}</span><span>待还 {{ formatWalletMoney(state.credit.usedCents) }}</span></div>
-            <button class="credit-settings-btn" @click="openCreditSettings">
-              <svg viewBox="0 0 24 24"><path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1Z"/></svg>
-            </button>
-          </div>
-          <button class="primary-button wide" :disabled="!state.credit.usedCents" @click="openDialog('repay')">立即还款</button>
-          <div class="info-card">
-            <strong>账单日每月 {{ state.credit.billingDay }} 日 · 还款日每月 {{ state.credit.repaymentDay }} 日</strong>
-            <span>花呗可用于模拟股票买入和聊天付款；使用后会形成待还金额。额度会随着还款行为每月智能调整。</span>
-            <span v-if="state.credit.evaluationSummary">额度依据：{{ state.credit.evaluationSummary }}</span>
-          </div>
-          <div v-if="state.credit.transactions.length" class="row-list card-list"><div v-for="transaction in state.credit.transactions" :key="transaction.id" class="data-row"><span><strong>{{ transaction.title }}</strong><small>{{ dateText(transaction.createdAt) }} · 已还 {{ formatWalletMoney(transaction.repaidCents) }}</small></span><em>{{ formatWalletMoney(Math.max(0, transaction.amountCents - transaction.repaidCents)) }}</em></div></div>
-        </template>
-        <template v-else>
-          <div class="activation-card">
-            <svg class="activation-icon" viewBox="0 0 24 24"><path d="M4 8h16M6 4h12a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Z"/><path d="M8 14h4"/></svg>
-            <strong>开通花呗</strong>
-            <span>开启信用生活，享受每月专属额度</span>
-            
-            <div class="activation-form">
-              <label>
-                获取额度方式
-                <select v-model="creditActivationMethod" :disabled="isActivatingCredit">
-                  <option value="random">系统随机分配</option>
-                  <option value="ai">AI 评估当前用户人设</option>
-                  <option value="local">根据本地钱包资料评估</option>
-                  <option value="custom">自定义额度</option>
-                </select>
-              </label>
-              <label v-if="creditActivationMethod === 'custom'">
-                自定义额度 (元)
-                <input v-model="customCreditLimitInput" inputmode="decimal" placeholder="例如：3000" />
-              </label>
-              <label>
-                每月还款日 (1-28)
-                <input type="number" v-model.number="creditRepaymentDay" :disabled="isActivatingCredit" min="1" max="28" @blur="creditRepaymentDay = Math.max(1, Math.min(28, Math.floor(creditRepaymentDay) || 15))" placeholder="每月 15 日" />
-              </label>
-              
-              <button class="primary-button wide mt-4" :disabled="isActivatingCredit" @click="activateCredit">
-                <span v-if="isActivatingCredit" class="loading-spinner"></span>
-                {{ isActivatingCredit ? (creditActivationMethod === 'ai' ? 'AI 正在评估用户资料...' : '正在计算额度...') : '确认开通' }}
-              </button>
-            </div>
-          </div>
-        </template>
-      </section>
-      <section v-if="panel === 'orders'" class="detail-section"><div v-if="!activeOrders.length" class="empty-state"><strong>暂无委托</strong><span>当前行情模式下的股票买卖委托会显示在这里</span></div><div v-else class="row-list card-list"><div v-for="order in activeOrders" :key="order.id" class="data-row order-row"><span><strong>{{ order.side === 'buy' ? '买入' : '卖出' }} {{ activeQuotes.find(q => q.code === order.code)?.name }}</strong><small>{{ order.quantity }} 股 · {{ order.orderType === 'market' ? '市价' : `限价 ${formatWalletMoney(order.limitPriceCents || 0)}` }} · {{ orderStatus(order.status) }}</small><small v-if="order.rejectReason">{{ order.rejectReason }}</small></span><button v-if="order.status === 'pending'" @click="cancelOrder(order)">撤单</button><em v-else>{{ order.filledPriceCents ? formatWalletMoney(order.filledPriceCents * order.quantity) : '--' }}</em></div></div></section>
-      <section v-if="panel === 'positions'" class="detail-section"><div v-if="!positionRows.length" class="empty-state"><strong>暂无持仓</strong><span>买入股票后会显示在这里</span></div><div v-else class="row-list card-list"><button v-for="row in positionRows" :key="row.code" class="data-row clickable" @click="openTrade('sell', row.code)"><span><strong>{{ row.quote?.name }}</strong><small>{{ row.quantity }} 股 · 成本 {{ formatWalletMoney(row.averageCostCents) }}</small></span><em :class="row.profit >= 0 ? 'up' : 'down'">{{ signedMoney(row.profit) }}</em></button></div></section>
-      <section v-if="panel === 'watchlist'" class="detail-section"><div class="row-list card-list"><button v-for="quote in activeQuotes" :key="quote.code" class="data-row clickable" @click="toggleWatchlist(quote.code)"><span><strong>{{ quote.name }}</strong><small>{{ quote.code }} · {{ quote.market || quote.sector }}</small></span><em>{{ activeWatchlist.includes(quote.code) ? '已自选' : '添加' }}</em></button></div></section>
-      <section v-if="panel === 'marketSettings'" class="detail-section market-settings-panel">
-        <div class="info-card"><strong>行情来源</strong><span>真实行情只改变股票报价，买卖仍使用当前用户的虚拟资金，不会连接券商或产生真实交易。</span></div>
-        <div class="market-mode-grid">
-          <button :class="{ active: state.marketSettings.mode === 'simulation' }" @click="chooseMarket('simulation')"><strong>本地模拟</strong><small>完全离线，保留原有虚构股票和持仓</small></button>
-          <button :class="{ active: state.marketSettings.mode === 'live' && state.marketSettings.source === 'builtin' }" @click="chooseMarket('live', 'builtin')"><strong>内置真实行情</strong><small>免 Key、打开即用，自动使用主来源与备用来源</small></button>
-          <button :class="{ active: state.marketSettings.mode === 'live' && state.marketSettings.source === 'custom' }" @click="state.marketSettings.source = 'custom'; persist()"><strong>自定义接口</strong><small>连接用户提供的 HTTP JSON 行情</small></button>
-        </div>
-        <div v-if="state.marketSettings.mode === 'live'" class="settings-card market-runtime-card"><div><strong>{{ marketStatusText }}</strong><small>最后成功更新：{{ marketUpdatedText }}</small><small v-if="state.marketSettings.error" class="market-error">{{ state.marketSettings.error }}</small></div><button class="secondary-button" :disabled="marketRefreshing" @click="refreshLiveMarket()">{{ marketRefreshing ? '更新中' : '立即刷新' }}</button></div>
-        <label class="market-form-label">自动刷新间隔
-          <select v-model.number="state.marketSettings.refreshSeconds" @change="state.marketSettings.refreshSeconds = Math.max(15, Number(state.marketSettings.refreshSeconds) || 60); persist()"><option :value="15">15 秒</option><option :value="30">30 秒</option><option :value="60">60 秒</option><option :value="300">5 分钟</option></select>
-        </label>
-        <div class="live-symbol-manager">
-          <div><strong>真实行情股票</strong><small>输入6位A股代码；现有模拟股票和持仓不会受影响。</small></div>
-          <div class="live-symbol-add"><input v-model="liveSymbolInput" inputmode="numeric" maxlength="6" placeholder="例如：600519" @keyup.enter="addLiveSymbol"><button class="secondary-button" @click="addLiveSymbol">添加</button></div>
-          <div class="live-symbol-list"><div v-for="quote in state.liveQuotes" :key="`live-${quote.code}`"><span><strong>{{ quote.name }}</strong><small>{{ quote.code }} · {{ quote.market }}</small></span><button aria-label="移除真实股票" @click="removeLiveSymbol(quote.code)">移除</button></div></div>
-        </div>
-        <div v-if="state.marketSettings.source === 'custom'" class="custom-market-form">
-          <label>接口名称<input v-model="state.marketSettings.custom.name" placeholder="自定义行情"></label>
-          <label>请求地址<input v-model="state.marketSettings.custom.url" placeholder="https://example.com/quotes?symbols={symbols}"></label>
-          <label>请求方式<select v-model="state.marketSettings.custom.method"><option value="GET">GET</option><option value="POST">POST</option></select></label>
-          <label>代码参数名<input v-model="state.marketSettings.custom.symbolsParameter" placeholder="symbols"></label>
-          <label>请求头 JSON<textarea v-model="state.marketSettings.custom.headersText" placeholder='例如：{"Authorization":"Bearer ..."}'></textarea></label>
-          <label>行情数组路径<input v-model="state.marketSettings.custom.dataPath" placeholder="data"></label>
-          <div class="field-grid"><label>代码字段<input v-model="state.marketSettings.custom.codeField" placeholder="code"></label><label>名称字段<input v-model="state.marketSettings.custom.nameField" placeholder="name"></label><label>价格字段<input v-model="state.marketSettings.custom.priceField" placeholder="price"></label><label>昨收字段<input v-model="state.marketSettings.custom.previousCloseField" placeholder="previousClose"></label><label>时间字段<input v-model="state.marketSettings.custom.timestampField" placeholder="timestamp"></label></div>
-          <button class="primary-button wide" :disabled="marketRefreshing" @click="saveCustomMarket">测试并保存</button>
-        </div>
-      </section>
-      <section v-if="panel === 'help'" class="detail-section faq"><article><strong>余额如何设置？</strong><span>点击钱包首页右上角加号可直接自定义余额；充值和提现也会形成账单。</span></article><article><strong>转账和红包在哪里发送？</strong><span>仍在聊天页面使用原有转账与红包功能。钱包只做用户余额校验、冻结、到账或退款。</span></article><article><strong>股票是真实行情吗？</strong><span>股票页面可选择原有本地模拟、免 Key 的内置真实行情或自定义接口；所有买卖都只使用虚拟资金。</span></article></section>
+    <!-- 主展示区 -->
+    <main class="w-scrollable-body">
+      <!-- 资产总览 Tab -->
+      <WalletOverviewTab 
+        v-if="currentTab === 'wallet'"
+        :state="state"
+        :total-asset-cents="totalAssetCents"
+        :bank-asset-cents="bankAssetCents"
+        :stock-market-value-cents="stockMarketValueCents"
+        :liability-cents="liabilityCents"
+        :net-asset-cents="netAssetCents"
+        :recent-ledger="recentLedger"
+        @open-action="(act) => activeDialog = act"
+        @switch-tab="(t) => currentTab = t"
+      />
+
+      <!-- 证券交易 Tab -->
+      <WalletMarketTab 
+        v-else-if="currentTab === 'stocks'"
+        :state="state"
+        :active-quotes="activeQuotes"
+        :active-positions="activePositions"
+        :active-orders="activeOrders"
+        :stock-market-value-cents="stockMarketValueCents"
+        :stock-cost-cents="stockCostCents"
+        :market-refreshing="marketRefreshing"
+        :market-status-text="marketStatusText"
+        :market-updated-text="marketUpdatedText"
+        @open-trade="(side, code) => { tradeSide = side; if (code) selectedTradeCode = code; activeDialog = 'trade'; }"
+        @toggle-watchlist="toggleWatchlist"
+        @refresh-market="refreshLiveMarket(true)"
+        @cancel-order="(ord) => { cancelWalletOrder(state, ord.id); persist(); notify('委托已撤销'); }"
+        @open-settings="activeDialog = 'marketSettings'"
+      />
+
+      <!-- 金库服务 Tab -->
+      <WalletServicesTab 
+        v-else-if="currentTab === 'services'"
+        :state="state"
+        :available-credit-cents="availableCreditCents"
+        :card-covers="cardCovers"
+        @open-card-modal="(c) => { editingCard = c || null; activeDialog = 'card'; }"
+        @remove-card="handleRemoveCard"
+        @open-credit-modal="activeDialog = 'credit'"
+        @open-receipt-modal="() => { activeDialog = 'receipt'; handleGenerateReceipt({ amount: '', remark: '' }); }"
+        @open-password-modal="activeDialog = 'password'"
+        @reset-wallet="() => { resetWalletFinance(state); persist(); notify('钱包金融数据已重置'); }"
+      />
     </main>
 
-    <div v-if="dialog" class="dialog-layer" @click.self="closeDialog">
-      <section class="dialog-card" role="dialog" aria-modal="true">
-        <header><h3>{{ ({ balance: '自定义余额', deposit: '充值', withdraw: '提现', card: editingCardId ? '编辑银行卡' : '添加银行卡', trade: tradeSide === 'buy' ? '买入股票' : '卖出股票', repay: '花呗还款', reset: '重置钱包', removeCard: '解绑银行卡', cardDetails: '银行卡详情', cardBalanceEdit: '修改卡片资金', paymentPassword: '设置支付密码' } as Record<string, string>)[dialog] }}</h3><button aria-label="关闭" @click="closeDialog">×</button></header>
-        <template v-if="['balance', 'deposit', 'withdraw', 'cardBalanceEdit'].includes(dialog)">
-          <label v-if="dialog === 'deposit'">充值方式
-            <select v-model="selectedBankCardId">
-              <option value="">（不使用银行卡）凭空充值</option>
-              <option v-for="card in state.bankCards" :key="card.id" :value="card.id" :disabled="!card.enabled">{{ card.name }} ({{ card.lastFour }}){{ card.enabled ? '' : ' · 已停用' }}</option>
-            </select>
-          </label>
-          <label v-if="dialog === 'withdraw'">提现到
-            <select v-model="selectedBankCardId">
-              <option value="" disabled selected>请选择银行卡</option>
-              <option v-for="card in state.bankCards" :key="card.id" :value="card.id" :disabled="!card.enabled">{{ card.name }} ({{ card.lastFour }}){{ card.enabled ? '' : ' · 已停用' }}</option>
-            </select>
-          </label>
-          <label>金额 (CNY)<input v-model="amountInput" inputmode="decimal" placeholder="0.00" @keyup.enter="submitMoney"></label>
-          <label v-if="dialog !== 'cardBalanceEdit'">备注（可选）<input v-model="noteInput" maxlength="40" placeholder="填写这笔操作的说明"></label>
-          <p v-if="dialog === 'balance'" class="form-note">直接设定当前可用余额；聊天中仍在处理的冻结金额不会被修改。</p>
-          <p v-if="dialog === 'cardBalanceEdit'" class="form-note">直接设定该卡的余额 (储蓄卡) 或 已用额度 (信用卡)。</p>
-          <p v-if="dialog === 'withdraw' && !state.bankCards.length" class="form-note" style="color:#ff3b30">您还没有绑定银行卡，无法提现。</p>
-          <button class="primary-button wide" :disabled="dialog === 'withdraw' && (!state.bankCards.length || !selectedBankCardId)" @click="submitMoney">确认</button>
-        </template>
-        <template v-if="dialog === 'paymentPassword'">
-          <div style="display:flex; flex-direction:column; gap:4vw;">
-            <p class="form-note">开启后，发红包、转账等支付操作都需要输入该密码。</p>
-            <p class="form-note">这是当前设备上的游戏内确认密码，请勿使用银行卡、网银或其他真实账户密码。</p>
-            <label>
-              4位数字支付密码（留空则关闭）
-              <input 
-                v-model="paymentPasswordInput" 
-                type="password"
-                inputmode="numeric" 
-                maxlength="4" 
-                autocomplete="new-password"
-                @input="paymentPasswordInput = paymentPasswordInput.replace(/\D/g, '').slice(0, 4)"
-                placeholder="例如：1234"
-              />
-            </label>
-            <button class="primary-button wide" style="margin-top:2vw;" @click="savePaymentPassword">保存设置</button>
-          </div>
-        </template>
-        <template v-if="dialog === 'card'">
-          <div class="card-add-form">
-            <div class="cover-uploader-grid">
-              <div>
-                <label class="uploader-label">正面背景</label>
-                <div class="card-cover-uploader" @click="triggerCoverUpload(false)" :style="cardCoverInput ? { backgroundImage: `url(${cardCoverInput})` } : {}">
-                  <span v-if="!cardCoverInput">+ 点击上传</span>
-                  <button v-else class="clear-cover-btn" @click.stop="cardCoverInput = ''">×</button>
-                </div>
-                <div class="blur-slider" v-if="cardCoverInput">
-                  <label>模糊度: {{ coverBlurInput }}px</label>
-                  <input type="range" min="0" max="20" v-model.number="coverBlurInput" />
-                </div>
-              </div>
-              <div>
-                <label class="uploader-label">背面背景</label>
-                <div class="card-cover-uploader" @click="triggerCoverUpload(true)" :style="cardBackCoverInput ? { backgroundImage: `url(${cardBackCoverInput})` } : {}">
-                  <span v-if="!cardBackCoverInput">+ 点击上传</span>
-                  <button v-else class="clear-cover-btn" @click.stop="cardBackCoverInput = ''">×</button>
-                </div>
-                <div class="blur-slider" v-if="cardBackCoverInput">
-                  <label>模糊度: {{ backCoverBlurInput }}px</label>
-                  <input type="range" min="0" max="20" v-model.number="backCoverBlurInput" />
-                </div>
-              </div>
-            </div>
-            <label>卡片类型
-              <select v-model="cardTypeInput">
-                <option value="debit">储蓄卡</option>
-                <option value="credit">信用卡</option>
-              </select>
-            </label>
-            <label>卡片名称<input v-model="cardNameInput" maxlength="24" placeholder="例如：招商银行"></label>
-            <label>卡号<input v-model="cardNumberInput" inputmode="numeric" maxlength="24" placeholder="请输入16或19位卡号"></label>
-            <label>有效期（可选）<input v-model="cardExpiryInput" placeholder="例如：12/28"></label>
-            <label>{{ cardTypeInput === 'credit' ? '额度' : '初始余额' }} (元，可选)<input v-model="cardBalanceInput" inputmode="decimal" placeholder="留空则随机分配"></label>
-            <p class="form-note">卡片与资产仅用于本地游戏。请使用虚拟资料，不要填写真实银行卡信息。</p>
-            <div class="favorite-switch-row">
-              <span>设为常用卡</span>
-              <label class="wallet-switch">
-                <input type="checkbox" v-model="cardIsFavoriteInput" />
-                <i><b></b></i>
-              </label>
-            </div>
-            <div class="form-actions-row">
-              <button class="secondary-button flex-1" @click="generateRandomCard">随机生成</button>
-              <button class="primary-button flex-1" @click="addOrUpdateCard">{{ editingCardId ? '确认保存' : '确认生成' }}</button>
-            </div>
-          </div>
-        </template>
-        <template v-if="dialog === 'trade'"><label>股票<select v-model="selectedCode"><option v-for="quote in activeQuotes" :key="quote.code" :value="quote.code" :disabled="quote.priceCents <= 0">{{ quote.name }} · {{ quote.priceCents > 0 ? formatWalletMoney(quote.priceCents) : '等待行情' }}</option></select></label><p v-if="state.marketSettings.mode === 'live'" class="form-note">真实行情 · 模拟资金，报价更新于 {{ marketUpdatedText }}</p><div class="segmented"><button :class="{ active: tradeType === 'market' }" @click="tradeType = 'market'">市价</button><button :class="{ active: tradeType === 'limit' }" @click="tradeType = 'limit'">限价</button></div><label>数量（股）<input v-model="tradeQuantity" inputmode="numeric" placeholder="100"></label><label v-if="tradeType === 'limit'">限价 (CNY)<input v-model="tradeLimit" inputmode="decimal" :placeholder="formatWalletMoney(selectedQuote?.priceCents || 0)"></label><label v-if="tradeSide === 'buy'">付款方式<select v-model="tradeFunding"><option value="balance">钱包余额</option><option value="credit" :disabled="!state.credit.enabled">花呗额度{{ state.credit.enabled ? `（可用 ${formatWalletMoney(availableCreditCents)}）` : '（未开通）' }}</option></select></label><p class="form-note">预计金额：{{ formatWalletMoney((selectedQuote?.priceCents || 0) * Math.max(0, Number(tradeQuantity) || 0)) }} CNY</p><button class="primary-button wide" :disabled="!selectedQuote || selectedQuote.priceCents <= 0" @click="submitTrade">确认{{ tradeSide === 'buy' ? '买入' : '卖出' }}</button></template>
-        <template v-if="dialog === 'repay'"><p class="form-note">待还金额 {{ formatWalletMoney(state.credit.usedCents) }} CNY，可用余额 {{ formatWalletMoney(state.cashCents) }} CNY</p><label>还款金额<input v-model="amountInput" inputmode="decimal" :placeholder="formatWalletMoney(state.credit.usedCents)"></label><button class="primary-button wide" @click="repay">确认还款</button></template>
-        <template v-if="dialog === 'reset'"><div class="confirm-copy"><strong>确定重置钱包数据吗？</strong><span>余额、账单、转账记录、股票持仓、委托和花呗账单将被清空；银行卡和显示设置会保留。</span></div><div class="confirm-actions"><button @click="closeDialog">取消</button><button class="danger-button" @click="resetFinance">确认重置</button></div></template>
-        <template v-if="dialog === 'removeCard'"><div class="confirm-copy"><strong>确定要解绑/挂失这张银行卡吗？</strong><span>该操作不可恢复。</span></div><div class="confirm-actions"><button @click="closeDialog">取消</button><button class="danger-button" @click="executeRemoveCard">确认解绑</button></div></template>
-        <template v-if="dialog === 'deleteBills'"><div class="confirm-copy"><strong>确定要删除选中的 {{ selectedBillIds.length }} 条账单吗？</strong><span>删除后数据将从本地存储中永久移除，且无法恢复。</span></div><div class="confirm-actions"><button @click="closeDialog">取消</button><button class="danger-button" @click="executeDeleteBills">确认删除</button></div></template>
-        <template v-if="dialog === 'creditSettings'">
-          <label>每月还款日 (1-28)
-            <input type="number" v-model.number="state.credit.repaymentDay" min="1" max="28" @change="state.credit.repaymentDay = Math.max(1, Math.min(28, Math.floor(state.credit.repaymentDay) || 15)); state.credit.billingDay = state.credit.repaymentDay - 10 > 0 ? state.credit.repaymentDay - 10 : 28 + (state.credit.repaymentDay - 10); persist()" />
-          </label>
-          <p class="form-note">修改还款日将自动调整账单日。</p>
-          <div style="margin-top: 8vw;">
-            <button class="danger-button wide" @click="disableCredit">关闭花呗</button>
-            <p class="form-note" style="text-align: center; margin-top: 3vw;">关闭后所有花呗相关数据将被清空。<br>仅在全部欠款已还清时允许关闭。</p>
-          </div>
-        </template>
-        <template v-if="dialog === 'cardDetails' && activeCardDetailsId">
-          <div class="card-details-view">
-            <template v-for="card in state.bankCards" :key="'cd-'+card.id">
-              <div v-if="card.id === activeCardDetailsId">
-                <div class="cd-header">
-                  <strong>{{ card.name }}</strong>
-                  <span>{{ card.type === 'credit' ? '信用卡' : '储蓄卡' }} ({{ card.lastFour }})</span>
-                </div>
-                
-                <div class="cd-data-box" v-if="card.type === 'debit'">
-                  <div class="cd-data-item">
-                    <span class="cd-label">可用余额 (CNY)</span>
-                    <strong class="cd-value" :class="{ 'amount-down': (card.balanceCents || 0) < 0 }">{{ formatWalletMoney(card.balanceCents || 0) }}</strong>
-                  </div>
-                </div>
-                
-                <div class="cd-data-box" v-if="card.type === 'credit'">
-                  <div class="cd-data-item">
-                    <span class="cd-label">本期待还款 (CNY)</span>
-                    <strong class="cd-value amount-down">{{ formatWalletMoney(card.usedCents || 0) }}</strong>
-                  </div>
-                  <div class="cd-data-item">
-                    <span class="cd-label">可用额度 (CNY)</span>
-                    <strong class="cd-value amount-up">{{ formatWalletMoney(Math.max(0, (card.limitCents || 0) - (card.usedCents || 0))) }}</strong>
-                  </div>
-                  <div class="cd-data-item">
-                    <span class="cd-label">总信用额度 (CNY)</span>
-                    <strong class="cd-value-sub">{{ formatWalletMoney(card.limitCents || 0) }}</strong>
-                  </div>
-                </div>
+    <!-- 弹窗子组件体系 -->
+    <WalletDepositWithdrawModal 
+      v-if="['deposit', 'withdraw', 'balance'].includes(activeDialog)"
+      :type="activeDialog as 'deposit' | 'withdraw' | 'balance'"
+      :state="state"
+      @close="activeDialog = ''"
+      @submit="handleMoneySubmit"
+    />
 
-                <div class="cd-actions-grid mt-4">
-                  <button class="secondary-button" @click="resetCardBalance">{{ card.type === 'credit' ? '清空欠款' : '余额清零' }}</button>
-                  <button class="primary-button" @click="openCardBalanceEdit">修改资金</button>
-                  <button class="secondary-button" @click="card.enabled = !card.enabled; persist(); notify(card.enabled ? '银行卡已恢复使用' : '银行卡已停用')">{{ card.enabled ? '停用卡片' : '恢复使用' }}</button>
-                  <button class="secondary-button" @click="openEditCard(card)">编辑卡片</button>
-                </div>
-              </div>
-            </template>
-          </div>
-        </template>
-      </section>
+    <WalletLedgerModal 
+      v-if="activeDialog === 'ledger'"
+      :state="state"
+      @close="activeDialog = ''"
+      @delete-selected="handleDeleteBills"
+    />
+
+    <WalletTradeModal 
+      v-if="activeDialog === 'trade'"
+      :side="tradeSide"
+      :selected-code="selectedTradeCode"
+      :active-quotes="activeQuotes"
+      :state="state"
+      :available-credit-cents="availableCreditCents"
+      @close="activeDialog = ''"
+      @submit="handleTradeSubmit"
+    />
+
+    <WalletCardModal 
+      v-if="activeDialog === 'card'"
+      :card="editingCard"
+      :cover-data="editingCard ? cardCovers[editingCard.id] : undefined"
+      @close="activeDialog = ''"
+      @submit="handleCardSubmit"
+    />
+
+    <WalletCreditModal 
+      v-if="activeDialog === 'credit'"
+      :state="state"
+      :available-credit-cents="availableCreditCents"
+      :is-activating="isActivatingCredit"
+      @close="activeDialog = ''"
+      @activate="handleActivateCredit"
+      @repay="handleRepayCredit"
+      @disable="handleDisableCredit"
+      @update-days="({ billingDay, repaymentDay }) => { state.credit.billingDay = billingDay; state.credit.repaymentDay = repaymentDay; persist(); }"
+    />
+
+    <WalletReceiptModal 
+      v-if="activeDialog === 'receipt'"
+      :receipt-code="receiptCode"
+      :receipt-poster="receiptPoster"
+      :generating="receiptGenerating"
+      @close="activeDialog = ''"
+      @generate="handleGenerateReceipt"
+      @save-poster="handleSaveReceiptPoster"
+      @share-moments="handleShareMoments"
+    />
+
+    <WalletMarketSettingsModal 
+      v-if="activeDialog === 'marketSettings'"
+      :state="state"
+      :refreshing="marketRefreshing"
+      @close="activeDialog = ''"
+      @choose-mode="(mode, source) => { setWalletMarketMode(state, mode); if (source) state.marketSettings.source = source; persist(); if (mode === 'live') refreshLiveMarket(false); }"
+      @add-symbol="(code) => { state.liveQuotes.push({ code, name: code, sector: '股票', market: code.startsWith('6') ? '沪市' : '深市', marketCode: `${code.startsWith('6') ? 1 : 0}.${code}`, priceCents: 0, previousCloseCents: 0, history: [], source: 'eastmoney' }); persist(); refreshLiveMarket(true); }"
+      @remove-symbol="(code) => { state.liveQuotes = state.liveQuotes.filter(item => item.code !== code); persist(); notify('标的已移除'); }"
+      @refresh="refreshLiveMarket(true)"
+      @save-custom="() => { setWalletMarketMode(state, 'live'); persist(); refreshLiveMarket(true); }"
+    />
+
+    <WalletPasswordModal 
+      v-if="activeDialog === 'password'"
+      :current-password="state.paymentPassword"
+      :current-password-type="state.paymentPasswordType"
+      :account-name="currentAccount?.name || '未登录钱包'"
+      @close="activeDialog = ''"
+      @save="savePassword"
+    />
+
+    <WalletAccountModal v-if="activeDialog === 'account'" :accounts="currentChatUserId ? chatAccounts : []" :account-id="accountId" @close="activeDialog = ''" @select="handleSelectAccount" />
+
+    <!-- 底部轻盈书签式控制舱 (Editorial Deck) -->
+    <nav class="w-editorial-deck">
+      <button 
+        class="w-deck-nav-btn" 
+        :class="{ active: currentTab === 'wallet' }" 
+        @click="currentTab = 'wallet'"
+      >
+        <span class="w-deck-roman">I.</span>
+        <span class="w-deck-label">总席资产</span>
+      </button>
+
+      <button 
+        class="w-deck-nav-btn" 
+        :class="{ active: currentTab === 'stocks' }" 
+        @click="currentTab = 'stocks'"
+      >
+        <span class="w-deck-roman">II.</span>
+        <span class="w-deck-label">证券市集</span>
+      </button>
+
+      <button 
+        class="w-deck-nav-btn" 
+        :class="{ active: currentTab === 'services' }" 
+        @click="currentTab = 'services'"
+      >
+        <span class="w-deck-roman">III.</span>
+        <span class="w-deck-label">金库底册</span>
+      </button>
+    </nav>
+
+    <!-- 极简 Toast 提示 -->
+    <div v-if="toast" class="w-toast" :class="{ error: toast.error }">
+      {{ toast.text }}
     </div>
-    <Transition name="toast"><div v-if="toast" class="toast" :class="{ error: toast.error }">{{ toast.text }}</div></Transition>
   </div>
 </template>
 
 <style scoped>
-.wallet-app{--app-bg:#fff;--app-text:#111;--card-bg:#fff;--border:rgba(0,0,0,.06);--sub:#8e8e93;--icon-bg:rgba(0,0,0,.04);--up:#ff3b30;--down:#34c759;position:absolute;inset:0;z-index:100;display:flex;overflow:hidden;background:var(--app-bg);color:var(--app-text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.wallet-app.dark-theme{--app-bg:#000;--app-text:#fff;--card-bg:#1c1c1e;--border:rgba(255,255,255,.09);--sub:#98989d;--icon-bg:rgba(255,255,255,.08);--up:#ff453a;--down:#32d74b}.wallet-app *{box-sizing:border-box}.wallet-app button,.wallet-app input,.wallet-app select{font:inherit}.wallet-app button{color:inherit}.wallet-app svg{fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}.tab-content{flex:1;overflow-y:auto;padding:40px 5vw calc(82px + env(safe-area-inset-bottom));scrollbar-width:none}.tab-content::-webkit-scrollbar{display:none}.page-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:6vw}.page-header h2{margin:0}.title-button{padding:0;border:0;background:none;font-size:5vw;font-weight:700;cursor:pointer}.title-button span{margin-left:2vw;color:var(--sub);font-size:3.5vw;font-weight:400}.icon-button,.back-button{display:grid;width:40px;height:40px;padding:9px;border:0;border-radius:50%;background:transparent;place-items:center;cursor:pointer}.icon-button:hover,.back-button:hover{background:var(--icon-bg)}.icon-button:focus-visible,.back-button:focus-visible,.action-item:focus-visible,.quick-card:focus-visible,.service-list button:focus-visible,.primary-button:focus-visible{outline:2px solid var(--app-text);outline-offset:2px}.asset-card{margin-bottom:6vw;padding:5vw;border:1px solid var(--border);border-radius:4vw;background:var(--card-bg);box-shadow:0 4px 20px rgba(0,0,0,.03)}.card-title{display:flex;align-items:center;gap:1vw;margin:0 0 2vw;color:var(--sub);font-size:3vw}.card-title svg{width:15px;height:15px}.visibility-button{padding:0;border:0;background:none;cursor:pointer}.card-main{display:flex;align-items:center;justify-content:space-between;margin-bottom:4vw}.asset-amount{font-size:8vw;letter-spacing:-.5px}.sparkline{width:25vw;height:8vw;opacity:.55}.sparkline svg{width:100%;height:100%}.sparkline path{stroke:var(--sub);stroke-width:2}.card-stats{display:flex;gap:10vw}.card-stats div{display:flex;flex-direction:column;gap:1vw}.card-stats span{color:var(--sub);font-size:2.8vw}.card-stats strong{font-size:3.5vw}.action-grid{display:flex;justify-content:space-between;margin-bottom:8vw;padding:0 2vw}.action-item{display:flex;align-items:center;flex-direction:column;gap:2vw;padding:0;border:0;background:none;cursor:pointer}.action-item i{display:grid;width:12vw;height:12vw;border:1px solid var(--border);border-radius:50%;background:var(--card-bg);box-shadow:0 2px 10px rgba(0,0,0,.02);place-items:center}.action-item svg{width:21px;height:21px}.action-item span{font-size:3vw;font-style:normal;font-weight:500}.action-item:active i{transform:scale(.96)}.section-block{margin-bottom:8vw}.section-block h3{margin:0 0 4vw;font-size:4vw}.section-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:4vw}.section-header h3{margin:0}.section-header button{border:0;background:none;color:var(--sub);font-size:3vw;cursor:pointer}.distribution-content{display:flex;align-items:center;gap:6vw}.donut-chart{display:grid;width:24vw;height:24vw;flex:none;border-radius:50%;place-items:center}.donut-chart div{width:16vw;height:16vw;border-radius:50%;background:var(--app-bg)}.dist-list{display:flex;flex:1;flex-direction:column;gap:2.2vw}.dist-item{display:flex;align-items:center;font-size:3vw}.dist-item i{width:2vw;height:2vw;margin-right:2vw;border-radius:50%}.dist-item span{width:10vw;color:var(--sub)}.dist-item strong{flex:1;text-align:right}.dist-item em{width:12vw;color:var(--sub);font-style:normal;text-align:right}.quick-funcs{display:grid;grid-template-columns:1fr 1fr;gap:3vw}.quick-card{display:flex;align-items:center;gap:3vw;min-height:16vw;padding:3vw;border:1px solid var(--border);border-radius:3vw;background:var(--card-bg);text-align:left;cursor:pointer}.quick-card>i{display:grid;width:8vw;height:8vw;flex:none;border-radius:2vw;background:var(--icon-bg);place-items:center}.quick-card svg{width:20px;height:20px}.quick-card>span{display:flex;min-width:0;flex-direction:column;gap:.5vw}.quick-card strong{font-size:3.2vw}.quick-card small{color:var(--sub);font-size:2.5vw}.disabled{cursor:not-allowed!important;opacity:.5}.row-list{display:flex;flex-direction:column}.data-row{display:flex;align-items:center;justify-content:space-between;gap:3vw;padding:3.5vw 0;border-bottom:1px solid var(--border)}.data-row:last-child{border:0}.data-row>span{display:flex;min-width:0;flex-direction:column;gap:1vw}.data-row strong{font-size:3.5vw}.data-row small{color:var(--sub);font-size:2.7vw}.data-row em{font-style:normal;font-weight:600;white-space:nowrap}.income,.up{color:var(--up)!important}.down{color:var(--down)!important}.empty-state{display:flex;align-items:center;flex-direction:column;padding:9vw 3vw;color:var(--sub);text-align:center}.empty-state svg{width:34px;height:34px;margin-bottom:3vw}.empty-state strong{margin-bottom:1.5vw;color:var(--app-text);font-size:3.6vw}.empty-state span{max-width:70vw;font-size:3vw;line-height:1.55}.empty-state.compact{padding:7vw 2vw}.stock-list,.card-list,.settings-card{overflow:hidden;border:1px solid var(--border);border-radius:3vw;background:var(--card-bg)}.stock-head,.stock-row{display:grid;grid-template-columns:1.2fr 1fr 1.15fr;align-items:center;gap:2vw}.stock-head{padding:3vw 4vw;color:var(--sub);font-size:2.7vw}.stock-head span:not(:first-child){text-align:right}.stock-row{width:100%;padding:3vw 4vw;border:0;border-top:1px solid var(--border);background:none;text-align:left;cursor:pointer}.stock-row>span,.stock-row>em{display:flex;flex-direction:column}.stock-row>strong,.stock-row>em{text-align:right}.stock-row small{margin-top:.5vw;color:var(--sub);font-size:2.5vw;font-style:normal}.market-scroll{display:flex;gap:3vw;overflow-x:auto;padding-bottom:2vw;scrollbar-width:none}.market-card{display:flex;min-width:29vw;flex-direction:column;padding:3vw;border:1px solid var(--border);border-radius:3vw;background:var(--card-bg);text-align:left;cursor:pointer}.market-card small{margin-bottom:1vw;color:var(--sub)}.market-card strong{font-size:3.7vw}.market-card em{margin-top:.5vw;font-size:2.7vw;font-style:normal}.market-card svg{height:5vw;margin-top:2vw}.market-card path{stroke:currentColor}.tag-list{display:grid;grid-template-columns:repeat(4,1fr);gap:2vw}.tag-list div{display:flex;align-items:center;flex-direction:column;gap:1vw;padding:2.5vw 1vw;border:1px solid var(--border);border-radius:2vw;background:var(--card-bg)}.tag-list strong{font-size:3vw}.tag-list span{color:var(--sub);font-size:2.3vw}.profile-card{display:flex;align-items:center;margin-bottom:6vw;padding:4vw;border:1px solid var(--border);border-radius:4vw;background:var(--card-bg)}.avatar{display:grid;width:14vw;height:14vw;margin-right:4vw;border-radius:50%;background:#e5e5ea;color:#777;place-items:center}.avatar svg{width:32px;height:32px}.profile-card>span{display:flex;min-width:0;flex:1;flex-direction:column;gap:1vw}.profile-card>span strong{font-size:4.5vw}.profile-card>span small{overflow:hidden;color:var(--sub);font-size:2.6vw;text-overflow:ellipsis}.profile-card>em{padding:.8vw 1.6vw;border-radius:1vw;background:var(--icon-bg);color:var(--sub);font-size:2.3vw;font-style:normal}.asset-card.compact{padding:4vw 5vw}.asset-card.compact .card-main{margin:0}.card-sub{color:var(--sub);font-size:2.8vw}.service-list{overflow:hidden;border:1px solid var(--border);border-radius:4vw;background:var(--card-bg)}.service-list button{display:flex;align-items:center;width:100%;min-height:13vw;padding:3.5vw 4vw;border:0;border-bottom:1px solid var(--border);background:none;text-align:left;cursor:pointer}.service-list button:last-child{border:0}.service-list i{display:grid;width:7vw;margin-right:3vw;color:var(--sub);place-items:center}.service-list svg{width:19px;height:19px}.service-list span{flex:1;font-size:3.5vw}.service-list em{margin-right:2vw;color:var(--sub);font-size:2.7vw;font-style:normal}.service-list b{color:var(--sub);font-size:5vw;font-weight:300}.bottom-tab-bar{position:absolute;right:0;bottom:0;left:0;z-index:5;display:flex;height:calc(60px + env(safe-area-inset-bottom));align-items:center;justify-content:space-around;padding-bottom:env(safe-area-inset-bottom);border-top:1px solid var(--border);background:var(--card-bg)}.bottom-tab-bar button{display:grid;width:60px;height:100%;padding:0;border:0;background:none;color:var(--sub);cursor:pointer;place-items:center}.bottom-tab-bar button.active{color:var(--app-text)}.bottom-tab-bar svg{width:24px;height:24px}.detail-page{padding-top:28px}.detail-header{display:grid;grid-template-columns:44px 1fr 44px;align-items:center;margin-bottom:6vw}.detail-header h2{margin:0;text-align:center;font-size:4.7vw}.back-button{font-size:34px;font-weight:200}.text-button{border:0;background:none;font-size:3.2vw;cursor:pointer}.detail-section{display:flex;flex-direction:column;gap:4vw}.info-card,.credit-card{display:flex;flex-direction:column;gap:2vw;padding:4vw;border:1px solid var(--border);border-radius:3vw;background:var(--card-bg)}.info-card strong{font-size:3.5vw}.info-card span{color:var(--sub);font-size:3vw;line-height:1.6}.order-row button{border:0;background:none;color:var(--sub);font-size:3vw;cursor:pointer}
-.settings-card button{display:flex;align-items:center;width:100%;padding:4vw;border:0;background:none;text-align:left;cursor:pointer}.settings-card button>span{display:flex;flex:1;flex-direction:column;gap:1vw}.settings-card strong{font-size:3.5vw}.settings-card small{color:var(--sub);font-size:2.7vw}.settings-card i{position:relative;width:12vw;height:7vw;border-radius:5vw;background:#d1d1d6;transition:.2s}.settings-card i b{position:absolute;top:.6vw;left:.6vw;width:5.8vw;height:5.8vw;border-radius:50%;background:#fff;box-shadow:0 1px 4px rgba(0,0,0,.2);transition:.2s}.settings-card i.on{background:#34c759}.settings-card i.on b{transform:translateX(5vw)}.credit-card{padding:6vw;background:#1c1c1e;color:#fff}.credit-card>small{color:#aaa}.credit-card>strong{font-size:8vw}.credit-card>div{display:flex;justify-content:space-between;color:#bbb;font-size:2.8vw}.primary-button,.danger-button,.secondary-button{display:flex;align-items:center;justify-content:center;padding:3vw 5vw;border:0;border-radius:3vw;font-weight:600;cursor:pointer}.primary-button{background:var(--app-text);color:var(--app-bg)!important;}.secondary-button{background:var(--icon-bg);color:var(--app-text);}.primary-button:disabled{cursor:not-allowed;opacity:.35}.primary-button.wide{width:100%;min-height:12vw}.danger-button{background:#ff3b30;color:#fff!important}.clickable{width:100%;border-top:0;border-right:0;border-left:0;background:none;text-align:left;cursor:pointer}.faq article{display:flex;flex-direction:column;gap:2vw;padding:4vw;border:1px solid var(--border);border-radius:3vw;background:var(--card-bg)}.faq article strong{font-size:3.5vw}.faq article span{color:var(--sub);font-size:3vw;line-height:1.6}.dialog-layer{position:absolute;inset:0;z-index:30;display:flex;align-items:flex-end;background:rgba(0,0,0,.36)}.dialog-card{width:100%;max-height:88%;overflow-y:auto;padding:5vw 5vw calc(5vw + env(safe-area-inset-bottom));border-radius:5vw 5vw 0 0;background:var(--card-bg);box-shadow:0 -10px 30px rgba(0,0,0,.12)}.dialog-card header{display:flex;align-items:center;justify-content:space-between;margin-bottom:5vw}.dialog-card h3{margin:0;font-size:4.5vw}.dialog-card header button{width:36px;height:36px;border:0;border-radius:50%;background:var(--icon-bg);color:var(--sub);font-size:24px;cursor:pointer}.dialog-card label{display:flex;flex-direction:column;gap:2vw;margin-bottom:4vw;color:var(--sub);font-size:3vw}.dialog-card input,.dialog-card select{width:100%;height:12vw;padding:0 3.5vw;border:1px solid var(--border);border-radius:3vw;outline:none;background:var(--app-bg);color:var(--app-text);font-size:3.6vw}.dialog-card input:focus,.dialog-card select:focus{border-color:var(--app-text);box-shadow:0 0 0 2px var(--icon-bg)}.segmented{display:grid;grid-template-columns:1fr 1fr;margin-bottom:4vw;padding:.8vw;border-radius:3vw;background:var(--app-bg)}.segmented button{padding:2.5vw;border:0;border-radius:2.4vw;background:none;color:var(--sub);cursor:pointer}.segmented button.active{background:var(--card-bg);color:var(--app-text);box-shadow:0 1px 5px rgba(0,0,0,.08)}.form-note{margin:0 0 4vw;color:var(--sub);font-size:2.8vw;line-height:1.55}.confirm-copy{display:flex;flex-direction:column;gap:2vw}.confirm-copy strong{font-size:4vw}.confirm-copy span{color:var(--sub);font-size:3vw;line-height:1.6}.confirm-actions{display:grid;grid-template-columns:1fr 1fr;gap:3vw;margin-top:5vw}.confirm-actions>button:first-child{border:1px solid var(--border);border-radius:3vw;background:var(--app-bg)}.toast{position:absolute;right:5vw;bottom:calc(76px + env(safe-area-inset-bottom));left:5vw;z-index:50;padding:3.5vw;border-radius:3vw;background:#1c1c1e;color:#fff;text-align:center;font-size:3.2vw;box-shadow:0 8px 22px rgba(0,0,0,.18)}.toast.error{background:#b42318}.toast-enter-active,.toast-leave-active{transition:.2s}.toast-enter-from,.toast-leave-to{transform:translateY(8px);opacity:0}@media (min-width:700px){.tab-content{padding-right:28px;padding-left:28px}.page-header{margin-bottom:28px}.title-button{font-size:28px}.title-button span{margin-left:12px;font-size:18px}.asset-card{margin-bottom:28px;padding:28px;border-radius:22px}.asset-amount{font-size:42px}.card-title{font-size:15px}.sparkline{width:140px;height:44px}.action-grid{margin-bottom:38px}.action-item i{width:62px;height:62px}.action-item span{font-size:15px}.section-block{margin-bottom:38px}.section-block h3{margin-bottom:20px;font-size:20px}.quick-funcs{gap:14px}.quick-card{min-height:84px;padding:15px;border-radius:16px}.quick-card>i{width:42px;height:42px}.quick-card strong{font-size:16px}.quick-card small{font-size:13px}.dialog-card{padding:26px 28px 30px;border-radius:26px 26px 0 0}.dialog-card h3{font-size:23px}.dialog-card input,.dialog-card select{height:54px;font-size:17px}.detail-header h2{font-size:24px}}
-.elegant-bills{display:flex;flex-direction:column;gap:0}.eb-header{padding:2vw 5vw 6vw;border-bottom:1px solid var(--border);margin:0 -5vw}.eb-stats{display:flex;gap:12vw;margin-bottom:6vw}.eb-stat-item{display:flex;flex-direction:column;gap:1.5vw}.eb-label{font-size:3.2vw;color:var(--sub);font-weight:400}.eb-value{font-size:6.5vw;font-weight:600;letter-spacing:-0.5px}.eb-filters{display:flex;justify-content:space-between;align-items:center}.eb-month-picker{position:relative}.eb-picker-btn{background:var(--card-bg);border:1px solid var(--border);border-radius:5vw;padding:1.5vw 3.5vw;font-size:3.3vw;font-weight:500;display:flex;align-items:center;gap:1vw;color:var(--app-text);box-shadow:0 2px 6px rgba(0,0,0,.02)}.eb-picker-btn svg{width:3.5vw;height:3.5vw}.eb-real-select{position:absolute;inset:0;opacity:0;width:100%;height:100%}.eb-type-tabs{display:flex;gap:3vw}.eb-type-tabs button{background:none;border:none;font-size:3.3vw;color:var(--sub);padding:1vw 0;font-weight:500;position:relative}.eb-type-tabs button.active{color:var(--app-text)}.eb-type-tabs button.active::after{content:'';position:absolute;bottom:-1vw;left:50%;transform:translateX(-50%);width:1.2vw;height:1.2vw;border-radius:50%;background:var(--app-text)}
-.eb-search-bar{display:flex;align-items:center;background:var(--app-bg);border:1px solid var(--border);border-radius:3vw;padding:0 3vw;margin-top:4vw;height:10vw;transition:border-color 0.2s}
-.eb-search-bar:focus-within{border-color:var(--app-text)}
-.eb-search-bar svg{width:4.5vw;height:4.5vw;stroke:var(--sub);flex:none}
-.eb-search-bar input{flex:1;background:transparent;border:none;outline:none;padding:0 2vw;font-size:3.5vw;color:var(--app-text);width:100%}
-.eb-search-bar input::placeholder{color:var(--sub)}
-.eb-search-clear{background:none;border:none;padding:1vw;display:flex;align-items:center;justify-content:center;cursor:pointer}
-.eb-search-clear svg{width:4.5vw;height:4.5vw}
-.eb-group-list{display:flex;flex-direction:column;padding-bottom:10vw}.eb-group{padding-top:6vw}.eb-group-title{color:var(--sub);font-size:3.2vw;font-weight:500;margin-bottom:2vw;text-transform:uppercase}.eb-list{display:flex;flex-direction:column;background:var(--card-bg);margin:0 -5vw;padding:0 5vw;border-top:1px solid var(--border);border-bottom:1px solid var(--border)}.eb-item{display:flex;align-items:center;padding:4.5vw 0;border-bottom:1px solid var(--border)}.eb-item:last-child{border-bottom:none}.eb-icon{display:grid;width:10vw;height:10vw;border-radius:50%;background:var(--app-bg);border:1px solid var(--border);color:var(--app-text);margin-right:4vw;place-items:center}.eb-icon svg{width:4.5vw;height:4.5vw;stroke-width:1.5}.eb-content{display:flex;flex:1;flex-direction:column;gap:1vw}.eb-main-line{display:flex;justify-content:space-between;align-items:center}.eb-title{font-size:3.8vw;font-weight:500;color:var(--app-text)}.eb-amount{font-size:4.2vw;font-weight:600}.eb-amount.exp{color:var(--app-text)}.eb-amount.inc{color:#e64a19}.eb-sub-line{display:flex;justify-content:space-between;color:var(--sub);font-size:2.8vw}
-.eb-item.is-editing{cursor:pointer;padding-left:11vw;position:relative;transition:0.2s}
-.eb-checkbox{position:absolute;left:2vw;top:50%;transform:translateY(-50%);width:5.5vw;height:5.5vw;border:2px solid var(--border);border-radius:50%;display:grid;place-items:center;background:var(--app-bg);transition:0.2s}
-.eb-checkbox.is-checked{background:var(--app-text);border-color:var(--app-text)}
-.eb-checkbox svg{width:3.5vw;height:3.5vw;stroke:var(--app-bg)}
-.eb-batch-actions{position:fixed;bottom:calc(60px + env(safe-area-inset-bottom) + 3vw);left:4vw;right:4vw;background:var(--card-bg);border:1px solid var(--border);border-radius:4vw;padding:3.5vw 5vw;display:flex;justify-content:space-between;align-items:center;box-shadow:0 8px 30px rgba(0,0,0,.15);z-index:40;animation:eb-slide-up 0.3s cubic-bezier(0.16, 1, 0.3, 1)}
-.eb-select-all{display:flex;align-items:center;gap:3vw;background:none;border:none;color:var(--app-text);font-size:3.8vw;cursor:pointer;padding:0}
-.eb-select-all .eb-checkbox{position:static;transform:none;border-color:var(--sub);background:transparent}
-.eb-select-all .eb-checkbox.is-checked{background:var(--app-text);border-color:var(--app-text)}
-.eb-select-all .eb-checkbox svg{stroke:var(--app-bg)}
-.eb-delete-btn{background:#ff3b30;color:#fff;border:none;border-radius:2.5vw;padding:2vw 4vw;font-size:3.5vw;font-weight:500;cursor:pointer;transition:0.2s}
-.eb-delete-btn:disabled{opacity:0.4;cursor:not-allowed}
-@keyframes eb-slide-up { from { transform: translateY(120%); opacity: 0 } to { transform: translateY(0); opacity: 1 } }
-.credit-card { position: relative; }
-.credit-settings-btn { position: absolute; top: 4vw; right: 4vw; border: none; background: none; color: #fff; opacity: 0.7; cursor: pointer; padding: 2vw; border-radius: 50%; display: grid; place-items: center; }
-.credit-settings-btn:hover { opacity: 1; background: rgba(255,255,255,0.1); }
-.credit-settings-btn svg { width: 22px; height: 22px; stroke: currentColor; stroke-width: 1.5; }
-
-.activation-card { display: flex; flex-direction: column; align-items: center; padding: 8vw 5vw; background: var(--card-bg); border: 1px solid var(--border); border-radius: 4vw; text-align: center; }
-.activation-icon { width: 16vw; height: 16vw; color: #007aff; margin-bottom: 4vw; stroke-width: 1.5; }
-.activation-card strong { font-size: 5vw; margin-bottom: 2vw; }
-.activation-card span { color: var(--sub); font-size: 3.2vw; margin-bottom: 8vw; }
-.activation-form { width: 100%; display: flex; flex-direction: column; gap: 4vw; text-align: left; }
-.activation-form label { display: flex; flex-direction: column; gap: 2vw; color: var(--sub); font-size: 3vw; }
-.activation-form select, .activation-form input { width: 100%; height: 12vw; padding: 0 3.5vw; border: 1px solid var(--border); border-radius: 3vw; background: var(--app-bg); color: var(--app-text); font-size: 3.6vw; outline: none; }
-.activation-form select:focus, .activation-form input:focus { border-color: var(--app-text); }
-.mt-4 { margin-top: 4vw; }
-.danger-button.wide { width: 100%; min-height: 12vw; }
-
-.loading-spinner { display: inline-block; width: 16px; height: 16px; margin-right: 8px; border: 2px solid rgba(255,255,255,0.3); border-radius: 50%; border-top-color: #fff; animation: spin 1s ease-in-out infinite; }
-@keyframes spin { to { transform: rotate(360deg); } }
-
-@media (min-width:700px){
-  .eb-batch-actions{left:50%;width:600px;transform:translateX(-50%);bottom:40px}
-  @keyframes eb-slide-up { from { transform: translate(-50%, 120%); opacity: 0 } to { transform: translate(-50%, 0); opacity: 1 } }
+.w-top-status-row > .w-back-btn,
+.w-top-action-group {
+  flex-shrink: 0;
 }
-
-/* Empty State Fixes */
-.empty-state {
-  padding: 16vw 5vw !important;
+.w-header-stamp {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  opacity: 0.6;
 }
-.empty-state strong {
-  font-size: 4.8vw !important;
-  margin-bottom: 2.5vw !important;
+.stamp-dot {
+  width: 3px;
+  height: 3px;
+  background-color: var(--w-accent-gold);
 }
-.empty-state span {
-  font-size: 3.5vw !important;
-  margin-bottom: 6vw !important;
-  display: block;
+.stamp-text {
+  font-family: var(--w-serif-en);
+  font-size: 8px;
+  letter-spacing: 2px;
+  color: var(--w-text-muted);
 }
-.empty-state .primary-button {
-  margin-top: 2vw !important;
+@media (max-width: 480px) {
+  .w-header-stamp {
+    display: none;
+  }
 }
-
-/* 极简网格银行卡样式 */
-.cards-panel-redesign { display: flex; flex-direction: column; gap: 4vw; padding: 0 4vw; }
-.cards-toolbar { display: flex; flex-direction: column; gap: 3vw; }
-.cards-search { display: flex; align-items: center; background: var(--card-bg); border: 1px solid var(--border); border-radius: 2.5vw; padding: 0 3vw; height: 10vw; }
-.cards-search svg { width: 4.5vw; height: 4.5vw; stroke: var(--sub); flex: none; margin-right: 2vw; }
-.cards-search input { flex: 1; background: transparent; border: none; outline: none; font-size: 3.5vw; color: var(--app-text); height: 100%; padding: 0; }
-
-.cards-filters-row { display: flex; justify-content: space-between; align-items: center; gap: 2vw; }
-.cards-tabs { display: flex; gap: 1vw; background: var(--icon-bg); padding: 1vw; border-radius: 2.5vw; }
-.cards-tabs button { border: none; background: transparent; padding: 1.5vw 3vw; border-radius: 2vw; font-size: 3vw; color: var(--sub); font-weight: 500; cursor: pointer; transition: 0.2s; white-space: nowrap; }
-.cards-tabs button.active { background: var(--card-bg); color: var(--app-text); box-shadow: 0 1px 4px rgba(0,0,0,0.08); }
-.cards-sort { flex: 1; display: flex; justify-content: flex-end; }
-.cards-sort select { background: var(--card-bg); border: 1px solid var(--border); padding: 1.5vw 2vw; border-radius: 2vw; font-size: 3vw; color: var(--app-text); outline: none; min-width: 24vw; cursor: pointer; }
-
-.minimal-card-grid { display: flex; flex-direction: column; gap: 5vw; padding-bottom: 6vw; perspective: 1000px; align-items: center; }
-
-.m-card-container { width: 90%; max-width: 400px; aspect-ratio: 1.586; position: relative; border-radius: 4vw; }
-.m-card-container.is-removing { transform: scale(0.8); opacity: 0; transition: 0.4s; pointer-events: none; }
-.m-card-flipper { width: 100%; height: 100%; position: relative; transition: transform 0.6s cubic-bezier(0.4, 0, 0.2, 1); transform-style: preserve-3d; cursor: pointer; }
-.m-card-container.is-flipped .m-card-flipper { transform: rotateY(180deg); }
-
-.m-card-front, .m-card-back { position: absolute; inset: 0; backface-visibility: hidden; border-radius: 4vw; background-color: var(--card-bg); background-size: cover; background-position: center; box-shadow: 0 4px 15px rgba(0,0,0,0.06); border: 1px solid var(--border); overflow: hidden; }
-.m-card-front[style*="background-image"], .m-card-back[style*="background-image"] { border: none; }
-
-.m-card-overlay { width: 100%; height: 100%; display: flex; flex-direction: column; background: transparent; backdrop-filter: blur(4px); position: relative; }
-.dark-theme .m-card-overlay { background: transparent; }
-.m-card-front:not([style*="background-image"]) .m-card-overlay,
-.m-card-back:not([style*="background-image"]) .m-card-overlay { backdrop-filter: none; }
-
-.m-card-front .m-card-overlay { padding: 4.5vw; justify-content: space-between; }
-.m-card-header { display: flex; justify-content: space-between; align-items: flex-start; }
-.m-card-bank { font-size: 4vw; font-weight: 600; color: var(--app-text); max-width: 70%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-shadow: 0 1px 6px rgba(255,255,255,0.9), 0 2px 10px rgba(255,255,255,0.9); }
-.dark-theme .m-card-bank { text-shadow: 0 1px 6px rgba(0,0,0,0.9), 0 2px 10px rgba(0,0,0,0.9); }
-.m-card-type { font-size: 3vw; color: var(--sub); font-style: italic; font-weight: 700; letter-spacing: 0.5px; opacity: 0; }
-
-.m-card-chip { width: 9.5vw; height: 7vw; background: linear-gradient(135deg, #e5e5ea, #d1d1d6); border-radius: 1.5vw; margin-top: 2vw; position: relative; overflow: hidden; border: 1px solid rgba(0,0,0,0.06); box-shadow: inset 0 1px 2px rgba(255,255,255,0.5); }
-.m-card-chip-row { display: flex; justify-content: space-between; align-items: flex-end; margin-top: 2vw; }
-.m-card-chip { width: 9.5vw; height: 7vw; background: linear-gradient(135deg, #e5e5ea, #d1d1d6); border-radius: 1.5vw; position: relative; overflow: hidden; border: 1px solid rgba(0,0,0,0.06); box-shadow: inset 0 1px 2px rgba(255,255,255,0.5); }
-.m-card-chip::after { content: ''; position: absolute; inset: 1px; border: 1px solid rgba(0,0,0,0.04); border-radius: 0.5vw; }
-.dark-theme .m-card-chip { background: linear-gradient(135deg, #48484a, #2c2c2e); border: 1px solid rgba(255,255,255,0.1); }
-.dark-theme .m-card-chip::after { border: 1px solid rgba(255,255,255,0.05); }
-
-.m-card-qr-top-btn { position: absolute; top: 4.5vw; right: 4.5vw; width: 6.5vw; height: 6.5vw; background: transparent; border: none; cursor: pointer; display: grid; place-items: center; z-index: 2; padding: 0; color: rgba(0,0,0,0.3); transition: 0.2s; }
-.dark-theme .m-card-qr-top-btn { color: rgba(255,255,255,0.4); }
-.m-card-qr-top-btn:hover { color: rgba(0,0,0,0.5); }
-.dark-theme .m-card-qr-top-btn:hover { color: rgba(255,255,255,0.6); }
-.m-card-qr-top-btn:active { transform: scale(0.92); }
-.m-card-qr-top-btn svg { width: 100%; height: 100%; fill: currentColor; stroke: none; }
-
-.m-card-number { font-family: 'Courier New', Courier, monospace; font-size: 5vw; font-weight: 600; letter-spacing: 2px; color: var(--app-text); margin-top: auto; text-shadow: 0 1px 6px rgba(255,255,255,0.9), 0 2px 10px rgba(255,255,255,0.9); }
-.dark-theme .m-card-number { text-shadow: 0 1px 6px rgba(0,0,0,0.9), 0 2px 10px rgba(0,0,0,0.9); }
-
-.m-card-back { transform: rotateY(180deg); }
-.m-card-back .m-card-overlay { padding: 0; display: flex; flex-direction: column; }
-.m-card-stripe { height: 9vw; background: rgba(0,0,0,0.8); margin-top: 5vw; width: 100%; box-shadow: 0 1px 2px rgba(0,0,0,0.1); }
-.dark-theme .m-card-stripe { background: rgba(255,255,255,0.1); }
-.m-card-cvv-row { background: var(--app-bg); margin: 3vw 4.5vw 0 auto; padding: 1.5vw 3vw; border-radius: 1.5vw; display: flex; gap: 3vw; align-items: center; border: 1px solid var(--border); box-shadow: inset 0 1px 3px rgba(0,0,0,0.05); }
-.m-card-cvv-row span { font-size: 3vw; color: var(--sub); font-weight: 500; }
-.m-card-cvv-row em { font-family: 'Courier New', Courier, monospace; font-size: 4vw; font-weight: bold; font-style: normal; color: var(--app-text); }
-
-.m-card-actions { display: flex; justify-content: center; padding: 0 4.5vw; margin-top: auto; margin-bottom: 4.5vw; gap: 6vw; }
-.m-btn-edit, .m-btn-remove { flex: 1; max-width: 140px; background: var(--icon-bg); border: 1px solid var(--border); color: var(--app-text); border-radius: 4vw; padding: 2.5vw 0; font-size: 3.5vw; cursor: pointer; transition: 0.2s; font-weight: 600; box-shadow: 0 2px 8px rgba(0,0,0,0.04); }
-.m-btn-edit:active, .m-btn-remove:active { background: var(--border); }
-
-/* 添加卡片表单 */
-.card-add-form { display: flex; flex-direction: column; gap: 0; }
-.cover-uploader-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 3vw; margin-bottom: 4vw; }
-.uploader-label { font-size: 3vw; color: var(--sub); margin-bottom: 1.5vw; display: block; text-align: center; }
-.card-cover-uploader { width: 100%; height: 22vw; max-height: 120px; border: 2px dashed var(--border); border-radius: 3vw; display: flex; align-items: center; justify-content: center; background-color: var(--app-bg); background-size: cover; background-position: center; cursor: pointer; transition: 0.2s; position: relative; }
-.card-cover-uploader:hover { border-color: var(--sub); }
-.card-cover-uploader span { color: var(--sub); font-size: 3vw; font-weight: 500; background: rgba(0,0,0,0.5); padding: 1vw 2vw; border-radius: 2vw; color: #fff; backdrop-filter: blur(2px); }
-.clear-cover-btn { position: absolute; top: 1vw; right: 1vw; width: 6vw; height: 6vw; border-radius: 50%; background: rgba(0,0,0,0.6); color: white; border: none; font-size: 4vw; display: grid; place-items: center; cursor: pointer; }
-.blur-slider { margin-top: 2vw; display: flex; flex-direction: column; gap: 1vw; }
-.blur-slider label { font-size: 2.5vw; color: var(--sub); margin: 0; }
-.blur-slider input[type=range] { width: 100%; height: auto; padding: 0; }
-.form-actions-row { display: flex; gap: 3vw; margin-top: 2vw; }
-.flex-1 { flex: 1; }
-
-.favorite-switch-row { display: flex; flex-direction: row; align-items: center; justify-content: space-between; margin-top: 2vw; margin-bottom: 4vw; color: var(--sub); font-size: 3vw; }
-.dialog-card .wallet-switch { margin: 0; display: inline-block; }
-.wallet-switch { position: relative; width: 12vw; height: 7vw; border-radius: 5vw; flex: none; cursor: pointer; }
-.wallet-switch input { position: absolute; opacity: 0; width: 0; height: 0; }
-.wallet-switch i { position: absolute; inset: 0; border-radius: 5vw; background: #d1d1d6; transition: 0.2s; display: block; }
-.wallet-switch i b { position: absolute; top: 0.6vw; left: 0.6vw; width: 5.8vw; height: 5.8vw; border-radius: 50%; background: #fff; box-shadow: 0 1px 4px rgba(0,0,0,.2); transition: 0.2s; display: block; }
-.wallet-switch input:checked + i { background: #34c759; }
-.wallet-switch input:checked + i b { transform: translateX(5vw); }
-.dark-theme .wallet-switch i { background: #39393d; }
-@media (min-width:700px){
-  .favorite-switch-row { font-size: 15px; margin-bottom: 24px; margin-top: 12px; }
-  .wallet-switch { width: 50px; height: 30px; }
-  .wallet-switch i { border-radius: 20px; }
-  .wallet-switch i b { width: 24px; height: 24px; top: 3px; left: 3px; }
-  .wallet-switch input:checked + i b { transform: translateX(20px); }
-}
-
-/* Card Details View */
-.card-details-view { display: flex; flex-direction: column; gap: 4vw; padding-bottom: 4vw; }
-.cd-header { display: flex; flex-direction: column; gap: 1vw; align-items: center; text-align: center; margin-bottom: 4vw; }
-.cd-header strong { font-size: 5vw; color: var(--app-text); }
-.cd-header span { font-size: 3.2vw; color: var(--sub); }
-.cd-data-box { background: var(--app-bg); border: 1px solid var(--border); border-radius: 3vw; padding: 4vw; display: flex; flex-direction: column; gap: 4vw; }
-.cd-data-item { display: flex; flex-direction: column; gap: 1.5vw; }
-.cd-label { font-size: 3vw; color: var(--sub); }
-.cd-value { font-size: 7vw; font-weight: 600; letter-spacing: -0.5px; color: var(--app-text); }
-.cd-value-sub { font-size: 4vw; font-weight: 500; color: var(--app-text); }
-.amount-down { color: var(--down) !important; }
-.amount-up { color: var(--up) !important; }
-.cd-actions-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 3vw; margin-top: 6vw; }
-
-/* 行情来源与运行状态 */
-.header-actions { display: flex; align-items: center; gap: 1vw; }
-.card-stats { flex-wrap: wrap; row-gap: 3vw; }
-.market-status { width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 3vw; margin: -2vw 0 5vw; padding: 3.2vw 4vw; border: 1px solid var(--border); border-radius: 3vw; background: var(--card-bg); text-align: left; cursor: pointer; }
-.market-status>span { display: flex; min-width: 0; flex-direction: column; gap: .8vw; }
-.market-status strong { font-size: 3.3vw; }
-.market-status small { color: var(--sub); font-size: 2.6vw; }
-.market-status em { flex: none; color: var(--sub); font-size: 2.5vw; font-style: normal; }
-.market-status.error,.market-status.stale { border-color: rgba(255,59,48,.25); }
-.market-card:disabled { cursor: default; opacity: .62; }
-.market-card polyline { fill: none; stroke: currentColor; stroke-width: 1.5; vector-effect: non-scaling-stroke; }
-.market-mode-grid { display: grid; gap: 3vw; }
-.market-mode-grid>button { display: flex; flex-direction: column; gap: 1vw; padding: 4vw; border: 1px solid var(--border); border-radius: 3vw; background: var(--card-bg); text-align: left; cursor: pointer; }
-.market-mode-grid>button.active { border-color: var(--app-text); box-shadow: 0 0 0 1px var(--app-text); }
-.market-mode-grid strong { font-size: 3.7vw; }
-.market-mode-grid small { color: var(--sub); font-size: 2.9vw; line-height: 1.5; }
-.market-runtime-card { display: flex; align-items: center; justify-content: space-between; gap: 3vw; padding: 4vw; }
-.market-runtime-card>div { display: flex; min-width: 0; flex-direction: column; gap: 1vw; }
-.market-runtime-card strong { font-size: 3.5vw; }
-.market-runtime-card small { color: var(--sub); font-size: 2.8vw; }
-.market-runtime-card .market-error { color: #ff3b30; line-height: 1.4; }
-.market-runtime-card>button { width: auto; min-height: 9vw; padding: 2vw 3vw; border: 0; }
-.market-form-label,.custom-market-form label { display: flex; flex-direction: column; gap: 2vw; color: var(--sub); font-size: 3vw; }
-.market-form-label select,.custom-market-form input,.custom-market-form select,.custom-market-form textarea { width: 100%; min-height: 12vw; padding: 3vw 3.5vw; border: 1px solid var(--border); border-radius: 3vw; outline: none; background: var(--card-bg); color: var(--app-text); font: inherit; }
-.custom-market-form { display: flex; flex-direction: column; gap: 4vw; padding-top: 2vw; }
-.custom-market-form textarea { min-height: 22vw; resize: vertical; }
-.field-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 3vw; }
-.live-symbol-manager { display: flex; flex-direction: column; gap: 3vw; padding: 4vw; border: 1px solid var(--border); border-radius: 3vw; background: var(--card-bg); }
-.live-symbol-manager>div:first-child { display: flex; flex-direction: column; gap: 1vw; }
-.live-symbol-manager>div:first-child strong { font-size: 3.5vw; }
-.live-symbol-manager>div:first-child small { color: var(--sub); font-size: 2.8vw; line-height: 1.5; }
-.live-symbol-add { display: flex; gap: 2vw; }
-.live-symbol-add input { min-width: 0; flex: 1; height: 11vw; padding: 0 3vw; border: 1px solid var(--border); border-radius: 2.5vw; outline: none; background: var(--app-bg); color: var(--app-text); }
-.live-symbol-add button { flex: none; padding: 2vw 4vw; }
-.live-symbol-list { display: flex; flex-direction: column; }
-.live-symbol-list>div { display: flex; align-items: center; gap: 3vw; padding: 2.5vw 0; border-top: 1px solid var(--border); }
-.live-symbol-list span { display: flex; min-width: 0; flex: 1; flex-direction: column; gap: .5vw; }
-.live-symbol-list span strong { overflow: hidden; font-size: 3.3vw; text-overflow: ellipsis; white-space: nowrap; }
-.live-symbol-list span small { color: var(--sub); font-size: 2.6vw; }
-.live-symbol-list button { padding: 1vw 0; border: 0; background: none; color: var(--sub); font-size: 2.8vw; cursor: pointer; }
-.receipt-section{gap:4vw}.receipt-poster-wrap{display:flex;min-height:72vw;align-items:center;justify-content:center;overflow:hidden;border:1px solid var(--border);border-radius:4vw;background:var(--card-bg)}.receipt-poster{display:block;width:min(100%,360px);height:auto}.receipt-loading{color:var(--sub);font-size:3vw}.receipt-fields{display:flex;flex-direction:column;gap:3vw;padding:4vw;border:1px solid var(--border);border-radius:3vw;background:var(--card-bg)}.receipt-fields label{display:flex;flex-direction:column;gap:1.5vw;color:var(--sub);font-size:3vw}.receipt-fields input{box-sizing:border-box;width:100%;height:11vw;padding:0 3.5vw;border:1px solid var(--border);border-radius:2.5vw;outline:0;background:var(--app-bg);color:var(--app-text)}.receipt-actions{display:grid;grid-template-columns:1fr 1fr;gap:3vw}.receipt-actions button,.secondary-button.wide{width:100%;min-height:11vw}.receipt-actions button:disabled,.receipt-fields button:disabled{cursor:not-allowed;opacity:.4}
-@media (min-width:700px){.market-status{margin:-10px 0 26px;padding:16px 20px;border-radius:15px}.market-status strong{font-size:16px}.market-status small,.market-status em{font-size:13px}.market-mode-grid{gap:14px}.market-mode-grid>button{padding:18px;border-radius:15px}.market-mode-grid strong{font-size:17px}.market-mode-grid small{font-size:14px}.market-runtime-card{padding:18px}.market-runtime-card strong{font-size:16px}.market-runtime-card small{font-size:13px}.market-form-label,.custom-market-form label{font-size:14px}.market-form-label select,.custom-market-form input,.custom-market-form select{min-height:50px;padding:12px 15px;border-radius:14px}.custom-market-form textarea{min-height:100px;padding:12px 15px;border-radius:14px}}
 </style>

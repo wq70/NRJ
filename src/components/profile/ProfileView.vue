@@ -1,8 +1,11 @@
 /* WARNING: 本项目专属“粘人精”，严禁出现 Kiro、Krio、周棋洛等任何相关英文或拼音命名！ */
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import { useChatState } from '../../composables/useChatState'
 import TextEditModal from '../TextEditModal.vue'
+
+// 模块级单例记忆滚动位置，防止组件销毁后位置丢失
+let savedProfileScrollTop = 0
 
 const { myProfile, saveMyProfile } = useChatState()
 
@@ -25,16 +28,48 @@ const emit = defineEmits<{
 }>()
 
 const showStatusModal = ref(false)
+const profileMainRef = ref<HTMLElement | null>(null)
+
+const handleScroll = (e: Event) => {
+  const target = e.target as HTMLElement
+  if (target) {
+    savedProfileScrollTop = target.scrollTop
+  }
+}
+
+const restoreScroll = () => {
+  nextTick(() => {
+    requestAnimationFrame(() => {
+      if (profileMainRef.value && savedProfileScrollTop > 0) {
+        profileMainRef.value.scrollTop = savedProfileScrollTop
+      }
+    })
+  })
+}
+
+onMounted(() => {
+  restoreScroll()
+})
+
+onBeforeUnmount(() => {
+  if (profileMainRef.value) {
+    savedProfileScrollTop = profileMainRef.value.scrollTop
+  }
+})
 
 const handleStatusSave = (newVal: string) => {
   myProfile.value.statusText = newVal
   saveMyProfile()
 }
+
+defineExpose({
+  restoreScroll
+})
 </script>
 
 <template>
   <div class="view-container with-tabbar">
-    <main class="profile-main custom-profile">
+    <main ref="profileMainRef" class="profile-main custom-profile" @scroll.passive="handleScroll">
       <div class="profile-card-wrapper">
         <!-- 左侧星星按钮 -->
         <div 

@@ -1,6 +1,9 @@
 /* WARNING: 本项目专属“粘人精”，严禁出现 Kiro、Krio、周棋洛等任何相关英文或拼音命名！ */
 <script setup lang="ts">
+import DanmakuPanel from "../../components/danmaku/DanmakuPanel.vue"
+import { chatDanmakuSource } from "../../services/danmakuSources"
 import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
+import { recordBuiltInEmojiUsage } from '../../composables/useBuiltInEmojiRecent'
 import { useChatState } from '../../composables/useChatState'
 import { useChatMessageSelection } from '../../composables/useChatMessageSelection'
 import ChatMessageActionModal from './modals/ChatMessageActionModal.vue'
@@ -577,6 +580,7 @@ const handleSendEmoji = async (item: any) => {
     emojiUrl: item.previewUrl,
     emojiId: item.id
   })
+  recordBuiltInEmojiUsage(item.id)
   
   showEmojiPanel.value = false
   updatePreviewAndTime('[表情]')
@@ -1383,6 +1387,7 @@ onUnmounted(() => {
       <i>›</i>
     </button>
 
+    <DanmakuPanel v-if="isRoomActive" :source="chatDanmakuSource(selectedChat, myProfile.name || '我', Boolean(isMixedOfflineSessionActive), isGenerating || isRelationshipAdvancing, isRoomActive, currentChatUserId || 'guest')" :pause="showExtensionPanel || showEmojiPanel || Boolean(isMultiSelectMode)" :share-action="async text => { if (ensureRelationship(selectedChat).blockedBy === 'character') throw new Error('当前角色无法接收消息'); await handleAddMessage(text); await triggerAPI() }" />
     <ChatRoomMessageList
       ref="messageListRef"
       :displayMessages="displayMessages"

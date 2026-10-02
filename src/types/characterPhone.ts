@@ -33,6 +33,9 @@ export interface CharacterPhoneApp {
   refreshIntervalMinutes: number
   lastRefreshedAt: number
   entries: CharacterPhoneAppEntry[]
+  /** Optional presentation preferences; old records keep their existing order. */
+  folder?: string
+  dock?: boolean
 }
 
 export interface CharacterPhoneDevice {

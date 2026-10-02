@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import DanmakuPanel from "../components/danmaku/DanmakuPanel.vue"
+import { watchDanmakuSource } from "../services/danmakuSources"
 /* WARNING: 本项目专属“粘人精”，严禁出现无关角色命名！ */
 import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { importWatchTogetherFiles } from '../services/watchTogetherImport'
@@ -52,6 +54,14 @@ const activeProgress = computed(() => activeItem.value ? store.progressFor(activ
 const characters = computed(() => store.characters())
 const sessionMessages = computed(() => store.activeSession.value?.messages || [])
 const visibleText = computed(() => currentChapter.value?.text || '')
+const danmakuVisibleText = ref('')
+const captureDanmakuFragment = () => {
+  const element = novelScroll.value
+  if (!element || !store.state.settings.shareText) { danmakuVisibleText.value = ''; return }
+  const rect = element.getBoundingClientRect()
+  danmakuVisibleText.value = [...element.querySelectorAll('article p')].filter(p => { const r = p.getBoundingClientRect(); return r.bottom > rect.top && r.top < rect.bottom }).map(p => p.textContent || '').join('\n').slice(0, 3000)
+}
+watch([activeChapterId, () => store.state.settings.shareText], () => { danmakuVisibleText.value = ''; nextTick(captureDanmakuFragment) })
 const canUseModule = computed(() => store.state.settings.enabled && store.state.settings.modules[activeKind.value])
 
 const formatBytes = (bytes: number) => {
@@ -429,7 +439,8 @@ onUnmounted(() => {
 
     <main v-else-if="view === 'player' && activeItem" class="watch-player">
       <header class="watch-player-head"><button type="button" aria-label="返回内容库" @click="closePlayer">‹</button><span><strong>{{ activeItem.title }}</strong><small>{{ currentChapter?.title || activeItem.sourceName }}</small></span><button type="button" :class="{active:showCompanion}" @click="showCompanion=!showCompanion">陪伴</button></header>
-      <div v-if="activeItem.kind==='novel'" ref="novelScroll" class="watch-reader" @scroll.passive="queueProgress"><article><h1>{{ currentChapter?.title }}</h1><p v-for="(paragraph,index) in (currentChapter?.text||'').split(/\n{2,}/)" :key="index">{{ paragraph }}</p><div class="watch-chapter-end">— 本章完 —</div></article></div>
+      <DanmakuPanel :source="watchDanmakuSource(activeItem, currentChapter, sessionMessages, store.state.settings.shareText, view === 'player', store.busy.value, store.activeSession.value?.id, danmakuVisibleText)" :share-action="async text => { if (!store.state.settings.enabled || !store.state.settings.companionEnabled || !store.state.settings.characterCanSpeak) throw new Error('请先开启共赏角色陪伴与角色说话'); store.addSessionMessage('user', text, currentAnchor()); await store.requestCompanionReply({ item:activeItem!, anchor:currentAnchor(), visibleText:visibleText, event:text }) }" />
+      <div v-if="activeItem.kind==='novel'" ref="novelScroll" class="watch-reader" @scroll.passive="queueProgress(); captureDanmakuFragment()"><article><h1>{{ currentChapter?.title }}</h1><p v-for="(paragraph,index) in (currentChapter?.text||'').split(/\n{2,}/)" :key="index">{{ paragraph }}</p><div class="watch-chapter-end">— 本章完 —</div></article></div>
       <div v-else-if="activeItem.kind==='comic'" ref="novelScroll" class="watch-comic" @scroll.passive="queueProgress"><iframe v-if="activeItem.mediaUrl && mediaUrl" :src="mediaUrl" title="漫画 PDF"></iframe><template v-else><img v-for="(url,index) in pageUrls" :key="url" :src="url" :alt="`第 ${index+1} 页`" loading="lazy"><div v-if="!pageUrls.length" class="watch-player-empty">当前章节没有可显示的图片</div></template></div>
       <div v-else-if="activeItem.kind==='video'" class="watch-video-stage"><iframe v-if="activeItem.access==='embed'" :src="activeItem.mediaUrl" allow="autoplay; fullscreen; picture-in-picture" allowfullscreen title="影片播放器"></iframe><a v-else-if="activeItem.access==='external'" :href="activeItem.sourceUrl||activeItem.mediaUrl" target="_blank" rel="noreferrer">前往来源页面观看</a><video v-else ref="videoElement" :src="/\.m3u8(?:$|\?)/i.test(mediaUrl)?undefined:mediaUrl" controls playsinline preload="metadata" @timeupdate="queueProgress" @pause="mediaPause" @error="notify('当前浏览器无法解码这个影片格式或来源拒绝播放')"></video></div>
       <div v-else class="watch-audio-stage"><div class="watch-audio-cover" :style="activeItem.cover?{backgroundImage:`url(${activeItem.cover})`}:undefined">{{ activeItem.cover?'':'声' }}</div><h2>{{ activeItem.title }}</h2><p>{{ activeItem.creator || activeItem.sourceName }}</p><audio ref="audioElement" :src="/\.m3u8(?:$|\?)/i.test(mediaUrl)?undefined:mediaUrl" controls preload="metadata" @timeupdate="queueProgress" @pause="mediaPause" @error="notify('当前浏览器无法解码这个音频格式或来源拒绝播放')"></audio></div>

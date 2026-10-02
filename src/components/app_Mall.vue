@@ -3,8 +3,10 @@
 import { computed, onMounted, ref } from 'vue'
 import { useMall } from '../composables/useMall'
 import { mallExternalPlatforms } from '../services/mallService'
-import { formatWalletMoney, loadWalletState } from '../services/walletService'
+import { formatWalletMoney, loadWalletState, runWalletPayment } from '../services/walletService'
 import type { MallCartOwner, MallExternalPurchaseStatus, MallPerspective, MallProduct } from '../types/mall'
+import CommerceWorkspace from './commerce/CommerceWorkspace.vue'
+import { commercePlatformForUrl, commercePlatforms } from '../services/commerce'
 
 const emit = defineEmits<{ (event: 'close'): void; (event: 'open-chat', characterId: string | number): void }>()
 const mall = useMall()
@@ -24,6 +26,7 @@ const toastError = ref(false)
 const pendingExternalUrl = ref('')
 const pendingExternalProductId = ref('')
 const platformSearch = ref('')
+const commerceUrl = ref('')
 let toastTimer: ReturnType<typeof setTimeout> | undefined
 
 const externalDraft = ref({ url: '', title: '', price: '', imageUrl: '', note: '' })
@@ -119,6 +122,13 @@ const saveStoryProduct = () => {
 
 const openExternal = (url: string, productId = '') => {
   if (!url) return
+  if (commercePlatformForUrl(url)) {
+    const product = mall.state.products.find(item => item.id === productId)
+    if (product && mall.state.settings.confirmExternalJump) mall.recordExternal(product, 'considering', owner.value)
+    commerceUrl.value = url
+    sheet.value = ''
+    return
+  }
   if (mall.state.settings.confirmExternalJump) {
     pendingExternalUrl.value = url; pendingExternalProductId.value = productId; sheet.value = 'external'; return
   }
@@ -134,15 +144,30 @@ const confirmExternal = () => {
 
 const searchPlatform = (platform: typeof mallExternalPlatforms[number]) => {
   const query = platformSearch.value.trim()
-  openExternal(query ? platform.searchUrl(query) : platform.homeUrl)
+  if (query) openExternal(platform.searchUrl(query))
+  else browsePlatform(platform.id)
 }
 
-const doCheckout = () => {
+const browsePlatform = (id: string) => {
+  const platform = commercePlatforms.find(item => item.id === id)
+  if (platform) commerceUrl.value = platform.home
+}
+
+const checkoutBusy = ref(false)
+const paymentAccountName = computed(() => mall.currentAccount.value?.name || '未登录钱包')
+const doCheckout = async () => {
+  if (checkoutBusy.value) return
+  checkoutBusy.value = true
   try {
     const character = selectedCharacter.value ? { id: selectedCharacterId.value, name: selectedCharacter.value.name } : undefined
-    const order = mall.checkout(owner.value, character)
+    const ownerId = mall.accountId.value
+    const cartOwner = owner.value
+    const cartSignature = JSON.stringify(storyCartRows.value.map(item => [item.product.id, item.quantity, item.product.priceCents]))
+    const amount = storyCartRows.value.reduce((sum, item) => sum + item.quantity * item.product.priceCents, 0)
+    const order = await runWalletPayment({ accountId: ownerId, operation: 'mall', title: '剧情商城付款', amountCents: amount, fundingSource: 'balance', theme: 'mall' }, () => mall.checkout(cartOwner, character), () => mall.accountId.value === ownerId && sheet.value === 'checkout' && owner.value === cartOwner && JSON.stringify(storyCartRows.value.map(item => [item.product.id, item.quantity, item.product.priceCents])) === cartSignature)
+    if (!order) return
     sheet.value = ''; activeTab.value = 'orders'; notify(`订单 ${order.id.slice(-6)} 已付款`)
-  } catch (error) { notify(error instanceof Error ? error.message : '下单失败', true) }
+  } catch (error) { notify(error instanceof Error ? error.message : '下单失败', true) } finally { checkoutBusy.value = false }
 }
 
 const cancelOrder = (orderId: string) => {
@@ -275,12 +300,13 @@ const updateSetting = () => mall.persist()
 
       <section v-else-if="sheet==='create'" class="bottom-sheet form-sheet"><header><div><small>STORY PRODUCT</small><h2>创建剧情商品</h2></div><button @click="sheet=''">×</button></header><p class="sheet-note">剧情商品使用应用内虚拟钱包，不对应真实商品或人民币。</p><div class="form-pair"><label><span>商品名称</span><input v-model="storyDraft.title" maxlength="60" /></label><label><span>虚拟价格</span><input v-model="storyDraft.price" inputmode="decimal" /></label></div><div class="form-pair"><label><span>图标</span><input v-model="storyDraft.emoji" maxlength="4" /></label><label><span>分类</span><input v-model="storyDraft.category" maxlength="20" /></label></div><label><span>店铺</span><input v-model="storyDraft.storeName" maxlength="40" /></label><label><span>介绍</span><textarea v-model="storyDraft.description" maxlength="300"></textarea></label><button class="form-submit" @click="saveStoryProduct">创建商品</button></section>
 
-      <section v-else-if="sheet==='checkout'" class="confirm-card"><small>STORY CHECKOUT</small><h2>确认剧情订单</h2><p>本次只结算剧情商品，不会处理真实平台商品。</p><div><span>商品</span><b>{{storyCartRows.reduce((sum,row)=>sum+row.quantity,0)}} 件</b></div><div><span>剧情钱包余额</span><b>{{money(wallet.cashCents)}}</b></div><div class="total"><span>需支付</span><b>{{money(storyCartRows.reduce((sum,row)=>sum+row.product.priceCents*row.quantity,0))}}</b></div><footer><button @click="sheet=''">再想想</button><button class="primary" @click="doCheckout">确认支付</button></footer></section>
+      <section v-else-if="sheet==='checkout'" class="confirm-card"><small>STORY CHECKOUT</small><h2>确认剧情订单</h2><p>付款 USER：{{ paymentAccountName }}</p><p>本次只结算剧情商品，不会处理真实平台商品。</p><div><span>商品</span><b>{{storyCartRows.reduce((sum,row)=>sum+row.quantity,0)}} 件</b></div><div><span>剧情钱包余额</span><b>{{money(wallet.cashCents)}}</b></div><div class="total"><span>需支付</span><b>{{money(storyCartRows.reduce((sum,row)=>sum+row.product.priceCents*row.quantity,0))}}</b></div><footer><button @click="sheet=''">再想想</button><button class="primary" :disabled="checkoutBusy" @click="doCheckout">确认支付</button></footer></section>
 
       <section v-else-if="sheet==='external'" class="confirm-card"><small>LEAVE APP</small><h2>前往真实平台</h2><p>接下来显示的是第三方平台。实时价格、库存、登录、支付和售后均由该平台负责；剧情钱包不会扣款。</p><footer><button @click="sheet=''">取消</button><button class="primary" @click="confirmExternal">继续前往</button></footer></section>
     </div>
 
     <Transition name="toast"><div v-if="toast" class="mall-toast" :class="{error:toastError}">{{toast}}</div></Transition>
+    <CommerceWorkspace v-if="commerceUrl" :initial-url="commerceUrl" :character-id="selectedCharacterId" @close="commerceUrl=''" />
   </div>
 </template>
 

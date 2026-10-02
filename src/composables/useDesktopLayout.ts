@@ -26,7 +26,7 @@ export const DEFAULT_WIDGET_IDS = { moment: 'widget-moment-default', dualAvatar:
 const THIRD_PAGE_APP_IDS = new Set(['widget_beautify', 'character_workshop', 'persona_workshop', 'bubble_dressup', 'character_phone', 'watch_together', 'timebox', 'mcp'])
 const FOURTH_PAGE_APP_ORDER = ['mall', 'fate', 'book_store', 'bubble', 'text_game', 'keep_alive', 'appearance_wardrobe', 'game']
 const FOURTH_PAGE_APP_IDS = new Set(FOURTH_PAGE_APP_ORDER)
-const FIFTH_PAGE_APP_ORDER = ['takeout']
+const FIFTH_PAGE_APP_ORDER = ['takeout', 'plugins']
 const FIFTH_PAGE_APP_IDS = new Set(FIFTH_PAGE_APP_ORDER)
 
 const state = reactive<DesktopLayoutState>({ version: 2, dock: [], pages: [], hiddenAppIds: [] })
@@ -37,6 +37,7 @@ let batching = false
 let batchDirty = false
 
 const makeId = (prefix: string) => `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+const isPluginAppId = (id: unknown): id is string => typeof id === 'string' && /^plugin:[a-z][a-z0-9.-]{0,79}$/.test(id)
 const pageId = () => makeId('page')
 const spanOf = (entry: DesktopEntry) => entry.type === 'widget' ? { width: entry.widthUnits, height: entry.heightUnits } : { width: 1, height: 1 }
 const cloneEntry = (entry: DesktopEntry): DesktopEntry => entry.type === 'app' ? { type: 'app', id: entry.id }
@@ -79,7 +80,7 @@ const packEntries = (entries: DesktopEntry[], pinned?: { entry: DesktopEntry; co
 const fillPage = (entries: DesktopEntry[]) => packEntries(entries) ?? []
 
 const createDefaultLayout = (appIds: string[]): DesktopLayoutState => {
-  const primary = appIds.filter(id => !THIRD_PAGE_APP_IDS.has(id) && !FOURTH_PAGE_APP_IDS.has(id) && !FIFTH_PAGE_APP_IDS.has(id))
+  const primary = appIds.filter(id => !THIRD_PAGE_APP_IDS.has(id) && !FOURTH_PAGE_APP_IDS.has(id) && !FIFTH_PAGE_APP_IDS.has(id) && !id.startsWith('plugin:'))
   const dock = primary.slice(0, DOCK_CAPACITY).map(id => ({ type: 'app', id }) as DesktopAppEntry)
   const moment: DesktopWidgetEntry = { type: 'widget', id: DEFAULT_WIDGET_IDS.moment, widgetType: 'moment-card', widthUnits: 4, heightUnits: 2 }
   const dual: DesktopWidgetEntry = { type: 'widget', id: DEFAULT_WIDGET_IDS.dualAvatar, widgetType: 'dual-avatar', widthUnits: 2, heightUnits: 2 }
@@ -89,8 +90,9 @@ const createDefaultLayout = (appIds: string[]): DesktopLayoutState => {
   const pageTwo = appIds.filter(id => THIRD_PAGE_APP_IDS.has(id)).map(id => ({ type: 'app', id }) as DesktopAppEntry)
   const availableIds = new Set(appIds)
   const pageThree = FOURTH_PAGE_APP_ORDER.filter(id => availableIds.has(id)).map(id => ({ type: 'app', id }) as DesktopAppEntry)
-  const pageFour = FIFTH_PAGE_APP_ORDER.filter(id => availableIds.has(id)).map(id => ({ type: 'app', id }) as DesktopAppEntry)
-  return { version: 2, dock, pages: [firstEntries, fillPage(pageOne), fillPage(pageTwo), fillPage(pageThree), fillPage(pageFour)].map(entries => ({ id: pageId(), entries })), hiddenAppIds: [] }
+  const pageFour = [...FIFTH_PAGE_APP_ORDER.filter(id => availableIds.has(id)), ...appIds.filter(id => id.startsWith('plugin:'))].map(id => ({ type: 'app', id }) as DesktopAppEntry)
+  const tailPages = Array.from({ length: Math.max(1, Math.ceil(pageFour.length / 16)) }, (_, index) => fillPage(pageFour.slice(index * 16, index * 16 + 16)))
+  return { version: 2, dock, pages: [firstEntries, fillPage(pageOne), fillPage(pageTwo), fillPage(pageThree), ...tailPages].map(entries => ({ id: pageId(), entries })), hiddenAppIds: [] }
 }
 const persistNow = () => {
   if (saveTimer) clearTimeout(saveTimer)
@@ -111,10 +113,12 @@ const normalizeBaseEntries = (entries: unknown, validIds: Set<string>, hidden: S
   for (const item of entries) {
     if (!item || typeof item !== 'object') continue
     const candidate = item as Record<string, unknown>
-    if (candidate.type === 'app' && typeof candidate.id === 'string' && validIds.has(candidate.id) && !hidden.has(candidate.id) && !usedApps.has(candidate.id)) {
+    // 插件存储暂不可读时仍保留其布局，避免一次加载失败丢失用户排列。
+    const isValidApp = (id: string) => validIds.has(id) || isPluginAppId(id)
+    if (candidate.type === 'app' && typeof candidate.id === 'string' && isValidApp(candidate.id) && !hidden.has(candidate.id) && !usedApps.has(candidate.id)) {
       usedApps.add(candidate.id); result.push({ type: 'app', id: candidate.id })
     } else if (candidate.type === 'folder' && typeof candidate.id === 'string' && Array.isArray(candidate.appIds)) {
-      const appIds = candidate.appIds.filter((id): id is string => typeof id === 'string' && validIds.has(id) && !hidden.has(id) && !usedApps.has(id))
+      const appIds = candidate.appIds.filter((id): id is string => typeof id === 'string' && isValidApp(id) && !hidden.has(id) && !usedApps.has(id))
       appIds.forEach(id => usedApps.add(id))
       if (appIds.length === 1) result.push({ type: 'app', id: appIds[0] })
       if (appIds.length > 1) result.push({ type: 'folder', id: candidate.id, name: typeof candidate.name === 'string' && candidate.name.trim() ? candidate.name.trim().slice(0, 12) : '文件夹', appIds })
@@ -127,7 +131,7 @@ const normalizeBaseEntries = (entries: unknown, validIds: Set<string>, hidden: S
 const appendMissingApps = (layout: DesktopLayoutState, appIds: string[], used: Set<string>, hidden: Set<string>) => {
   for (const id of appIds) {
     if (used.has(id) || hidden.has(id)) continue
-    const preferred = FIFTH_PAGE_APP_IDS.has(id) ? 4 : FOURTH_PAGE_APP_IDS.has(id) ? 3 : THIRD_PAGE_APP_IDS.has(id) ? 2 : 1
+    const preferred = id === 'plugins' || id.startsWith('plugin:') ? Math.max(4, layout.pages.length - 1) : FIFTH_PAGE_APP_IDS.has(id) ? 4 : FOURTH_PAGE_APP_IDS.has(id) ? 3 : THIRD_PAGE_APP_IDS.has(id) ? 2 : 1
     while (layout.pages.length <= preferred) layout.pages.push({ id: pageId(), entries: [] })
     const entry: DesktopAppEntry = { type: 'app', id }
     let target = layout.pages[preferred], position = findFirstPosition(target.entries, entry)
@@ -137,7 +141,7 @@ const appendMissingApps = (layout: DesktopLayoutState, appIds: string[], used: S
 }
 const migrateLegacy = (raw: any, appIds: string[]): DesktopLayoutState => {
   const valid = new Set(appIds), used = new Set<string>()
-  const hidden = new Set<string>((Array.isArray(raw?.hiddenAppIds) ? raw.hiddenAppIds : []).filter((id: unknown): id is string => typeof id === 'string' && valid.has(id)))
+  const hidden = new Set<string>((Array.isArray(raw?.hiddenAppIds) ? raw.hiddenAppIds : []).filter((id: unknown): id is string => typeof id === 'string' && (valid.has(id) || isPluginAppId(id))))
   const dock = normalizeBaseEntries(raw?.dock, valid, hidden, used, false).slice(0, DOCK_CAPACITY) as DesktopDockEntry[]
   const rawPages = Array.isArray(raw?.pages) ? raw.pages : []
   const pages: DesktopPage[] = []
@@ -159,7 +163,7 @@ const migrateLegacy = (raw: any, appIds: string[]): DesktopLayoutState => {
 }
 const normalizeV2 = (raw: any, appIds: string[]): DesktopLayoutState => {
   const valid = new Set(appIds), used = new Set<string>(), widgetIds = new Set<string>()
-  const hidden = new Set<string>((Array.isArray(raw?.hiddenAppIds) ? raw.hiddenAppIds : []).filter((id: unknown): id is string => typeof id === 'string' && valid.has(id)))
+  const hidden = new Set<string>((Array.isArray(raw?.hiddenAppIds) ? raw.hiddenAppIds : []).filter((id: unknown): id is string => typeof id === 'string' && (valid.has(id) || isPluginAppId(id))))
   const dock = normalizeBaseEntries(raw?.dock, valid, hidden, used, false).slice(0, DOCK_CAPACITY) as DesktopDockEntry[]
   const pages: DesktopPage[] = []
   const overflowEntries: DesktopEntry[] = []
@@ -395,6 +399,28 @@ const resizeWidget = (id: string, widthUnits: number, heightUnits: number) => {
 const renameFolder = (folderId: string, name: string) => { const folder = findFolder(folderId); if (folder) { folder.name = name.trim().slice(0, 12) || '文件夹'; save() } }
 const addPage = (afterIndex: number) => { const index = Math.max(0, Math.min(afterIndex + 1, state.pages.length)); state.pages.splice(index, 0, { id: pageId(), entries: [] }); persistNow(); return index }
 const deletePage = (index: number) => { if (state.pages.length <= 1 || !state.pages[index] || state.pages[index].entries.length) return false; state.pages.splice(index, 1); persistNow(); return true }
+const syncPluginApps = (addedIds: string[], removedIds: string[]) => {
+  const removed = new Set(removedIds.filter(id => id.startsWith('plugin:')))
+  const removeApps = (entries: DesktopDockEntry[] | DesktopGridEntry[]) => {
+    for (let index = entries.length - 1; index >= 0; index--) {
+      const entry = entries[index]
+      if (entry.type === 'app' && removed.has(entry.id)) entries.splice(index, 1)
+      else if (entry.type === 'folder') {
+        entry.appIds = entry.appIds.filter(id => !removed.has(id))
+        if (entry.appIds.length < 2) resolveFolderAfterRemoval(entry.id)
+      }
+    }
+  }
+  removeApps(state.dock); state.pages.forEach(page => removeApps(page.entries))
+  state.hiddenAppIds.splice(0, state.hiddenAppIds.length, ...state.hiddenAppIds.filter(id => !removed.has(id)))
+  const used = new Set<string>()
+  for (const entry of [...state.dock, ...state.pages.flatMap(page => page.entries)]) {
+    if (entry.type === 'app') used.add(entry.id)
+    else if (entry.type === 'folder') entry.appIds.forEach(id => used.add(id))
+  }
+  appendMissingApps(state, addedIds.filter(id => id.startsWith('plugin:')), used, new Set(state.hiddenAppIds))
+  if (addedIds.length || removed.size) persistNow()
+}
 const addWidget = (widgetType: WidgetType, widthUnits: number, heightUnits: number, preferredPage: number) => {
   const entry: DesktopWidgetEntry = { type: 'widget', id: makeId(`widget-${widgetType}`), widgetType, widthUnits, heightUnits }
   let index = Math.max(0, Math.min(preferredPage, state.pages.length - 1)), target = state.pages[index], position = findFirstPosition(target.entries, entry)
@@ -407,7 +433,7 @@ const reset = (appIds: string[], widgetIdsToRemove: readonly string[] = []) => {
   const currentWidgets = state.pages.flatMap((page, pageIndex) => page.entries.filter((entry): entry is DesktopGridEntry & DesktopWidgetEntry => entry.type === 'widget' && !removedWidgetIds.has(entry.id)).map(entry => ({ entry: cloneEntry(entry) as DesktopWidgetEntry, pageIndex, column: entry.column, row: entry.row })))
   const defaults = createDefaultLayout(appIds)
   const fresh: DesktopLayoutState = { version: 2, dock: defaults.dock, pages: [], hiddenAppIds: [] }
-  const pageCount = Math.max(DEFAULT_PAGE_COUNT, state.pages.length)
+  const pageCount = Math.max(DEFAULT_PAGE_COUNT, defaults.pages.length, state.pages.length)
   for (let index = 0; index < pageCount; index++) fresh.pages.push({ id: state.pages[index]?.id ?? pageId(), entries: [] })
   for (const item of currentWidgets) fresh.pages[item.pageIndex].entries.push({ ...item.entry, column: item.column, row: item.row })
   defaults.pages.forEach((page, preferredPage) => {
@@ -425,4 +451,4 @@ const reset = (appIds: string[], widgetIdsToRemove: readonly string[] = []) => {
   return [...removedWidgetIds]
 }
 
-export const useDesktopLayout = () => ({ layout: readonly(state) as Readonly<DesktopLayoutState>, initialize, entryAt, findFolder, canMoveEntry, moveEntry, addToFolder, createFolder, hideApp, removeWidget, resizeWidget, renameFolder, reset, addPage, deletePage, addWidget, canPlace, beginLayoutBatch, endLayoutBatch })
+export const useDesktopLayout = () => ({ layout: readonly(state) as Readonly<DesktopLayoutState>, initialize, syncPluginApps, entryAt, findFolder, canMoveEntry, moveEntry, addToFolder, createFolder, hideApp, removeWidget, resizeWidget, renameFolder, reset, addPage, deletePage, addWidget, canPlace, beginLayoutBatch, endLayoutBatch })
